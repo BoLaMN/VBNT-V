@@ -7,7 +7,7 @@ preserve() {
   local path=$1
   local value=$(uci get $path 2>/dev/null)
   if [ $? -eq 0 ]; then
-    echo "restore $path $value" >> /etc/rtfd/data/ucidata
+    echo "restore $path '$value'" >> /etc/rtfd/data/ucidata
   fi
 }
 

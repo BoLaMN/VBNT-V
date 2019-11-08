@@ -9,6 +9,7 @@ local ui_helper = require("web.ui_helper")
 local content_helper = require("web.content_helper")
 local post_helper = require("web.post_helper")
 -- local tprint = require("tch.tableprint")
+local uniqueKey = post_helper.getRandomKey()
 
 local content_parental = {
   state = "uci.parental.general.enable",
@@ -16,7 +17,7 @@ local content_parental = {
 }
 content_helper.getExactContent(content_parental)
 
-local uci_parental_path = "uci.parental.URLfilter."
+local uci_parental_path = "uci.parental.URLfilter.@."
 local parental_columns = {
     {
         header = T"Site",
@@ -37,6 +38,8 @@ local parental_columns = {
 local parental_options = {
     tableid         = "urlfilter",
     basepath        = uci_parental_path,
+    objectName      = uniqueKey,
+    addNamedObject  = true,
 }
 
 -- get an initial read from UCI

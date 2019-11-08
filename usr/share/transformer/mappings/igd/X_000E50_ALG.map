@@ -7,6 +7,7 @@ local commit = uciHelper.commit
 local revert = uciHelper.revert
 local firewallBinding = { config = "firewall" }
 local configChanged
+local foreachOnUci = uciHelper.foreach_on_uci
 
 local InternetGatewayDevice_Multi_ = {
   objectType = {
@@ -55,6 +56,19 @@ local InternetGatewayDevice_X_Multi_ = {
   }
 }
 
+local function getEnable()
+  local result = "0"
+  firewallBinding.sectionname = "helper"
+  firewallBinding.option = "enable"
+  foreachOnUci(firewallBinding, function(s)
+    if string.match(s['.name'], "h323") and s['enable'] == "1" then
+      result = "1"
+      return false
+    end
+  end)
+  return result
+end
+
 -- To get the protocol name from the mapping
 -- @param mapping mapping from which the protocol name can be retrieved
 local function getProtocol(mapping)
@@ -70,6 +84,9 @@ local function get(mapping, param)
   if param == "Enable" then
     firewallBinding.option = "enable"
     firewallBinding.default = "1"
+    if getProtocol(mapping) == "h323" then
+      return getEnable()
+    end
   elseif param == "PORTS" then
     firewallBinding.option = "dest_port"
     firewallBinding.default = "0"
@@ -82,13 +99,32 @@ end
 -- @param param the param to be modified/added in the section
 -- @param value value of the param to be modified/added in the section
 local function set(mapping, param, value)
-  firewallBinding.sectionname = getProtocol(mapping).."helper"
+  local isSection = false
+  local section = getProtocol(mapping).."helper"
+  firewallBinding.sectionname = "helper"
+  foreachOnUci(firewallBinding, function(s)
+    if s['.name'] == section then
+      firewallBinding.sectionname = s['.name']
+      isSection = true
+      return false
+    end
+  end)
   if param == "Enable" then
     firewallBinding.option = "enable"
+    if isSection then
+      setOnUci(firewallBinding, value, commitapply)
+    elseif section == "h323helper" then
+      firewallBinding.sectionname = "h323rashelper"
+      setOnUci(firewallBinding, value, commitapply)
+      firewallBinding.sectionname = "h323q931helper"
+      setOnUci(firewallBinding, value, commitapply)
+    else
+      return nil, "Error setting Enable, helper section does not exist in firewall config"
+    end
   elseif param == "PORTS" then
     firewallBinding.option = "dest_port"
+    setOnUci(firewallBinding, value, commitapply)
   end
-  setOnUci(firewallBinding, value, commitapply)
   configChanged = true
 end
 
@@ -96,7 +132,6 @@ InternetGatewayDevice_X_Multi_.getall = function(mapping)
   firewallBinding.sectionname = getProtocol(mapping).."helper"
   local firewallConfig = uciHelper.getall_from_uci(firewallBinding)
   return {
-    Enable = firewallConfig['enable'] or "1",
     PORTS = firewallConfig['dest_port'] or "0",
   }
 end

@@ -207,7 +207,7 @@ local function checkUpdate(assistant, permanent, password)
         if differentSrpPassword(pswcfg, password) then
             return true
         end
-    elseif pswcfg~=password then
+    elseif (password~=false) and (pswcfg~=password) then
          return true
     end
     if assistant._permanent~=(permanent or false) then
@@ -641,6 +641,14 @@ function M.getAssistant(name)
         assistants_info[name] = info
     end
     return info.assistant
+end
+
+function M:assistantNames()
+  local names = {}
+  for name in pairs(assistants_info) do
+    names[#names+1] = name
+  end
+  return names
 end
 
 -- local module state variables

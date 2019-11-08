@@ -123,46 +123,16 @@ local Device_Hosts_Host_i_ = {
 local mapper, os, pairs, resolve, next, string = mapper, os, pairs, resolve, next, string
 local conn = mapper("ubus").connect()
 local uciHelper = mapper("ucihelper")
-local nwCommon = mapper('nwcommon')
+local network = require("transformer.shared.common.network")
+local getHostDataByName = network.getHostDataByName
 local foreachOnUci = uciHelper.foreach_on_uci
 local getFromUci = uciHelper.get_from_uci
-local integratedQtnMAC = string.lower(getFromUci({config = "env", sectionname = "var", option = "qtn_eth_mac"}))
 
 Device_Hosts_Host_i_.entries = function(mapping)
-  local data = conn:call("hostmanager.device", "get", { })
-  local entries = {}
-  local lanInterfaces = {}
-  for _,y in pairs(nwCommon.findLanWanInterfaces(false)) do
-    lanInterfaces[y] = true
-  end
-  -- if host interface is LAN and host mac-address is mac of integrated quatenna AP device, skip
-  -- show only valid hosts, which has valid l2interface - technology derived from l2interface
-  for k,v in pairs(data) do
-    if lanInterfaces[v.interface] and  v["mac-address"] ~= integratedQtnMAC and (v["technology"] == "wireless" or v["technology"] == "ethernet") then
-      entries[#entries + 1] = k
-    end
-  end
-  return entries
+  return network.getHostInfo()
 end
 
-local ethernetBinding = { config = "ethernet", sectionname = "mapping" }
-local function wlanRemotePort()
-  local port
-  foreachOnUci( ethernetBinding, function(s)
-    if s.wlan_remote == "1" then
-      port = s.port
-      return false
-    end
-  end)
-  return port
-end
-
-local wlanPort = wlanRemotePort()
-
-local function getDataForHost(hostKey)
-  local data = conn:call("hostmanager.device", "get", { name = hostKey })
-  return data[hostKey] or {}
-end
+local wlanPort = network.wlanRemotePort()
 
 local function getLeaseTime(addr,hostData)
   local leaseTime = 0
@@ -187,15 +157,15 @@ end
 
 local function getPrimaryAddress(hostData)
   local primaryAddress = {}
-  if next(hostData['ipv4']) ~= nil then
-    for _,n in pairs(hostData["ipv4"]) do
-      if n["state"] == "connected" then
+  if next(hostData.ipv4) ~= nil then
+    for _,n in pairs(hostData.ipv4) do
+      if n.state == "connected" then
        primaryAddress = n
       end
     end
-  elseif next(hostData['ipv6']) ~= nil then
-   for _,n in pairs(hostData["ipv6"]) do
-    if n["state"] == "connected" then
+  elseif next(hostData.ipv6) ~= nil then
+   for _,n in pairs(hostData.ipv6) do
+    if n.state == "connected" then
      primaryAddress  = n
     end
    end
@@ -248,7 +218,7 @@ local function getAP(macaddr)
     for ap, mactable in pairs(data) do
       mactable = mactable or {}
       for mac,sta in pairs(mactable) do
-        if mac == macaddr and sta["state"] and sta["state"]:match("Associated") then
+        if mac == macaddr and sta.state and sta.state:match("Associated") then
           return ap
         end
       end
@@ -259,92 +229,94 @@ end
 
 Device_Hosts_Host_i_.get = {
   Active = function(mapping,param,key)
-    local hostData = getDataForHost(key)
-    return (hostData["state"] == "connected") and "1" or "0"
+    local hostData = getHostDataByName(key)
+    return (hostData.state == "connected") and "1" or "0"
   end,
 
   PhysAddress = function(mapping,param,key)
-    local hostData = getDataForHost(key)
+    local hostData = getHostDataByName(key)
     return hostData["mac-address"]
   end,
 
   IPAddress = function(mapping,param,key)
-    local hostData = getDataForHost(key)
+    local hostData = getHostDataByName(key)
     local addr = getPrimaryAddress(hostData)
     return addr.address or ""
   end,
 
   AssociatedDevice = function(mapping,param,key)
-    local hostData = getDataForHost(key)
+    local hostData = getHostDataByName(key)
     local macAddress = hostData["mac-address"] or ""
     local ap = getAP(macAddress)
     return (resolve('Device.WiFi.AccessPoint.{i}.AssociatedDevice.{i}.' , ap .. "|" .. macAddress) or "")
   end,
 
   HostName = function(mapping,param,key)
-    local hostData = getDataForHost(key)
+    local hostData = getHostDataByName(key)
     local macAddress = hostData["mac-address"] or ""
-    return hostData["hostname"] or "unknown-" .. macAddress
+    return hostData.hostname or "unknown-" .. macAddress
   end,
 
   X_FASTWEB_GroupName = function(mapping,param,key)
-    local hostData = getDataForHost(key)
-    return hostData["device-type"] or ""
+    local hostData = getHostDataByName(key)
+    return hostData["device-type"] and hostData["device-type"]:match("^([^:]*)") or ""
   end,
 
   DHCPClient = function(mapping,param,key)
-    local hostData = getDataForHost(key)
-    return (resolve('Device.DHCPv4.Server.Pool.{i}.Client.{i}.' , hostData["interface"].. "|" ..key) or "")
+    local hostData = getHostDataByName(key)
+    return (resolve('Device.DHCPv4.Server.Pool.{i}.Client.{i}.' , hostData.interface.. "|" ..key) or "")
   end,
 
   LeaseTimeRemaining = function(mapping,param,key)
-    local hostData = getDataForHost(key)
+    local hostData = getHostDataByName(key)
     local addr = getPrimaryAddress(hostData)
     return getLeaseTime(addr,hostData)
   end,
 
   Layer1Interface = function(mapping,param,key)
-    local hostData = getDataForHost(key)
-    return getLayer1Interface(hostData["l2interface"])
+    local hostData = getHostDataByName(key)
+    return getLayer1Interface(hostData.l2interface)
   end,
 
   Layer3Interface = function(mapping,param,key)
-    local hostData = getDataForHost(key)
-    return resolve("Device.IP.Interface.{i}.",hostData["interface"]) or ""
+    local hostData = getHostDataByName(key)
+    return resolve("Device.IP.Interface.{i}.",hostData.interface) or ""
   end,
 
   ActiveLastChange = function(mapping,param,key)
-    local hostData = getDataForHost(key)
+    local hostData = getHostDataByName(key)
     return os.date("%Y-%m-%dT%H:%M:%SZ", hostData["connected_time"]) or ""
   end,
 }
 
 Device_Hosts_Host_i_.getall = function(mapping,key)
-  local hostData = getDataForHost(key)
+  local hostData = getHostDataByName(key)
   local macAddress = hostData["mac-address"] or ""
   local ap = getAP(macAddress)
   local addr = getPrimaryAddress(hostData)
   return {
-    Active = hostData["state"] == "connected" and "1" or "0",
+    Active = hostData.state == "connected" and "1" or "0",
     PhysAddress = macAddress,
     IPAddress = addr.address or "",
     AssociatedDevice = resolve('Device.WiFi.AccessPoint.{i}.AssociatedDevice.{i}.' ,ap .. "|" .. macAddress) or "",
-    HostName = hostData["hostname"] or "unknown-" .. macAddress,
-    X_FASTWEB_GroupName = hostData["device-type"] or "",
+    HostName = hostData.hostname or "unknown-" .. macAddress,
+    X_FASTWEB_GroupName = hostData["device-type"] and hostData["device-type"]:match("^([^:]*)") or "",
     DHCPClient = resolve('Device.DHCPv4.Server.Pool.{i}.Client.{i}.' , hostData["interface"].. "|" ..key) or "",
     LeaseTimeRemaining = getLeaseTime(addr,hostData),
-    Layer1Interface =  getLayer1Interface(hostData["l2interface"]),
-    Layer3Interface = resolve("Device.IP.Interface.{i}.",hostData["interface"]) or "",
+    Layer1Interface =  getLayer1Interface(hostData.l2interface),
+    Layer3Interface = resolve("Device.IP.Interface.{i}.",hostData.interface) or "",
     ActiveLastChange = os.date("%Y-%m-%dT%H:%M:%SZ", hostData["connected_time"]) or "",
   }
 end
 
 Device_Hosts_Host_i_.set = {
   X_FASTWEB_GroupName = function(mapping, param, value, key)
-    local hostData = getDataForHost(key)
-    local macAddress = hostData["mac-address"] or ""
+    local hostData = getHostDataByName(key)
+    local macAddress = hostData["mac-address"]
+    local deviceType = (hostData["device-type"] and hostData["device-type"] ~= "") and hostData["device-type"]:gsub("^[^:]*", value) or string.format("%s:7:0", value)
+
     if macAddress then
-      conn:call("hostmanager.device", "set", { ["mac-address"] = macAddress, ["device-type"] = value })
+      conn:call("hostmanager.device", "set", { ["mac-address"] = macAddress, ["device-type"] = deviceType })
     else
       return nil, "macAddress is null!"
     end

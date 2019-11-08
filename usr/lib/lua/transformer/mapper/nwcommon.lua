@@ -12,12 +12,16 @@ See LICENSE file for more details.
 
 local M = {}
 
-local io, math, string = io, math, string
+local math, string = math, string
 local uci_helper = require("transformer.mapper.ucihelper")
 local posix = require("tch.posix")
 local inet_pton = posix.inet_pton
+local inet_ntop = posix.inet_ntop
 local AF_INET = posix.AF_INET
+local AF_INET6 = posix.AF_INET6
+local inet = require("tch.inet")
 local foreach_on_uci = uci_helper.foreach_on_uci
+local io = require("io")
 local open = io.open
 local popen = io.popen
 local match = string.match
@@ -56,7 +60,7 @@ end
 -- Convert an interface name ('wan', 'lan' ...) to a zone
 local firewallzone_binding = {config="firewall", sectionname="zone"}
 function M.interface2zone(interfacename)
-  local result
+  local result = {}
   local zoneName = uci_helper.get_from_uci({config = "network", sectionname = interfacename, option = "zone"})
   if zoneName ~= "" then
     foreach_on_uci(firewallzone_binding, function(s)
@@ -88,7 +92,7 @@ end
 -- @param #string zoneName Name of the zone defined in firewall config.
 -- @returns #table interfaces returns a table that contains all network interfaces related to the input zone name.
 function M.zoneToInterfaces(zoneName)
-  local interfaces
+  local interfaces = {}
   foreach_on_uci(firewallzone_binding, function(s)
     if s.name == zoneName then
       interfaces = s.network
@@ -262,22 +266,23 @@ local pathlookup = {
   ["tx_packets"] = "/sys/class/net/%s/statistics/tx_packets",
   ["tx_window_errors"] = "/sys/class/net/%s/statistics/tx_window_errors",
   ["mtu"] = "/sys/class/net/%s/mtu",
-  ["type"] = "/sys/class/net/%s/type"
+  ["type"] = "/sys/class/net/%s/type",
+  ["speed"] = "/sys/class/net/%s/speed",
 }
 
 -- get info from /sys/class/net
-function M.getIntfInfo(dev, value, default)
-  local pathtemplate = pathlookup[value]
+function M.getIntfInfo(dev, param, default)
+  local value = default
+  local pathtemplate = pathlookup[param]
   if pathtemplate then
     local realpath = format(pathtemplate, dev)
     local fd = open(realpath)
     if fd then
-      local value = fd:read("*line")
+      value = fd:read("*line")
       fd:close()
-      return value
     end
   end
-  return default or ""
+  return value or default or ""
 end
 
 -- determine if an interface is an alias
@@ -352,6 +357,14 @@ function M.hex2String(hexString)
   return hexString:gsub('(..)', function(value) return string.char(tonumber(value, 16)) end)
 end
 
+-- Convert the given string to hexadecimal string
+-- User has to take care of passing the proper input to the function.
+function M.string2Hex(str)
+  return (str:gsub('.', function (char)
+    return string.format('%02X', string.byte(char))
+  end))
+end
+
 -- Convert netmask from /24 to 255.255.255.0
 function M.netmask2mask(maskbits)
     if (type(maskbits) ~= "number") then
@@ -376,8 +389,7 @@ function M.mask2netmask(dotted)
     local shifts = 0
     if num > 0 then
       while bit.band(num, 1) == 0 do
-        shifts = shifts + 1
-        num = bit.rshift(num,1)
+        return nil, "Not a valid mask"
       end
       mask = mask + 8 - shifts
     else
@@ -387,59 +399,28 @@ function M.mask2netmask(dotted)
   return mask
 end
 
--- IP VALIDATION (taking reference from post_helper.lua)
--- @param #string ip the string representing the ip address
--- @return #number 0 = error
---                 4 = ipv4
-
-local function getIPType(ip)
-  -- must pass in a string value
-  if type(ip) ~= "string" then
-    return 0
-  end
-
-  -- check for format 1.11.111.111 for ipv4
-  local chunks = { ip:match("^(%d+)%.(%d+)%.(%d+)%.(%d+)$") }
-  if #chunks == 4 then
-    for _,v in pairs(chunks) do
-      local octet = tonumber(v)
-      if octet < 0 or octet > 255 then
-        return 0
-      end
-    end
-    return 4
-  end
-end
-
 -- Return number representing the IP address / netmask (first byte is first part ...)
-function M.ipv4ToNum(ipStr)
-  local result = 0
-  local ipBlocks = { ipStr:match("^(%d+)%.(%d+)%.(%d+)%.(%d+)$") }
-  if #ipBlocks < 4 then
-    return ""
-  end
-
-  for _,v in ipairs(ipBlocks) do
-    result = bit.lshift(result, 8) + v
-  end
-  return tonumber(result)
+function M.ipv4ToNum(ipstr)
+    if ipstr then
+      local n = inet.ipv4ToNumber(ipstr)
+      return n
+    end
 end
 
--- Return IP address / netmask representing the number
--- If Endianness Check is needed, then set the parameter checkEndianness to true
--- otherwise, by default it assumes Big Endian.
-function M.numToIPv4(ip, checkEndianness)
-  local ret = bit.band(ip, 255)
-  local ip = bit.rshift(ip,8)
-  for i=1,3 do
-    if checkEndianness and tonumber(string.byte(string.dump(function() end),7)) == 1 then
-      ret = ret .. "." .. bit.band(ip,255)
-    else
-      ret = bit.band(ip,255) .. "." .. ret
+-- Return IP address / netmask representing the number.
+function M.numToIPv4(num)
+    if type(num) ~= "number" then
+        return nil, "Invalid Number"
     end
-    ip = bit.rshift(ip,8)
-  end
-  return ret
+    -- unbit
+    if num < 0 then
+      num = (2^32) + num
+    end
+    local ip = inet.numberToIpv4(num)
+    if not ip then
+        return nil, "Invalid Number"
+    end
+    return ip
 end
 
 -- Validate string is MAC
@@ -498,7 +479,7 @@ end
 -- @default #string default value to be returned
 -- @return #string stat value for the given param to the function
 function M.getIntfStats(key,param,default)
-  local fd, index, intfStat
+  local index, fd, intfStat = 0
   default = default or '0'
   key = key:gsub("%-", "%%-")
   if param == "multicast" then
@@ -510,7 +491,7 @@ function M.getIntfStats(key,param,default)
     for line in fd:lines() do
       if line:match("^%s*"..key..":") then
         index = 1
-        for field in line:gmatch("%S+") do
+        for field in line:gmatch("[^%s:]+") do
           if statFields[index] == param then
             intfStat = field ~= "-" and field or default
             break
@@ -552,22 +533,23 @@ function M.loadRoutes(onlyDefault)
   local fd = popen("ip -4 route show table all")
   if fd then
     for line in fd:lines() do
-      local fields = {}
-      fields.destip = line:match("^broadcast%s(%d%S+)") or line:match("^local%s(%d%S+)") or line:match("^(%S+)")
-      if fields.destip == "default" then
-        fields.destip = "0.0.0.0/0"
+      local route = {}
+      route.isLocal = line:match("^local")
+      route.destip = line:match("^broadcast%s(%d%S+)") or line:match("^local%s(%S+)") or line:match("^(%S+)")
+      if route.destip == "default" then
+        route.destip = "0.0.0.0/0"
       end
-      fields.gateway = line:match("via%s(%S+)") or "0.0.0.0"
-      fields.ifname = line:match("dev%s(%S+)")
-      fields.metric = line:match("metric%s+(%d+)%s$") or "0"
-      key = fields.destip .. fields.ifname
-      if onlyDefault and fields.destip == "0.0.0.0/0" then
-        defaultRoute = fields.ifname
+      route.gateway = line:match("via%s(%S+)") or "0.0.0.0"
+      route.ifname = line:match("dev%s(%S+)")
+      route.metric = line:match("metric%s+(%d+)%s$") or "0"
+      key = route.destip .. route.ifname
+      if onlyDefault and route.destip == "0.0.0.0/0" and not route.isLocal then
+        defaultRoute = route.ifname
         break
       end
-      if not keys[key] then
+      if not keys[key] and route.ifname ~= "lo" then
         keys[key] = true
-        routes[#routes+1] = fields
+        routes[#routes+1] = route
       end
     end
     fd:close()
@@ -603,6 +585,60 @@ function M.getip6DefaultRoutes()
   return ip6DefaultRoutes
 end
 
+--- Returns the given number as 32-bit unsigned int.
+-- @value #number, the value to be converted as unsigned integer.
+-- @return #number, returns the unsigned integer for the given value
+local function castToUInt32(value)
+  return value % (2^32)
+end
+
+--- Retrieves IPv6 LinkLocalAddress for the given device
+-- @param deviceName #string device name
+-- @return linkLocalAddress #string IPv6 link local address for the given device
+function M.getLinkLocalAddress(deviceName)
+  local linkLocalAddress = ""
+  local fd = io.open("/proc/net/if_inet6", "r")
+  if fd then
+    for line in fd:lines() do
+      local ip, scope, interface = line:match("(%S+)%s+%S+%s+%S+%s+(%S+)%s+%S+%s+(%S+)")
+      if interface == deviceName and scope == "20" then
+	ip = gsub(ip, "..", function(s) return string.char(tonumber(s, 16)) end)
+	linkLocalAddress = inet_ntop(AF_INET6, ip) or ""
+      end
+    end
+    fd:close()
+  end
+  return linkLocalAddress
+end
+
+--- Returns the network address for the given ip and netmask.
+-- @ip #number, the base IP address as integer.
+-- @netmask #number, the nesmask as integer.
+-- @return network #number, the network address as integer.
+function M.extractNetworkAddress(ip, netmask)
+  local network = castToUInt32(bit.band(ip, netmask))
+  return network
+end
+
+--- Returns the broadcast address for the given ip and netmask.
+-- @ip #number, the base IP address as integer.
+-- @netmask #number, the nesmask as integer.
+-- @return broadcast #number, the broadcast address as integer.
+function M.extractBroadcastAddress(network, netmask)
+  local broadcast = castToUInt32(bit.bor(network, bit.bnot(netmask)))
+  return broadcast
+end
+
+--- Calculates the start address based on the given startip, network and netmask.
+-- @startIP #number, the start IP address as integer.
+-- @network #number, the network address as integer.
+-- @netmask #number, the nesmask as integer.
+-- @return ipStart #number, the start address in the given network as integer.
+function M.getStartAddress(startIP, network, netmask)
+  local ipStart = bit.bor(network, castToUInt32(bit.band(startIP, bit.bnot(netmask))))
+  ipStart = castToUInt32(ipStart)
+  return ipStart
+end
 -- Function to check whether the input baseip address is valid for device
 -- (i.e) baseip address should differ from network address and broadcastaddress
 -- @baseip #string, contains the ip address of the device
@@ -610,16 +646,19 @@ end
 -- @return #boolean, returns true when baseip address is valid for device
 
 function M.isValidIPv4AddressForDevice(baseip, netmask)
-  baseip = baseip and M.ipv4ToNum(baseip) or ""
-  netmask = netmask and M.ipv4ToNum(netmask) or ""
-  if netmask == "" then
+  baseip = baseip and castToUInt32(M.ipv4ToNum(baseip))
+  netmask = netmask and castToUInt32(M.ipv4ToNum(netmask))
+  if not netmask then
     return nil, "Invalid SubnetMask"
   end
-  local network = baseip ~= "" and bit.band(baseip, netmask) or ""
+  if not baseip then
+    return nil, "Invalid BaseIP"
+  end
+  local network = M.extractNetworkAddress(baseip, netmask)
   if baseip == network then
     return nil, "IP address is same as network address"
   end
-  local broadcast = network ~= "" and bit.bor(network, bit.bnot(netmask)) or ""
+  local broadcast = M.extractBroadcastAddress(network, netmask)
   if baseip == broadcast then
     return nil, "IP address is same as broadcast address"
   end

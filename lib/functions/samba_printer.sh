@@ -12,6 +12,7 @@ convert_uri_to_printername(){
   printer_name_part_1=${temp_printer_name%%/*}
   temp_printer_name=${temp_printer_name##*/}
   printer_name_part_2=${temp_printer_name/\?serial=/_}
+  printer_name_part_2=${printer_name_part_2/\&interface=/_}
 
   printer_name="$printer_name_part_1""_""$printer_name_part_2"
   #replace '#' and "%20" with '-'; a printer name cannot include '#'
@@ -29,7 +30,9 @@ usb_printers (){
       local find=`cat /tmp/printcap | grep $printer_name`
       if [ -z "$find" ] ; then
         lpadmin -p "$printer_name" -v $uri -E
-        echo "$printer_name" >> /tmp/printcap
+        if [ $? -eq 0 ] ; then
+          echo "$printer_name" >> /tmp/printcap
+        fi
       fi
       echo "$printer_name"
     fi

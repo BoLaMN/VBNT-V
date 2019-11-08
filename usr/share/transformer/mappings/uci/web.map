@@ -51,6 +51,8 @@ local sessionmgr_map = {
     "bruteforce",
     "relaxfirstattempt",
     "maxwrongattempt",
+    "backOffMethod",
+    "backOffRepeat",
   },
   lists = { "users" }
 }
@@ -102,11 +104,14 @@ local uiconfig_map = {
       "nsplink",
       "upgradefw",
       "alwaysadvanced",
+      "expertMode_globalMsg",
       "open_sw_link",
       -- options used by some custo's
       "nsplogo",
       "dnsserver_query",
-      "expert"
+      "expert",
+      "mainwifi_frequency",
+      "guestwifi_frequency",
     },
     lists = { "upgradefw_role" },
 }

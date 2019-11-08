@@ -1,8 +1,8 @@
 /www/docroot/img/dev_ipdect_s.gif
 /www/docroot/dyndns.lp
 /www/docroot/help/xml/WAN Services3.xml
-/www/docroot/js/main-telstra-min.js
 /www/docroot/help/xml/Gateway0.xml
+/www/docroot/js/main-telstra-min.js
 /www/docroot/help/xml/Diagnostics0.xml
 /www/docroot/img/dev_pda_s_ticked.gif
 /www/docroot/helpfiles/help_wifi.lp
@@ -25,21 +25,23 @@
 /www/docroot/img/dev_printer.gif
 /www/docroot/help/xml/WAN Services4.xml
 /www/docroot/helpfiles/help_broadband.lp
-/www/docroot/img/dev_tbox_s.gif
-/www/docroot/img/dev_tablet_ticked.gif
 /www/docroot/help/xml/Firewall0.xml
+/www/docroot/img/dev_tablet_ticked.gif
+/www/docroot/img/dev_tbox_s.gif
 /www/docroot/help/xml/Diagnostics1.xml
 /www/docroot/help/xml/Broadband0.xml
 /www/docroot/img/home.png
 /www/docroot/traffic.lp
-/www/docroot/img/dev_phone_s.gif
+/www/docroot/img/ap_booster_blue.png
 /www/docroot/device.lp
+/www/docroot/img/dev_phone_s.gif
 /www/docroot/img/broadband.png
 /www/docroot/help/xml/Mobile4.xml
 /www/docroot/img/dev_printer_ticked.gif
 /www/docroot/tod.lp
 /www/docroot/help/index.html
 /www/docroot/help/xml/Wireless1.xml
+/www/lua/telstra_helper.lua
 /www/snippets/help_menubar.lp
 /www/docroot/css/gw-telstra.css
 /www/docroot/help/xml/TelstraWiFiCommunity0.xml
@@ -50,14 +52,17 @@
 /www/docroot/img/dev_gs_s_ticked.gif
 /www/docroot/img/wifi-active.png
 /www/docroot/help/xml/Local Network0.xml
+/www/docroot/wifidevices.lp
 /www/docroot/img/dev_laptop.gif
 /www/docroot/img/dev_storage_s_ticked.gif
 /www/docroot/help/xml/TimeofDay0.xml
 /www/docroot/help/xml/WAN Services5.xml
 /www/docroot/help/xml/Diagnostics2.xml
 /www/docroot/help/xml/Broadband1.xml
+/www/docroot/boosterstatus.lp
 /www/docroot/contentsharing.lp
 /www/docroot/img/dev_phone_ticked.gif
+/www/docroot/img/ethernet.png
 /www/docroot/img/dev_ipdect.gif
 /www/docroot/img/dev_pda_s.gif
 /www/docroot/helpfiles/help_portforwarding.lp
@@ -68,6 +73,8 @@
 /www/docroot/img/home-active.png
 /www/docroot/help/xml/Local Network1.xml
 /www/docroot/home.lp
+/www/docroot/SelfTest.lp
+/www/docroot/help/xml/WAN Services6.xml
 /www/docroot/help/xml/Diagnostics3.xml
 /www/docroot/help/xml/Broadband2.xml
 /www/docroot/img/gw-telstra.png
@@ -81,6 +88,7 @@
 /www/docroot/help/xml/Wireless3.xml
 /www/docroot/help/variables.js
 /www/docroot/help/xml/Telephony3.xml
+/www/docroot/img/ap_gw.png
 /www/docroot/img/dev_printer_s_ticked.gif
 /www/docroot/help/xml/Local Network2.xml
 /www/docroot/img/dev_printer_s.gif
@@ -88,6 +96,7 @@
 /www/docroot/help/main.js
 /www/docroot/img/contentsharing-active.png
 /www/snippets/tabs-parental.lp
+/www/docroot/help/xml/WAN Services7.xml
 /www/docroot/help/xml/Diagnostics4.xml
 /www/docroot/help/xml/Broadband3.xml
 /www/docroot/remoteaccess.lp
@@ -102,19 +111,23 @@
 /www/docroot/help/xml/Local Network3.xml
 /www/docroot/help/xml/Home0.xml
 /www/docroot/help/xml/WAN Services0.xml
+/www/docroot/help/xml/WAN Services8.xml
 /www/docroot/help/xml/InternetAccess0.xml
 /www/docroot/help/xml/Diagnostics5.xml
 /www/docroot/helpfiles/help_home.lp
+/www/snippets/tabs-home.lp
 /www/docroot/img/admin.png
 /www/docroot/img/dev_pda_ticked.gif
 /www/docroot/help/xml/Mobile0.xml
 /www/docroot/img/tipmid.png
 /www/docroot/img/dev_gs.gif
+/www/docroot/img/ap_booster_orange.png
 /www/docroot/user.lp
 /www/docroot/img/dev_tablet_s.gif
 /www/docroot/help/xml/properties.xml
 /www/docroot/img/tipright.png
 /www/docroot/img/wifi.png
+/www/docroot/js/selftest-min.js
 /www/docroot/img/dev_dectphone.png
 /www/docroot/img/dev_desktop_ticked.gif
 /www/docroot/img/dev_tbox_ticked.gif
@@ -124,10 +137,12 @@
 /www/docroot/help/xml/WAN Services1.xml
 /www/docroot/img/tipleft.png
 /www/docroot/wifi.lp
+/www/docroot/help/xml/WAN Services9.xml
 /www/docroot/help/conditions.js
 /www/docroot/help/xml/Mobile1.xml
 /www/docroot/wifiguest.lp
 /www/docroot/help/xml/Management0.xml
+/www/docroot/img/ap_booster_red.png
 /www/docroot/help/catalog.css
 /www/snippets/save.lp
 /www/docroot/img/dev_tablet.gif
@@ -148,12 +163,15 @@
 /www/docroot/help/xml/Mobile2.xml
 /www/docroot/help/xml/Management1.xml
 /www/docroot/img/tiplongleft.png
+/www/docroot/img/wireless.png
 /www/docroot/img/dev_tablet_s_ticked.gif
 /www/snippets/footer.lp
+/www/lua/hni_helper.lua
 /www/docroot/img/parentalcontrol.png
 /www/docroot/img/dev_ipdect_ticked.gif
-/www/docroot/img/status.png
 /www/docroot/img/dev_laptop_s_ticked.gif
+/www/docroot/img/status.png
+/www/docroot/booster.lp
 /www/docroot/help/footer.html
 /www/snippets/apply.lp
 /www/docroot/img/dev_phone_s_ticked.gif

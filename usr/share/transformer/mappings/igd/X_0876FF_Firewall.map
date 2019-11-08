@@ -72,13 +72,12 @@ local InternetGatewayDevice_Multi_ = {
       Config = {
         access = "readOnly",
         type = "string",
-        description = "Denotes the selected configuration of the firewall low, high, off, user",
+        description = "Denotes the selected configuration of the firewall - low, high, off, medium",
         enumeration = {
             "High",
+            "Medium",
             "Low",
-            "X_000E50_User",
             "Off",
-            "X_000E50_Lax",
         }
       },
       InboundConfig = {
@@ -172,6 +171,9 @@ end
 -- Function to check if the given ip address is in private subnet
 local function ipv4PrivateIPValidation(ipaddr)
   local ip = ipv4ToNum(ipaddr)
+  if not ip then
+    return "PublicSubnet"
+  end
   if (ipv4ToNum("192.168.0.0") >= ip and ip <= ipv4ToNum("192.168.255.255")) or (ipv4ToNum("172.16.0.0") >= ip and ip <= ipv4ToNum("172.31.255.255")) or (ipv4ToNum("10.0.0.0") >= ip and ip <= ipv4ToNum("10.255.255.255")) then
     return "PrivateSubnet"
   end
@@ -312,8 +314,5 @@ end
 local duplicator = mapper("multiroot").duplicate
 local duplicates = duplicator(InternetGatewayDevice_Multi_, "#ROOT", {"Firewall.Config.X_0876FF_Custom", "X_0876FF_IPv6Firewall.Config.X_0876FF_Custom"})
 for _, dupli in ipairs(duplicates) do
-  if dupli.objectType.name:match("^InternetGatewayDevice.X_0876FF_IPv6Firewall") then
-    dupli.objectType.parameters["Config"] = nil
-  end
   register(dupli)
 end

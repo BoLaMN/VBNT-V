@@ -181,7 +181,6 @@ uci set dhcp.fonopen.ra_min_interval=200
 uci set dhcp.fonopen.ra_max_interval=600
 uci set dhcp.fonopen.ra_lifetime=1800
 uci set dhcp.fonopen.ra_hoplimit=64
-uci set dhcp.fonopen.ra_max_mtu=1500
 
 uci commit dhcp
 

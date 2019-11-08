@@ -5,7 +5,6 @@ config wansensing 'global'
 	option autofailovermaxwait '10'
 	option voiceonfailover '0'
 	option initmode 'L2Sense'
-	option supervision_mode 'DNS'
 
 config L2State
 	option name 'L2Sense'

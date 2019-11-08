@@ -1,10 +1,11 @@
 Package: zlib
-Version: 1.2.8-1
-Depends: libc, libssp
+Version: 1.2.11-1
+Depends: libc, libssp, librt, libpthread
 Source: package/libs/zlib
 License: Zlib
 LicenseFiles: README
 Section: libs
 Architecture: brcm63xx-tch
-Installed-Size: 38423
-Description:  Library implementing the deflate compression method
+Installed-Size: 40388
+Description:  zlib is a lossless data-compression library.
+ This package includes the shared library.

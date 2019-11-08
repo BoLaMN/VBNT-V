@@ -1,5 +1,5 @@
 local register = register
-local popen = io.popen
+local network = require("transformer.shared.common.network")
 
 local sys_mem_ = {
     objectType = {
@@ -93,20 +93,6 @@ overlayfs:/overlay/bank_1
 --]]
 
 local function get(mapping, paramName)
-    local function getMemInfo(cmd)
-        local fp = popen(cmd)
-        if fp == nil then
-            return ""
-        end
-        local line = fp:read("*l")
-        if not line then
-            return ""
-        else
-            fp:close()
-            return line
-        end
-    end
-
     local cmd = ""
     if paramName == "RAMTotal" then
         cmd = "free | grep Mem | tr -s ' ' | cut -d' ' -f 2"
@@ -124,7 +110,7 @@ local function get(mapping, paramName)
         return ""
     end
 
-    return getMemInfo(cmd)
+    return network.executeCommand(cmd)
 end
 
 sys_mem_.get = get

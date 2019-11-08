@@ -34,7 +34,7 @@
     <b>IPv6 address</b>
   </li2>
   <li2>
-    <b>Gateway</b>
+    <b><var name="1-productname01" /></b>
   </li2>
   <li2>
     <b>DNS servers</b>
@@ -44,7 +44,7 @@
   <li3>Status</li3>
   <li3>IP address</li3>
   <li3>IPv6 address</li3>
-  <li3>Gateway</li3>
+  <li3><var name="1-productname01" /></li3>
   <li3>DNS servers</li3>
   <li2>The <b>PPP Credential settings</b> contains the following settings:</li2>
   <li3>Username</li3>

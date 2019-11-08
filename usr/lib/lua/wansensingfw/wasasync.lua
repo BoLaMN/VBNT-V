@@ -64,7 +64,34 @@ function M.init (rt, event_cb)
     events['bfdecho'] = function(msg)
         if msg and msg.interface and msg.state then
             local value = msg.state == "1" and "ok" or "nok"
-            cb('bfdecho_' .. msg.interface:gsub('[^%a%d_]','_') ..'_' .. value)
+            cb('supervision_' .. msg.interface:gsub('[^%a%d_]','_') ..'_' .. value)
+        end
+    end
+
+    events['dns'] = function(msg)
+        if msg and msg.interface and msg.state then
+            local value = msg.state == "1" and "ok" or "nok"
+            cb('supervision_' .. msg.interface:gsub('[^%a%d_]','_') ..'_' .. value)
+        end
+    end
+
+    events['dhcp.client'] = function(msg)
+        if msg and msg.interface then
+            if msg.event == "renew" then
+                cb('dhcp_renew_' .. msg.interface:gsub('[^%a%d_]','_') .. '_renew')
+            elseif msg.event == "renew_failed" then
+                cb('dhcp_renew_' .. msg.interface:gsub('[^%a%d_]','_') .. '_failed')
+            end
+        end
+    end
+
+    events['dhcpv6.client'] = function(msg)
+        if msg and msg.interface then
+            if msg.event == "updated" then
+                cb('dhcp_renew_' .. msg.interface:gsub('[^%a%d_]','_') .. '_renew')
+            elseif msg.event == "renew_failed" then
+                cb('dhcp_renew_' .. msg.interface:gsub('[^%a%d_]','_') .. '_failed')
+            end
         end
     end
 

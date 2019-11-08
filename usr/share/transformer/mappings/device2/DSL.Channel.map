@@ -193,7 +193,7 @@ local DSLChannel = nwmodel.register("DSLChannel", Device_DSL_Channel_i_.objectTy
 local model
 
 local ubusConnection = mapper("ubus").connect()
-local xdslctl = require("transformer.shared.xdslctl")
+local dsl_supported, xdslctl = pcall(require,"transformer.shared.xdslctl")
 local posix = require("tch.posix")
 local tostring = tostring
 local getClockTime = posix.clock_gettime

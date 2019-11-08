@@ -4,8 +4,8 @@ local proxy = require("datamodel")
 local cursor = require("uci").cursor()
 local curl = require("cURL").easy_init()
 local json = require("dkjson")
-local gzip = require("gzip")
 local lfs = require("lfs")
+local zlib = require("zlib")
 
 local setmetatable = setmetatable
 local ipairs = ipairs
@@ -26,10 +26,8 @@ local tonumber = tonumber
 local time = os.time
 local date = os.date
 local open = io.open
-
 -- for content saving and transferring
 local path_retain = "/etc/bulkdata"
-local path_var = "/var/bulkdata"
 local max_retain_failed_reports = 10
 
 -- for crontab updating
@@ -44,6 +42,14 @@ local cpe_uri = {
   oui = ".DeviceInfo.ManufacturerOUI",
   pc  = ".DeviceInfo.ProductClass",
   sn  = ".DeviceInfo.SerialNumber",
+}
+
+-- number type predefiend
+local number_type = {
+  unsignedInt = true,
+  unsignedLong = true,
+  int = true,
+  long = true,
 }
 
 -- Get the name and reference from the structure of "<reference>|<name>"
@@ -129,7 +135,10 @@ local function get_http_header(profile)
   local http_usedate_header = (profile.http_usedate_header ~= '0')
   local report_format = profile.json_report_format or "ObjectHierarchy"
 
-  local httpheader = {}
+  local httpheader = {
+    "Accept: application/json",
+    "Content-Type: application/json",
+  }
 
   httpheader[#httpheader+1] = format("BBF-Report-Format: %s", report_format)
   if http_usedate_header then
@@ -157,7 +166,7 @@ local function get_table(index, t)
   end
 end
 
--- Save current profile report content to a gzip file
+-- Save current profile report content to a file
 -- This file will be deleted after succeed reporting or it is too old to be deleted
 -- Parameters:
 --   [table] the profile contents
@@ -165,9 +174,9 @@ end
 --   [string] the content of tranferred profile data
 -- Returns:
 local function save_retain_file(profile, timestamp, content)
-  local gzfilename = format("%s/%s_%s.json.gz", path_retain, profile['.name'], timestamp)
-  --save content after as gzip file
-  local of = gzip.open(gzfilename, "wb9")
+  local filename = format("%s/%s_%s.json", path_retain, profile['.name'], timestamp)
+  --save content to a file
+  local of = open(filename, "w")
   if of then
     of:write(content)
     of:close()
@@ -194,8 +203,8 @@ local function get_retain_filelist(profile)
   if retain_failed_reports > 0 then
     lfs.chdir(path_retain)
     for file in lfs.dir(path_retain) do
-      if find(file, "%.json%.gz$") then
-        if find(file, format("^%s_%%d+%%.json%%.gz$", profile['.name'])) then
+      if find(file, "%.json$") then
+        if find(file, format("^%s_%%d+%%.json$", profile['.name'])) then
           filelist[#filelist+1] = file
         end
       else
@@ -223,13 +232,46 @@ local function delete_all_retain_file(profile)
   -- remove the saved encoded files
   lfs.chdir(path_retain)
   for file in lfs.dir(path_retain) do
-    if find(file, format("^%s_%%d+%%.json%%.gz$", profile['.name'])) then
+    if find(file, format("^%s_%%d+%%.json$", profile['.name'])) then
       os.remove(file)
     end
   end
 end
 
--- Encode the data defined by profile to JSON and save the content by gzip compressed
+-- Get encoding name from the parameter configed name
+-- Parameters:
+--   [table] names: the name and reference mapping table
+--   [string] nameid: identifier to getting the name from name list
+--   [table] ids: instance identifiers for wildcard and partial path
+--   [string] param: parameter name for partial path
+-- Returns:
+--   [string] encoding_name: the name to be used in the report
+local function get_encoding_name(names, nameid, ids, param)
+  if type(names) ~= "table" or not names[nameid] or names[nameid] == "" then
+    return
+  end
+  local name = names[nameid]
+  -- Remove non digital index from ids table
+  local indexs = {}
+  for k,v in ipairs(ids) do
+    if v:match("^%d+$") then
+      insert(indexs, v)
+    elseif v:match("%.") then
+      insert(indexs,match(v,"(%w+)%.%w+"))
+    end
+  end
+  if #indexs > 0 and indexs[1]:match("^%d+$") then
+    local idstr = concat(indexs, ".")
+    name = format("%s.%s", name, idstr)
+  end
+  if type(param) == "string" then
+    name = format("%s.%s", name, param)
+  end
+  return name
+end
+
+
+-- Encode the data defined by profile to JSON and save the content to a file
 -- The format of the content:
 --     {
 --       <reporting data>
@@ -246,6 +288,7 @@ local function json_encode_content(profile)
   local parameters = profile.parameters
 
   local data = {}
+  local names = {}
   local paths = {}
   local pathset = {}
   local partial_pathset = {}
@@ -259,16 +302,21 @@ local function json_encode_content(profile)
 
   if parameters and #parameters > 0 then
     for _,v in ipairs(parameters) do
-      local _, reference = get_name_reference(v)
+      local name, reference = get_name_reference(v)
       if reference ~= "" then
         --deal with the wildcards in the reference object instances
         --get the first part path not including "*" and save all references to a set of path
         paths[#paths+1] = match(reference, "^([^\*]+)")
         --save all references for checking
         if reference:sub(-1, -1) == "." then
-          partial_pathset[#partial_pathset+1] = gsub(reference, "%*", "%%d+")
+          local part = gsub(reference, "%*", "([%%w_]+)")
+          part = gsub(part, "%.", "%%.")
+          part = part .. "*([%w_%.]*)"
+          partial_pathset[#partial_pathset+1] = part
+          names[part] = name
         else
           pathset[#pathset+1] = reference
+          names[reference] = name
         end
       end
     end
@@ -276,9 +324,16 @@ local function json_encode_content(profile)
 
   local result = proxy.get(unpack(paths))
   local pathstr = concat(pathset, " ")
+  local limits = {}
+  for _, pl in ipairs(profile.param_limits or {}) do
+    local l_pattern, l_max = pl:match("^(.*)|(.*)")
+    insert(limits, {pattern = l_pattern, max = tonumber(l_max), count = 0, index = {} })
+  end
   for _,param in ipairs(result or {}) do
     -- deal with full path
     local name = format("%s%s", param.path, param.param)
+    -- encoding name
+    local encoding_name = name
     --replace all "." to a real character, not replace all characters
     local pattern = gsub(name, "%.", "%.")
     --because of the wildcard is "*" and in the real path it is a digital number
@@ -288,31 +343,63 @@ local function json_encode_content(profile)
     local matched = false
     for p in gmatch(pathstr, pattern) do
       --reverse checking
-      p = gsub(p, "%*", "%%d+")
-      if match(name, p) then
+      local np = gsub(p, "%*", "(%%d+)")
+      local ids = { match(name, np) }
+      if #ids > 0 then
+        encoding_name = get_encoding_name(names, p, ids)
         matched = true
         break
       end
     end
     -- deal with partial path
     if not matched and #partial_pathset > 0 then
+      local temp_path  = format("%s%s", param.path, param.param)
       for _,p in ipairs(partial_pathset) do
-        if match(param.path, p) then
-          matched = true
-          break
+        local ids = { match(temp_path, p) }
+        local ignore = false
+        if #ids > 0 then
+          --Deal with limitation for the parameter configuration
+          for _, lim in ipairs(limits) do
+            local limid = temp_path:match(format("%s(%%d+)", lim.pattern))
+            if limid then
+              if lim.count < lim.max then
+                if not lim.index[limid] then
+                  lim.count = lim.count + 1
+                  lim.index[limid] = true
+                end
+              else
+                ignore = true
+              end
+              break
+            end
+          end
+          if not ignore then
+            encoding_name = get_encoding_name(names, p, ids, param.param)
+            matched = true
+            break
+          end
         end
       end
     end
 
     if matched then
+      local value
+      if number_type[param.type] then
+        value = tonumber(param.value)
+      else
+        value = param.value
+      end
       if report_format == "NameValuePair" then
-        data[name] = param.value
+        if not encoding_name then
+          encoding_name = name
+        end
+        data[encoding_name] = value
       elseif report_format == "ObjectHierarchy" then
         local index = {}
         for k in gmatch(param.path, "([^\.]+)") do
           index[#index+1] = k
         end
-        get_table(index, data)[param.param] = param.value
+        get_table(index, data)[param.param] = value
       end
     end
   end
@@ -327,8 +414,7 @@ local function json_encode_content(profile)
   return content
 end
 
--- Generate reporting JSON encode file to be transferrd
--- The transferred file is named <profile name>.json.trsf
+-- Generate reporting JSON encode data to be transferrd
 -- The layout of content for failed report transmissions or only current reporting files
 -- {
 --   "Report": [
@@ -345,49 +431,32 @@ end
 --   [table] the profile contents
 --   [table] http header table
 -- Returns:
---   [string] to be transferred file (whole path and name) or nil and error message
-local function generate_transfer_file(profile, httpheader)
+--   [string] to be transferred data or nil and error message
+local function generate_transfer_data(profile, httpheader)
   local http_compression = upper(profile.http_compression or "NONE")
-  local transfer_file = format("%s/%s.json.trsf", path_var, profile['.name'])
-
-  -- save the content to plain or gzip
-  local of = nil
-  if http_compression == "GZIP" then
-    -- gzip
-    of = gzip.open(transfer_file, "wb9")
-    httpheader[#httpheader+1] = "Content-Encoding: gzip"
-  else
-    --plain txt
-    of = open(transfer_file, "w")
-  end
-
-  if not of then
-    return nil, "Open transfer file failed!"
-  end
-
-  --write header
-  of:write("{", "\n")
-  of:write("  \"Report\":[", "\n")
+  local header = "{\n  \"Report\":["
+  local tail = "  ]\n}"
+  local data = header
 
   local filelist = get_retain_filelist(profile)
   -- decode and write to the transfer file
   for _,file in ipairs(filelist or {}) do
-    local inf = gzip.open(format("%s/%s", path_retain, file))
+    local inf = open(format("%s/%s", path_retain, file), "r")
     if inf then
-      of:write(inf:read("*all"), ",\n")
+      data = format("%s\n%s,", data, inf:read("*all"))
       inf:close()
     end
   end
 
   -- add the current content
   local content = json_encode_content(profile)
-  of:write(content, "\n")
-
-  --write tail
-  of:write("  ]", "\n")
-  of:write("}", "\n")
-  of:close()
-  return transfer_file
+  data = format("%s\n%s\n%s", data, content, tail)
+  if http_compression == "GZIP" then
+    httpheader[#httpheader+1] = "Content-Encoding: gzip"
+    return zlib.compress(data, zlib.BEST_COMPRESSION, nil, zlib.DEFAULT_WINDOWBITS+zlib.GZIP_WINDOWBITS)
+  else
+    return data
+  end
 end
 
 -- Generate a random number between min and max
@@ -424,6 +493,9 @@ local function do_transfer_data(profile)
   local m = tonumber(profile.retry_min_interval) or 5
   local k = tonumber(profile.retry_interval_multiplier) or 2000
   local report_interval = tonumber(profile.report_interval) or 86400
+  local ca_info = profile.ca_info or "/etc/ssl/certs/ca-certificates.crt"
+  local ssl_verifyhost = profile.ssl_verify_host == '1' and 2 or 0
+  local ssl_verifypeer = profile.ssl_verify_peer == '1' and 2 or 0
 
   if protocol == "HTTP" and encode_type == "JSON" and http_method == "POST" then
     local httpurl = profile.http_url
@@ -438,12 +510,15 @@ local function do_transfer_data(profile)
     end
 
     local httpheader = get_http_header(profile)
-    local transfer_file = generate_transfer_file(profile, httpheader)
+    local data = generate_transfer_data(profile, httpheader)
+    curl:setopt_post(1)
     curl:setopt_httpheader(httpheader)
-    -- post file from filesystem
-    local postdata = {name = {file=transfer_file, type="application/json"}}
-    curl:post(postdata)
+    curl:setopt_postfields(data)
+    curl:setopt_postfieldsize(#data)
 
+    curl:setopt_ssl_verifyhost(ssl_verifyhost)
+    curl:setopt_ssl_verifypeer(ssl_verifypeer)
+    curl:setopt_cainfo(ca_info)
     k = math.ceil(k/1000)
     local interval = random(m, m*k)
     local attempt = 0
@@ -473,8 +548,6 @@ local function do_transfer_data(profile)
         delete_all_retain_file(profile)
       end
     until (success or (not retry_enable) or (total_time > report_interval) or (interval >= report_interval))
-    -- remove transfer file from /var/bulkdata
-    os.remove(transfer_file)
     if not success then
       return nil, "Sending is failed!"
     else
@@ -516,6 +589,7 @@ local function do_update_crontab(profile)
 
   -- get reference time by seconds
   timeref.year, timeref.month, timeref.day, timeref.hour, timeref.min, timeref.sec = match(time_reference, pattern)
+  timeref.sec = 0
   local reference = time(timeref)
   -- add 1 seconds offset for current time to avoid transfer too fast to update next crontab task
   local current = time() + 1
@@ -620,11 +694,26 @@ local function main(args)
   if #args > 1 then
     local action = remove(args, 1)
     profiletimed = {}
+    local seconds = {}
+    local profiles = {}
+    local pattern = "^%d+%-%d+%-%d+T%d+:%d+:(%d+)Z$"
     for _,v in ipairs(args) do
-      local profile = cursor:get_all("bulkdata", v)
-      if profile then
-        actions[action](profile)
+      profiles[v] = cursor:get_all("bulkdata", v)
+      if profiles[v] and profiles[v].enabled ~= "0" then
+        insert(seconds, {v, tonumber(match(profiles[v].time_reference, pattern) or 0)})
       end
+    end
+    sort(seconds, function(a,b) return a[2]<b[2] end)
+    local presecond = 0
+    for _,v in ipairs(seconds) do
+      if action == "transfer" then
+        local delay = v[2]-presecond
+        presecond = v[2]
+        if delay > 0 then
+          os.execute("sleep " .. tostring(delay))
+        end
+      end
+      actions[action](profiles[v[1]])
     end
 
     -- according to update status to decide reconfiguration crontab or not

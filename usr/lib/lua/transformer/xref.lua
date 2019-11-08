@@ -11,8 +11,8 @@ See LICENSE file for more details.
 ]]
 
 local insert, remove = table.insert, table.remove
-local pairs, ipairs, string, type, error, pcall =
-      pairs, ipairs, string, type, error, pcall
+local ipairs, string, type, error, pcall =
+      ipairs, string, type, error, pcall
 
 local M = {}
 
@@ -170,7 +170,7 @@ function M.tokey(store, objectpath, typepath, ...)
   end
 
   -- convert given objectpath to its typepath and inumbers
-  local tp, inumbers = objectPathToTypepath(objectpath)
+  local tp, inumbers, aliases = objectPathToTypepath(objectpath)
 
   -- the found typepath (tp) must exist
   local mapping = store:get_mapping_exact(tp)
@@ -202,16 +202,18 @@ function M.tokey(store, objectpath, typepath, ...)
     return "", tp
   end
 
+  store:convertAliasesToIrefs(maplist, aliases, inumbers)
+
   -- Retrieve all keys from DB and check any optional single instances exist.
   local key
-  local rc, keys = pcall(store.getkeys, store, maplist, inumbers, empty, true)
+  local rc, keys = pcall(store.getkeys, store, maplist, inumbers, aliases, true)
   if rc then
     -- Everything checked out OK; our key is the first one in the list.
     -- (keys are returned in reverse order)
     key = keys[1]
   else
     -- Some instance could not be found; try again but allow to sync.
-    rc, keys = pcall(store.getkeys, store, maplist, inumbers, empty)
+    rc, keys = pcall(store.getkeys, store, maplist, inumbers, aliases)
     if rc then
       key = keys[1]
     end

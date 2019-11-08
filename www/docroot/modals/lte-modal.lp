@@ -13,6 +13,8 @@ local untaint_mt = require("web.taint").untaint_mt
 local content_helper = require("web.content_helper")
 local message_helper = require("web.uimessage_helper")
 local proxy = require("datamodel")
+local telstra_helper = require("telstra_helper")
+local symbolv1 = telstra_helper.symbolnamev1
 
 local gVCS = post_helper.getValidateCheckboxSwitch()
 local gVIES = post_helper.getValidateInEnumSelect
@@ -215,11 +217,6 @@ local function get_network_interface_section(page, html)
 		intf[3] = label_map[intf[3]] or "On"
 	end
 
-	local apn_warning = {
-		alert = {
-			class = "alert-warning"
-		},
-	}
 	if utils.Len(interfaces_data) > 0 then
 		local authentication_warning = {
 			alert = {
@@ -238,13 +235,6 @@ local function get_network_interface_section(page, html)
 			end
 		end
 		tinsert(html, "<fieldset><legend>" .. T"Interfaces" .. "</legend>")
-
-		--to find the not used linked_profile, since there is only one lte interface, so no need to loop
-		for _, v in pairs(page.profiles_select) do
-			if v[2] == "telstra.hybrid" then
---				tinsert(html, ui_helper.createAlertBlock(T"You must select the <strong>telstra.hybrid</strong> profile for your backup service to work.", apn_warning))
-			end
-		end
 		tinsert(html, ui_helper.createAlertBlock(T"The device does not support the authentication of the selected profile.", authentication_warning))
 		tinsert(html, ui_helper.createTable(interfaces_columns, interfaces_data, interfaces_options, nil, interfaces_helpmsg))
 		tinsert(html, "</fieldset>")
@@ -341,7 +331,7 @@ local function get_session_info_section(page, html)
 			local errors = proxy.get(page.device.rpc_path .. "errors.")
 			for _, errorInfo in pairs(errors) do
 				if errorInfo.param == "type" and string.untaint(errorInfo.value) == "pdn_retry_timer_max_duration" then
-					local str = T"Maximum retry duration reached. Please check and correct your mobile configuration and reboot the gateway"
+					local str = T("Maximum retry duration reached. Please check and correct your mobile configuration and reboot the " .. symbolv2)
 					tinsert(section, ui_helper.createLabel(T"Connection Retry" .. ":", str, { span = { class="span4" } }))
 					break
 				end

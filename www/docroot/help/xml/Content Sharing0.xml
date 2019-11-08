@@ -46,15 +46,15 @@
   <li2>Share</li2>
   <h4>DLNA Specifications </h4>
   <stem>To use the DLNA feature, make sure you have the following:</stem>
-  <li1>A device that’s contains proper media files that can be recognized by  Gateway Supported files types (see below); for example, a USB Hard disk.</li1>
+  <li1>A device that’s contains proper media files that can be recognized by <var name="1-productname01" /> Supported files types (see below); for example, a USB Hard disk.</li1>
   <li1>A device that’s compatible with Digital Living Network Alliance (DLNA); for example, a PC running Windows with the DLNA client software installed , like XBMC http://kodi.tv/download/ .</li1>
-  <li1>A local network connection between the Gateway and the DLNA-compatible device.</li1>
+  <li1>A local network connection between the <var name="1-productname01" /> and the DLNA-compatible device.</li1>
   <stem>Supported file types (media profiles):</stem>
   <li1>Image: JPEG, PNG</li1>
   <li1>Audio: mp3 pcm wav tts</li1>
   <li1>Video: mpg tts wma wmv mp4 3gp adts(mpeg-2) ifo.</li1>
   <stem>Supported file system on HD</stem>
-  <p>As Gateway, below file system are supported:</p>
+  <p>As <var name="1-productname01" />, below file system are supported:</p>
   <li1>FAT16</li1>
   <li1>FAT32</li1>
   <li1>NTFs</li1>

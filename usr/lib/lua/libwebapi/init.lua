@@ -1,5 +1,3 @@
-local table, unpack, type = table, unpack, type
-
 local ubus = require("ubus")
 local dev = require("libwebapi.device")
 local helper = require("mobiled.scripthelpers")
@@ -46,21 +44,21 @@ local function run_action(dev_idx, action, ...)
 
 	local ret
 	if mapping_function and (t == "override" or t == "runfirst") then
-		ret, errMsg = mapping_function(device.mapper, device, unpack(arg))
+		ret, errMsg = mapping_function(device.mapper, device, ...)
 		if t == "override" then
 			return ret, errMsg
 		end
 	end
 
 	if M.mappings[action] then
-		ret, errMsg = M.mappings[action](device, unpack(arg))
+		ret, errMsg = M.mappings[action](device, ...)
 		if t ~= "augment" or mapping_function == nil then
 			return ret, errMsg
 		end
 	end
 
 	if mapping_function then
-		return mapping_function(device.mapper, device, unpack(arg))
+		return mapping_function(device.mapper, device, ...)
 	end
 	return true
 end
@@ -95,14 +93,29 @@ function M.add_device(params)
 	return device.id
 end
 
-local function get_gateway_ip()
+local function get_gateway_ip(dev_idx)
 	local conn = ubus.connect()
-	local data = helper.getUbusData(conn, "network.interface.libwebapi_control1", "status", {})
+	local data = helper.getUbusData(conn, string.format("network.interface.libwebapi_control%d", dev_idx), "status", {})
 	if data and type(data.route) == "table" then
 		for _, route in pairs(data.route) do
 			if type(route) == "table" then
-				if route.target and route.target ~= "0.0.0.0" then
-					return route.target
+				if route.target and route.source and route.target ~= "0.0.0.0" then
+					return {
+						target = route.target,
+						source = route.source:match("^([^/]*)")
+					}
+				end
+			end
+		end
+		if data.inactive and type(data.inactive.route) == "table" then
+			for _, route in pairs(data.inactive.route) do
+				if type(route) == "table" then
+					if route.target and route.source then
+						return {
+							target = route.nexthop,
+							source = route.source:match("^([^/]*)")
+						}
+					end
 				end
 			end
 		end
@@ -116,9 +129,10 @@ function M.init_device(dev_idx, device_desc)
 
 	local retries = 5
 	while retries > 0 do
-		local ip = get_gateway_ip()
+		local ip = get_gateway_ip(dev_idx)
 		if ip then
-			device.web_info.ip = ip
+			device.web_info.ip = ip.target
+			device.web_info.local_ip = ip.source
 			break
 		end
 		helper.sleep(2)
@@ -152,7 +166,7 @@ function M.destroy_device(dev_idx, force)
 	local device, errMsg = get_device(dev_idx)
 	if not device then return nil, errMsg end
 
-	runtime.log:info("Destroy device " .. dev_idx)
+	runtime.log:notice("Destroy device " .. dev_idx)
 
 	local conn = ubus.connect()
 	if conn then
@@ -171,7 +185,7 @@ end
 function M.get_ip_info(dev_idx, session_id)
 	local device, errMsg = get_device(dev_idx)
 	if not device then return nil, errMsg end
-	
+
 	local info = {}
 	run_action(dev_idx, "get_ip_info", info, session_id)
 	helper.merge_tables(info, device.buffer.ip_info)
@@ -315,24 +329,44 @@ function M.network_scan(dev_idx, start)
 	return run_action(dev_idx, "network_scan", start) or {}
 end
 
+local function send_sms(device, number, message)
+	return nil, "Not supported"
+end
+
 function M.send_sms(dev_idx, number, message)
+	return run_action(dev_idx, "send_sms", number, message)
+end
+
+local function delete_sms(device, message_id)
 	return nil, "Not supported"
 end
 
 function M.delete_sms(dev_idx, message_id)
+	return run_action(dev_idx, "delete_sms", message_id)
+end
+
+local function set_sms_status(device, message_id, status)
 	return nil, "Not supported"
 end
 
 function M.set_sms_status(dev_idx, message_id, status)
+	return run_action(dev_idx, "set_sms_status", message_id, status)
+end
+
+local function get_sms_info(device)
 	return nil, "Not supported"
 end
 
 function M.get_sms_info(dev_idx)
+	return run_action(dev_idx, "get_sms_info")
+end
+
+local function get_sms_messages(device)
 	return nil, "Not supported"
 end
 
 function M.get_sms_messages(dev_idx)
-	return nil, "Not supported"
+	return run_action(dev_idx, "get_sms_messages")
 end
 
 function M.reconfigure_plugin(config)
@@ -395,7 +429,12 @@ end
 M.mappings = {
 	get_device_info = get_device_info,
 	get_device_capabilities = get_device_capabilities,
-	set_power_mode = set_power_mode
+	set_power_mode = set_power_mode,
+	send_sms = send_sms,
+	delete_sms = delete_sms,
+	set_sms_status = set_sms_status,
+	get_sms_info = get_sms_info,
+	get_sms_messages = get_sms_messages
 }
 
 return M

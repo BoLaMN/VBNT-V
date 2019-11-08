@@ -6,7 +6,7 @@
 local M = {}
 
 function M.version()
-	return "0.6-c83a8d3f9e920b02cac5583e98f8a0e2d2b16e69"
+	return "0.6-9e63d55789455f27d322e98888c7ebf7edb44b86"
 end
 
 return M

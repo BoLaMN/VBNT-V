@@ -17,9 +17,8 @@
 local ubus = require("ubus")
 local uloop = require("uloop")
 local lfs = require("lfs")
-local logger = require 'transformer.logger'
-logger.init(6, false)
-local log = logger.new("hostmanager", 6)
+local log = require ('tch.logger')
+log.init("hostmanager", 6)
 
 local cursor = require("uci").cursor()
 
@@ -27,6 +26,8 @@ local popen = io.popen
 local open = io.open
 local match = string.match
 local lower = string.lower
+local upper = string.upper
+local find = string.find
 local dir = lfs.dir
 
 local tonumber = tonumber
@@ -42,10 +43,14 @@ local extinfo_supported, extinfo_plugin = pcall(require, "hostmanager.extinfo")
 
 -- Retention policy
 local MIN_DELETE_TIMER_VALUE = 5 * 60 -- 5 minutes
+local LINKDOWN_TIMER_VALUE = 3 -- seconds
+local MAX_LINKDOWN_RETRIES = 5 -- seconds
+local WIRELESS_REPEATER_DISCOVERY_TIMEOUT = 30 -- seconds
 local global_policy = { delete_delay = -1, max_devices_per_interface = -1 }
 local interfaces_data = { }
 local delete_timer = nil
 local devices_linkdown_timer = nil
+local devices_linkdown_trial = 0
 
 -- UBUS connection
 local ubus_conn
@@ -63,6 +68,9 @@ local devices_linkdown = {}
 local deferred_wireless_status_scan = true
 local remote_radio_interfaces = {}
 local active_wireless_ssids = {}
+local connected_wireless_repeaters = {}
+local new_wireless_repeaters = {}
+local wireless_repeater_discovery_timer = nil
 
 -- Identify whether current changing device ismanageable or not
 local ismanageable = false
@@ -176,7 +184,7 @@ local function load_configuration()
     end
 
     if s["delete_delay"] then
-      local _, _, value, unit = string.find(s["delete_delay"], "^(%d+)([smhdw]?)$")
+      local _, _, value, unit = find(s["delete_delay"], "^(%d+)([smhdw]?)$")
       value = tonumber(value)
       if value then
 	if unit == "w" then
@@ -282,31 +290,64 @@ end
 -- [string] the bridge or an empty string if not found
 local function get_bridge_from_if(interface)
   local syspath = "/sys/class/net/" .. interface .. "/brport/bridge/uevent"
-  local f = popen ("cat " .. syspath .. " | awk -F '=' '/INTERFACE=/ {print $2}'")
+  local f = open (syspath)
 
   if f == nil then
     return ""
   end
 
-  local out = f:read("*l")
-  if ( out == nil ) then
-    f:close()
-    return ""
+  local line = f:read()
+  local bridge
+  while not bridge and line do
+    bridge = line:match("INTERFACE=(.+)")
+    line = f:read()
   end
+  f:close()
 
-  return out
+  return bridge or ""
 end
 
--- Determines whether a certain MAC address belongs to a wireless device
+-- Probe a specific host address
 --
 -- Parameters:
--- - interface: [string] interface name (usually wl0)
+-- - interface: [string] interface towards the host
+-- - macaddress: [string] MAC address of the host
+-- - iptype: [string] Type of the IP address (ipv4 or ipv6)
+-- - ipaddress: [string] IP address of the host
+local function probe_address(interface, macaddress, iptype, ipaddress)
+  log:info("Probing device " .. macaddress .. " IP address " .. ipaddress .. " on interface " .. interface);
+  ubus_conn:call("network.neigh", "probe", {
+		      ["interface"]=interface,
+		      ["mac-address"]=macaddress,
+		      [iptype.."-address"]=ipaddress})
+end
+
+-- Probe all connected and stalled IP addresses of a device
+--
+-- Parameters:
+-- - device: [table] the device entry
+local function probe_device_addresses(device)
+  local mac = device["mac-address"]
+  local l3interface = device["l3interface"]
+  for _, mode in ipairs(ip_modes) do
+    for _, ip in pairs(device[mode]) do
+      if ip.state == "connected" or ip.state == "stale" then
+	probe_address(l3interface, mac, mode, ip.address)
+      end
+    end
+  end
+end
+
+-- Retrieve wireless.accesspoint.station information
+--
+-- Parameters:
+-- - interface: [string] interface name (e.g. wl0)
 -- - macaddress: [string] the MAC address of the device
 --
 -- Returns:
 -- - nil if no information was found
 -- - otherwise [boolean] true, [string] radio name, [string] access point name, [string] ssid name, [table] wireless station information
-local function is_wireless(interface, macaddress)
+local function get_wireless_station_data(interface, macaddress)
   local radio, accesspoint, ssid, stai
 
   for s, sv in pairs(active_wireless_ssids) do
@@ -322,11 +363,380 @@ local function is_wireless(interface, macaddress)
 	    accesspoint = sv.accesspoint
 	    ssid = s
 	    stai = y
+	    stai.parent = sv.bssid
 	    return true, radio, accesspoint, ssid, stai
 	  end
 	end
       end
     end
+  end
+
+  return nil
+end
+
+-- Checks if wireless station is active in  mapVendorExtensions.agent.station data model
+-- and return its BSSID field (Multiap support)
+--
+-- Parameters:
+-- - interface: [string] interface name (e.g. wl0)
+-- - macaddress: [string] the MAC address of the device
+--
+-- Returns:
+-- - BSSID value if station is present and active
+-- - nil otherwise
+local function get_map_agent_station_bssid(macaddress)
+  local reply = ubus_conn:call("mapVendorExtensions.agent.station", "get", { macaddr = upper(macaddress) })
+  if type(reply) == "table" then
+    for _, sv in pairs(reply) do
+      if type(sv) == "table" and sv.Active == "1" and sv.BSSID then
+	return lower(sv.BSSID)
+      end
+    end
+  end
+
+  return nil
+end
+
+-- Scan mapVendorExtensions.agent info (Multiap support)
+--
+-- Returns:  nil
+local function scan_map_agent_data(macaddress)
+  local repeater_id, repeater_connectiontype, repeater_parent, repeater_macaddr
+  local bssids = {}
+
+  -- Extract the repeater identifiers
+  local reply = ubus_conn:call("mapVendorExtensions.agent", "get", {})
+  local has_repeaters
+  if type(reply) == "table" then
+    for id, sv in pairs(reply) do
+      bssids = {}
+      if (type(sv) == "table" and type(sv.NoOfRadios) == "number" and sv.NoOfRadios > 0 and
+	type(sv.ConnectionType) == "string" and sv.ConnectionType ~= "") then
+	new_wireless_repeaters[id] = true
+	has_repeaters = true
+      end
+    end
+  end
+  if has_repeaters then
+    wireless_repeater_discovery_timer:set(WIRELESS_REPEATER_DISCOVERY_TIMEOUT * 1000)
+  end
+end
+
+-- Checks if MAC address is listed mapVendorExtensions.agent data model
+-- and return the repeater MAC address along with all its BSSIDs (Multiap support)
+--
+-- Parameters:
+-- - interface: [string] interface name (e.g. wl0)
+-- - macaddress: [string] the MAC address of the device
+--
+-- Returns:
+-- - repeater ID, connection type, parent, MAC address, bssids_array
+local function get_map_agent_data(macaddress)
+  local repeater_id, repeater_connectiontype, repeater_parent, repeater_macaddr
+  local bssids = {}
+
+  -- Extract the repeater MAC address that identify its wireless station
+  -- along with all its BSSIDs
+  local reply = ubus_conn:call("mapVendorExtensions.agent", "get", {})
+  if type(reply) == "table" then
+    for id, sv in pairs(reply) do
+      bssids = {}
+      if type(sv) == "table" and type(sv.NoOfRadios) == "number" and type(sv.MACAddress) == "string" then
+	local i = 1
+	while i <= sv.NoOfRadios do
+	  local rv = sv["radio_" .. tostring(i)]
+	  if type(rv) == "table" and type(rv.RadioID) == "string" and type(rv.BSSID) == "table" then
+	    if lower(rv.RadioID) == macaddress then
+	      repeater_macaddr = lower(sv.MACAddress)
+	    end
+	    for _, av in pairs(rv.BSSID) do
+	      if type(av) ~= "table" then
+		break
+	      end
+	      for _, bv in pairs(av) do
+		if type(bv) ~= "string" then
+		  break
+		end
+		local bssid = lower(bv)
+		bssids[bssid] = true
+		if bssid == macaddress then
+		  repeater_macaddr = lower(sv.MACAddress)
+		end
+	      end
+	    end
+	  end
+	  i = i + 1
+	end
+      end
+      if repeater_macaddr then
+	repeater_id = id
+	repeater_connectiontype = lower(sv.ConnectionType)
+	repeater_parent = lower(sv.ParentAccessPoint)
+	break
+      end
+    end
+  end
+
+  local repeater_bssids = {}
+  for bssid, _ in pairs(bssids) do
+    repeater_bssids[#repeater_bssids + 1] = bssid
+  end
+
+  return repeater_id, repeater_connectiontype, repeater_parent, repeater_macaddr, repeater_bssids
+end
+
+-- Removes wireless repeater cached state (Multiap support)
+--
+-- Parameters:
+-- - macaddress: [string] the MAC address of the repeater
+--
+-- Returns:
+-- - nil
+local function flush_repeater_state(macaddress)
+  local repeater = connected_wireless_repeaters[macaddress]
+  if type(repeater) == "table" then
+    connected_wireless_repeaters[macaddress] = nil
+    connected_wireless_repeaters[repeater.station] = nil
+    connected_wireless_repeaters[repeater.mapid] = nil
+    for _, bssid in ipairs(repeater.bssid) do
+      connected_wireless_repeaters[bssid] = nil
+    end
+    if connected_wireless_repeaters[repeater.interface] == macaddress then
+      -- Promote other repeater as interface owner
+      local intf_repeater
+      for other_mac, other_entry in pairs(connected_wireless_repeaters) do
+	if type(other_entry) == "table" and other_entry.interface == repeater.interface then
+	  intf_repeater = other_mac
+	  break
+	end
+      end
+      connected_wireless_repeaters[repeater.interface] = intf_repeater
+    end
+
+    -- Probe all connected & stalled IPs of the disconnecting repeater
+    local device = alldevices[macaddress]
+    if device then
+      probe_device_addresses(device)
+    end
+
+    -- This might be temporary, re-add the repeater to the list of repeaters to be discovered
+    new_wireless_repeaters[repeater.mapid] = true
+    wireless_repeater_discovery_timer:set(WIRELESS_REPEATER_DISCOVERY_TIMEOUT * 1000)
+  end
+end
+
+-- Retrieve mapVendorExtensions.agent information (Multiap support)
+--
+-- Parameters:
+-- - interface: [string] interface name (e.g. wl0)
+-- - macaddress: [string] the MAC address of the device
+--
+-- Returns:
+-- - nil if no information was found
+-- - otherwise [boolean] true, [string] radio name, [string] access point name, [string] ssid name, [table] wireless station information
+local function get_map_agent_station_data(interface, macaddress)
+  -- Reset macaddress extender cached state if interface changed
+  if type(connected_wireless_repeaters[macaddress]) == "table" and connected_wireless_repeaters[macaddress].interface ~= interface then
+    flush_repeater_state(macaddress)
+  end
+
+  -- WDS repeaters use interface names "wdsX_Y" where X s the part  from ssid interface wlX
+  -- and Y represents the repeater numeric ID
+  local _, _, id = find(interface, "^wds([_%d]+)_%d+$")
+  if id == nil then
+    if connected_wireless_repeaters[macaddress] == nil and next(new_wireless_repeaters) then
+      -- Learn extenders connected via Ethernet
+      local repeater_id, repeater_conntype, repeater_parent, repeater_macaddr, repeater_bssids = get_map_agent_data(macaddress)
+      if repeater_macaddr then
+	-- Cache repeaters state
+	local repeater = {
+	  interface = interface,
+	  mapid = repeater_id,
+	  conntype = repeater_conntype,
+	  parent = repeater_parent,
+	  station = repeater_macaddr,
+	  bssid = repeater_bssids,
+	}
+	connected_wireless_repeaters[repeater_macaddr] = macaddress
+	connected_wireless_repeaters[repeater_id] = macaddress
+	for _, bssid in ipairs(repeater_bssids) do
+	  connected_wireless_repeaters[bssid] = macaddress
+	end
+	connected_wireless_repeaters[macaddress] = repeater
+	new_wireless_repeaters[repeater_id] = nil
+
+	-- Repeater is connected to this interface
+	if connected_wireless_repeaters[interface] == nil then
+	  connected_wireless_repeaters[interface] = macaddress
+	end
+      end
+    end
+
+    -- Verify if device is an extender connected on this Ethernet interface
+    if type(connected_wireless_repeaters[macaddress]) == "table" then
+      local repeater = connected_wireless_repeaters[macaddress]
+      local result, radio, accesspoint, ssid
+      local stai = {}
+      if repeater.interface == interface and repeater.conntype ~= "ethernet" then
+	result = true
+	stai.parent = repeater.parent
+	stai.station = repeater.station
+      end
+      return result, radio, accesspoint, ssid, stai
+    end
+
+    -- Verify if device is connected through an extender connected on this Ethernet interface
+    if (type(connected_wireless_repeaters[interface]) == "string" and
+        type(connected_wireless_repeaters[connected_wireless_repeaters[interface]]) == "table") then
+      local result, radio, accesspoint, ssid
+      local stai = {}
+      stai.parent = get_map_agent_station_bssid(macaddress)
+      if stai.parent then
+	result = true
+	return result, radio, accesspoint, ssid, stai
+      end
+    end
+
+    return nil
+  end
+
+  local wlinterface = "wl" .. id
+  local ssid_entry = active_wireless_ssids[wlinterface]
+  if ssid_entry == nil then
+    return nil
+  end
+
+  local repeater_macaddr = connected_wireless_repeaters[interface]
+  if (macaddress ~= repeater_macaddr and type(repeater_macaddr) == "string" and
+      type(connected_wireless_repeaters[repeater_macaddr]) == "table") then
+    -- Use local cache first
+    local repeater = connected_wireless_repeaters[repeater_macaddr]
+    local result, radio, accesspoint, ssid, stai = get_wireless_station_data(repeater.wlinterface, repeater.station)
+    if result and
+      stai.state and match(stai.state, "Associated") and
+      stai.flags and match(stai.flags, "Repeater") then
+      stai.station = repeater.station
+      if repeater_macaddr ~= macaddress then
+	stai.parent = nil
+	if type(connected_wireless_repeaters[macaddress]) == "table" then
+	  -- This is an extender daisy chained to another extender
+	  stai.parent = connected_wireless_repeaters[macaddress].parent
+	elseif connected_wireless_repeaters[macaddress] == nil and next(new_wireless_repeaters) then
+	  -- Learn daisy chained extenders
+	  local repeater_id, repeater_conntype, repeater_parent, repeater_macaddr, repeater_bssids = get_map_agent_data(macaddress)
+
+	  if repeater_macaddr then
+	    -- Cache repeaters state
+	    repeater = {
+	      radio = ssid_entry.radio,
+	      accesspoint = ssid_entry.accesspoint,
+	      ssid = ssid_entry.ssid,
+	      interface = interface,
+	      wlinterface = wlinterface,
+	      mapid = repeater_id,
+	      conntype = repeater_conntype,
+	      parent = repeater_parent,
+	      station = repeater_macaddr,
+	      bssid = repeater_bssids,
+	    }
+	    connected_wireless_repeaters[repeater_macaddr] = macaddress
+	    connected_wireless_repeaters[repeater_id] = macaddress
+	    for _, bssid in ipairs(repeater_bssids) do
+	      connected_wireless_repeaters[bssid] = macaddress
+	    end
+	    connected_wireless_repeaters[macaddress] = repeater
+	    new_wireless_repeaters[repeater_id] = nil
+
+	    stai.parent = repeater_parent
+	  end
+	end
+	if not stai.parent then
+	  stai.parent = get_map_agent_station_bssid(macaddress)
+	end
+	if not stai.parent then
+	  stai.state = "Disconnected"
+	end
+      end
+      return result, radio, accesspoint, ssid, stai
+    else
+      -- Remove cache entry no longer in line with wireless state
+      flush_repeater_state(repeater_macaddr)
+    end
+  else
+    -- macaddress belong to the extender that owns the wds interface
+    local repeater = connected_wireless_repeaters[macaddress]
+    if repeater == nil and next(new_wireless_repeaters) then
+      -- Learn extenders connected via wireless
+      local repeater_id, repeater_conntype, repeater_parent, repeater_macaddr, repeater_bssids = get_map_agent_data(macaddress)
+
+      if repeater_macaddr then
+	-- Cache repeaters state
+	repeater = {
+	  radio = ssid_entry.radio,
+	  accesspoint = ssid_entry.accesspoint,
+	  ssid = ssid_entry.ssid,
+	  interface = interface,
+	  wlinterface = wlinterface,
+	  mapid = repeater_id,
+	  conntype = repeater_conntype,
+	  parent = repeater_parent,
+	  station = repeater_macaddr,
+	  bssid = repeater_bssids,
+	}
+	connected_wireless_repeaters[repeater_macaddr] = macaddress
+	connected_wireless_repeaters[repeater_id] = macaddress
+	for _, bssid in ipairs(repeater_bssids) do
+	  connected_wireless_repeaters[bssid] = macaddress
+	end
+	connected_wireless_repeaters[macaddress] = repeater
+	new_wireless_repeaters[repeater_id] = nil
+      end
+    end
+    if type(repeater) == "table" then
+      local result, radio, accesspoint, ssid, stai = get_wireless_station_data(wlinterface, repeater.station)
+      if result and
+	stai.state and match(stai.state, "Associated") and
+	stai.flags and match(stai.flags, "Repeater") then
+
+	connected_wireless_repeaters[interface] = macaddress
+
+	stai.station = repeater.station
+	return result, radio, accesspoint, ssid, stai
+      else
+	local reason
+	if not result then
+	  reason = repeater.station .. " not a wireless station on interface " .. wlinterface
+	elseif not stai.state or not match(stai.state, "Associated") then
+	  reason = "Associated state not set"
+	else
+	  reason = "Repeater flag not set"
+	end
+	log:error("Failed to set " .. macaddress .. " as " .. interface .. " repeater: " .. reason)
+      end
+    end
+  end
+
+  return nil
+end
+
+-- Determines whether a certain MAC address belongs to a wireless device
+--
+-- Parameters:
+-- - interface: [string] interface name (e.g. wl0)
+-- - macaddress: [string] the MAC address of the device
+--
+-- Returns:
+-- - nil if no information was found
+-- - otherwise [boolean] true, [string] radio name, [string] access point name, [string] ssid name, [table] wireless station information
+local function is_wireless(interface, macaddress)
+  local result, radio, accesspoint, ssid, stai = get_wireless_station_data(interface, macaddress)
+  if result then
+    return result, radio, accesspoint, ssid, stai
+  end
+
+  result, radio, accesspoint, ssid, stai = get_map_agent_station_data(interface, macaddress)
+  if result then
+    return result, radio, accesspoint, ssid, stai
   end
 
   return nil
@@ -339,14 +749,15 @@ end
 -- - mac: [string] the MAC address of the device
 -- - address: [string] the IPv4 or IPv6 address
 -- - mode: [string] either ipv4 or ipv6
--- - action: [string] either add or delete
+-- - action: [string] add, stale or delete
 -- - conflictingmac: [string] the MAC address of the device conflicting with this address
 -- - dhcp: [table] containing DHCP information, nil if static config
 -- Returs:
 -- - [boolean] true if device state has changed
 local function update_ip_state(l3interface, mac, address, mode, action, conflictingmac, dhcp)
   local changed = false
-  local iplist = (alldevices[mac])[mode];
+  local device = alldevices[mac]
+  local iplist = device[mode];
   if (iplist[address]==nil) then
     iplist[address]={ address=address, state="disconnected" }
     changed = true
@@ -386,10 +797,7 @@ local function update_ip_state(l3interface, mac, address, mode, action, conflict
 	changed = true
 
 	if ipentry.state ~= "connected" then
-	  ubus_conn:call("network.neigh", "probe", {
-			      ["interface"]=l3interface,
-			      ["mac-address"]=mac,
-			      [mode.."-address"]=address})
+	  probe_address(l3interface, mac, mode, address)
 	end
       end
 
@@ -415,23 +823,27 @@ local function update_ip_state(l3interface, mac, address, mode, action, conflict
 	changed = true
       end
     end
-  else
+  elseif action == "delete" then
     if dhcp then
       if ipentry.dhcp and ipentry.dhcp.state == "connected" then
 	ipentry.dhcp.state = "disconnected"
 	changed = true
 
-	if ipentry.state ~= "disconnected" then
-	  ubus_conn:call("network.neigh", "probe", {
-			      ["interface"]=l3interface,
-			      ["mac-address"]=mac,
-			      [mode.."-address"]=address})
+	if mode == "ipv4" then
+	  -- This is a good indication that the device went offline
+	  -- Probe all its connected & stalled addresses
+	  probe_device_addresses(device)
+	elseif ipentry.state ~= "disconnected" then
+	  probe_address(l3interface, mac, mode, address)
 	end
       end
     elseif ipentry.state ~= "disconnected" then
       ipentry.state = "disconnected"
       changed = true
     end
+  elseif action == "stale" and ipentry.state ~= action then
+    ipentry.state = "stale"
+    changed = true
   end
 
   if not dhcp and ipentry["conflicts-with"] ~= conflictingmac then
@@ -440,6 +852,69 @@ local function update_ip_state(l3interface, mac, address, mode, action, conflict
   end
 
   return changed
+end
+
+-- Returns true if ip state is connected
+local function ip_state_connected(ipentry)
+  return ipentry.state ~= "disconnected"
+end
+
+-- Returns true if ip entry is static and its state is disconnected static
+local function ip_static_state_disconnected(ipentry)
+  return ipentry.configuration == "static" and ipentry.state ~= "connected"
+end
+
+-- Probe all bridge devices connected through a certain L2 interface
+--
+-- Parameters:
+-- - bridge: L3 interface
+-- - interface: L2 interface
+-- - ip_modes: [table] address types to be probed (e.g. { "ipv4", "ipv6" })
+-- - ipentry_selector: function that receives an ip entry and returns true if entry needs to be probed
+local function probe_selected_bridge_devices(bridge, interface, ip_modes, ipentry_selector)
+  local reset_linkdown_timer
+
+  for mac, device in pairs(alldevices) do
+    if (device.l2interface == interface) then
+      -- Device's l2interface needs update, mark it
+      devices_linkdown[mac] = bridge
+      reset_linkdown_timer = true
+      for _, mode in ipairs(ip_modes) do
+	for _, ip in pairs(device[mode]) do
+	  if ipentry_selector(ip) then
+	    probe_address(bridge, mac, mode, ip.address)
+	  end
+	end
+      end
+    end
+  end
+
+  if reset_linkdown_timer then
+    -- Bridge may need a few seconds to learn the mac
+    -- After that, do update_l2interface()
+    device_linkdown_trial = 0
+    devices_linkdown_timer:set(LINKDOWN_TIMER_VALUE * 1000)
+  end
+end
+
+-- Probe all devices connected through a certain L3 interface
+--
+-- Parameters:
+-- - interface: L3 interface
+-- - ipentry_selector: function that receives an ip entry and returns true if entry needs to be probed
+local function probe_selected_interface_devices(interface, ip_modes, ipentry_selector)
+  for mac, _ in pairs(alldevices) do
+    device = alldevices[mac]
+    if (device['l3interface'] == interface) then
+      for _, mode in ipairs(ip_modes) do
+	for _, ip in pairs(device[mode]) do
+	  if ipentry_selector(ip) then
+	    probe_address(interface, mac, mode, ip.address)
+	  end
+	end
+      end
+    end
+  end
 end
 
 -- Transforms a device data structure to a ubus message; currently only the lists of IP addresses
@@ -681,14 +1156,14 @@ local function set_device_state(device, state)
     device.disconnected_time = now
     interface_stats.disconnected_devices = interface_stats.disconnected_devices + 1
 
+    -- Probe all connected & stalled IPs of the disconnecting device
+    probe_device_addresses(device)
+
     -- Start delete timer if necessary
-    local remaining = delete_timer:remaining()
-    if type(remaining) ~= "number" then
-      remaining = -1
-    end
+    local remaining = math.floor(delete_timer:remaining() / 1000)
     if remaining < 0 or remaining > MIN_DELETE_TIMER_VALUE * 1000 then
       local delete_delay = get_interface_delete_delay(device.l3interface)
-      if delete_delay >= 0 then
+      if delete_delay >= 0 and (remaining < 0 or delete_delay < remaining) then
 	if delete_delay > 0 and delete_delay < MIN_DELETE_TIMER_VALUE then
 	  delete_delay = MIN_DELETE_TIMER_VALUE
 	end
@@ -707,7 +1182,7 @@ local function handle_device_update(msg)
   if (type(msg)~="table" or
     type(msg['mac-address'])~="string" or
     (not match(msg['mac-address'], "%x%x:%x%x:%x%x:%x%x:%x%x:%x%x")) or
-    (msg['action']~='add' and msg['action']~='delete') or
+    (msg['action']~='add' and msg['action']~='delete' and msg['action']~='stale') or
     type(msg['interface'])~="string" or
     (not (((type(msg['ipv4-address'])=="table") and type(msg['ipv4-address'].address)=="string" and match(msg['ipv4-address'].address, "%d+\.%d+\.%d+\.%d+"))
      or ((type(msg['ipv6-address'])=="table") and type(msg['ipv6-address'].address)=="string" and match(msg['ipv6-address'].address, "[%x:]+")) ))
@@ -722,11 +1197,6 @@ local function handle_device_update(msg)
   -- Filter out already known local devices
   if (localmacs[mac]) then
     return
-  end
-
-  -- Reset devices_linkdown as neighbour event can update l2interface
-  if (msg.action ~= "add" and devices_linkdown[mac] ~= nil) then
-    devices_linkdown[mac] = nil
   end
 
   -- Initialize L3 interface statistics if needed
@@ -793,7 +1263,7 @@ local function handle_device_update(msg)
     changed = true
   end
   local logicalinterface = get_logical_interface_name(l3interface)
-  if device.interface ~= logicalinterface then
+  if logicalinterface and device.interface ~= logicalinterface then
     device.interface = logicalinterface
     changed = true
   end
@@ -819,7 +1289,7 @@ local function handle_device_update(msg)
     -- Device is connected if at least 1 IP address is connected
     for _, mode in ipairs(ip_modes) do
       for _, j in pairs(device[mode]) do
-	if (j.state=='connected') then
+	if j.state == "connected" or j.state == "stale" then
 	  state = "connected"
 	  break
 	end
@@ -832,6 +1302,13 @@ local function handle_device_update(msg)
     local l2interface
     if is_bridge_device then
       l2interface = bridge_getport(l3interface, brctl_info.portno)
+      if l2interface == "" then
+	-- Bridge may need a few seconds to learn the mac
+	-- After that, do update_l2interface()
+	devices_linkdown[mac] = l3interface
+	device_linkdown_trial = 0
+	devices_linkdown_timer:set(LINKDOWN_TIMER_VALUE * 1000)
+      end
     else
       l2interface = l3interface
     end
@@ -841,13 +1318,13 @@ local function handle_device_update(msg)
     end
   end
 
-  if device.l2interface ~= nil then
+  if device.l2interface ~= nil and device.l2interface ~= "" then
     wireless_dev, radio, ap_x, ssid, stai = is_wireless(device.l2interface, mac)
     if wireless_dev and stai.state then
       -- Received untrusted events but wireless device is ageing in 'brctl macshow' which makes device always be 'connected'.
       if stai.state == "Disconnected" then
 	state = "disconnected"
-      elseif string.match(stai.state, "Associated") then -- not all chipsets provide other states (authenticated, authorized ...)
+      elseif stai.state and match(stai.state, "Associated") then -- not all chipsets provide other states (authenticated, authorized ...)
 	state = "connected"
       end
     end
@@ -873,6 +1350,8 @@ local function handle_device_update(msg)
 	radio = radio,
 	accesspoint = ap_x,
 	ssid = ssid,
+	parent = stai.parent,
+	station = stai.station,
 	encryption = stai.encryption,
 	authentication = stai.authentication,
 	tx_phy_rate = stai.tx_phy_rate,
@@ -884,8 +1363,11 @@ local function handle_device_update(msg)
     if device.technology ~= technology or
        type(device.wireless) ~= type(wireless) or
        (wireless and
-	(device.wireless.accesspoint ~= wireless.accesspoint or
+	(device.wireless.radio ~= wireless.radio or
+	 device.wireless.accesspoint ~= wireless.accesspoint or
 	 device.wireless.ssid ~= wireless.ssid or
+	 device.wireless.parent ~= wireless.parent or
+	 device.wireless.station ~= wireless.station or
 	 device.wireless.encryption ~= wireless.encryption or
 	 device.wireless.authentication ~= wireless.authentication or
 	 device.wireless.tx_phy_rate ~= wireless.tx_phy_rate or
@@ -1018,6 +1500,7 @@ local function scan_full_wireless_status()
       if accesspoint then
 	active_wireless_ssids[s] = {
 	  radio = sv.radio,
+	  bssid = sv.bssid,
 	  accesspoint = accesspoint,
 	  interface = get_wireless_ssid_interface(s, sv),
 	}
@@ -1039,6 +1522,15 @@ local function scan_network_neigh_cachedstatus()
 	handle_device_update(v)
       end
     end
+  end
+end
+
+-- Timeout function for wireless repeater discovery (Multiap support)
+local function timeout_wireless_repeater_discovery()
+  -- Force a complete network rescan to cache info about all extenders that were not yet
+  if next(new_wireless_repeaters) then
+    log:info("Repeater discovery timeout, rescan all network neighbors")
+    scan_network_neigh_cachedstatus()
   end
 end
 
@@ -1100,6 +1592,7 @@ local function handle_wireless_ssid_update(msg)
       if accesspoint then
 	active_wireless_ssids[s] = {
 	  radio = sv.radio,
+	  bssid = sv.bssid,
 	  accesspoint = accesspoint,
 	  interface = get_wireless_ssid_interface(s, sv),
 	}
@@ -1124,8 +1617,28 @@ local function handle_wireless_station_update(msg)
   end
 
   local changed = false
+  local accesspoint = msg["ap_name"]
   local mac = lower(msg["macaddr"])
+  local l2interface
   local device = alldevices[mac]
+
+  -- If there is no such station, look up for it in the repeater cache
+  if device == nil then
+    local repeater_macaddr = connected_wireless_repeaters[mac]
+    if type(repeater_macaddr) == "string" then
+      local repeater = connected_wireless_repeaters[repeater_macaddr]
+      if type(repeater) == "table" and repeater.accesspoint == accesspoint and repeater.station == mac then
+	-- Translate mac and l2interface to values used in IP stack
+	mac = repeater_macaddr
+	device = alldevices[mac]
+	l2interface = repeater.interface
+	-- Remove repeater state on disconnect
+	if msg["state"] == "Disconnected" then
+	  flush_repeater_state(repeater_macaddr)
+	end
+      end
+    end
+  end
 
   -- Filter out wireless events for unknown devices
   if device == nil then
@@ -1133,19 +1646,27 @@ local function handle_wireless_station_update(msg)
     return
   end
 
-  -- Ignore station disconnects coming from another access point
-  if msg["state"] == "Disconnected" and
-     device.wireless and device.wireless.accesspoint ~= msg["ap_name"] then
-    log:info("Ignoring wireless station disconnected event received from different access point")
+  -- Handle station disconnects coming from access point
+  if msg["state"] == "Disconnected" and device.wireless then
+    if device.wireless.accesspoint == accesspoint then
+      if device.state == "connected" then
+        set_device_state(device, "disconnected")
+        -- Publish our enriched device object over UBUS
+        ubus_conn:send('hostmanager.devicechanged', transform_device_to_ubus_message(device))
+      end
+    else
+      log:info("Ignoring wireless station disconnected event received from different access point")
+    end
     return
   end
 
   -- Find l2interface coresponding to this access point
-  local l2interface
-  for s, sv in pairs(active_wireless_ssids) do
-    if sv.accesspoint == msg["ap_name"] then
-      l2interface = sv.interface
-      break
+  if not l2interface then
+    for s, sv in pairs(active_wireless_ssids) do
+      if sv.accesspoint == accesspoint then
+	l2interface = sv.interface
+	break
+      end
     end
   end
   if not l2interface then
@@ -1163,7 +1684,7 @@ local function handle_wireless_station_update(msg)
   if stai.state then
     if stai.state == "Disconnected" then
       state = "disconnected"
-    elseif string.match(stai.state, "Associated") then -- not all chipsets provide other states (authenticated, authorized ...)
+    elseif stai.state and match(stai.state, "Associated") then -- not all chipsets provide other states (authenticated, authorized ...)
       state = "connected"
     end
   end
@@ -1190,6 +1711,8 @@ local function handle_wireless_station_update(msg)
     radio = radio,
     accesspoint = ap_x,
     ssid = ssid,
+    parent = stai.parent,
+    station = stai.station,
     encryption = stai.encryption,
     authentication = stai.authentication,
     tx_phy_rate = stai.tx_phy_rate,
@@ -1199,6 +1722,8 @@ local function handle_wireless_station_update(msg)
      device.wireless.radio ~= wireless.radio or
      device.wireless.accesspoint ~= wireless.accesspoint or
      device.wireless.ssid ~= wireless.ssid or
+     device.wireless.parent ~= wireless.parent or
+     device.wireless.station ~= wireless.station or
      device.wireless.encryption ~= wireless.encryption or
      device.wireless.authentication ~= wireless.authentication or
      device.wireless.tx_phy_rate ~= wireless.tx_phy_rate or
@@ -1218,18 +1743,260 @@ local function handle_wireless_station_update(msg)
   end
 end
 
+-- Handles a mapVendorExtensions.agent.station event on UBUS
+--
+-- Parameters:
+-- - msg: [table] the UBUS message
+local function handle_map_agent_station_update(msg)
+  -- Reject bad events
+  if type(msg)~="table" or
+    type(msg["state"])~="string" or
+    type(msg["station"])~="string" or
+    type(msg["bssid"])~="string" then
+    log:info("Ignoring improper mapVendorExtensions.agent.station event")
+    return
+  end
+
+  local changed = false
+  local event = msg["state"]
+  local mac = lower(msg["station"])
+  local parent = lower(msg["bssid"])
+  local l2interface
+  local device = alldevices[mac]
+
+  -- Ignore events other than connect or disconnect
+  if event ~= "Connect" and event ~= "Disconnect" then
+    return
+  end
+
+  -- If there is no such station, look up for it in the repeater cache
+  if device == nil then
+    local repeater_macaddr = connected_wireless_repeaters[mac]
+    if type(repeater_macaddr) == "string" then
+      local repeater = connected_wireless_repeaters[repeater_macaddr]
+      if type(repeater) == "table" and repeater.parent == parent and repeater.station == mac then
+	-- Translate mac and l2interface to values used in IP stack
+	mac = repeater_macaddr
+	device = alldevices[mac]
+	l2interface = repeater.interface
+	-- Remove repeater state on disconnect
+	if event ~= "Connect" then
+	  flush_repeater_state(repeater_macaddr)
+	end
+      end
+    end
+  end
+
+  -- Filter out mapVendorExtensions.agent.station events for unknown devices
+  if device == nil then
+    log:info("Ignoring mapVendorExtensions.agent.station event for unknown device")
+    return
+  end
+
+  -- Handle station disconnects
+  if event ~= "Connect" and device.wireless then
+    if device.state == "connected" and device.wireless.parent == parent then
+      set_device_state(device, "disconnected")
+      -- Publish our enriched device object over UBUS
+      ubus_conn:send('hostmanager.devicechanged', transform_device_to_ubus_message(device))
+    end
+    return
+  end
+
+  -- Find l2interface coresponding to this bssid
+  if not l2interface then
+    local repeater_macaddr = connected_wireless_repeaters[parent]
+    if type(repeater_macaddr) == "string" then
+      local repeater = connected_wireless_repeaters[repeater_macaddr]
+      if type(repeater) == "table" then
+	l2interface = repeater.interface
+      end
+    else
+      for s, sv in pairs(active_wireless_ssids) do
+	if sv.bssid == parent then
+	  l2interface = sv.interface
+	  break
+	end
+      end
+    end
+  end
+  if not l2interface then
+    log:info("Ignoring mapVendorExtensions.agent.station event received from untracked bssid")
+    return
+  end
+
+  local wireless_dev, radio, ap_x, ssid, stai = is_wireless(l2interface, mac)
+  if not wireless_dev then
+    log:info("Ignoring mapVendorExtensions.agent.station event for non-wireless device")
+    return
+  end
+
+  local state = device.state
+  if stai.state then
+    if stai.state == "Disconnected" then
+      state = "disconnected"
+    elseif stai.state and match(stai.state, "Associated") then -- not all chipsets provide other states (authenticated, authorized ...)
+      state = "connected"
+    end
+  end
+
+  if device.l2interface ~= l2interface then
+    if device.l2interface == device.l3interface then
+      log:info("Ignoring mapVendorExtensions.agent.station event due to interface change in a non-bridge context")
+      return
+    end
+    if not is_interface_bridge_port(l2interface, device.l3interface) then
+      log:info("Ignoring mapVendorExtensions.agent.station event due to " .. tostring(l2interface) .. " not being attached to " .. tostring(device.l3interface) .. " bridge")
+      return
+    end
+    device.l2interface = l2interface
+    changed = true
+  end
+
+  if device.technology ~= "wireless" then
+    device.technology = "wireless"
+    changed = true
+  end
+
+  local wireless = {
+    radio = radio,
+    accesspoint = ap_x,
+    ssid = ssid,
+    parent = stai.parent,
+    station = stai.station,
+    encryption = stai.encryption,
+    authentication = stai.authentication,
+    tx_phy_rate = stai.tx_phy_rate,
+    rx_phy_rate = stai.rx_phy_rate,
+  }
+  if not device.wireless or
+     device.wireless.radio ~= wireless.radio or
+     device.wireless.accesspoint ~= wireless.accesspoint or
+     device.wireless.ssid ~= wireless.ssid or
+     device.wireless.parent ~= wireless.parent or
+     device.wireless.station ~= wireless.station or
+     device.wireless.encryption ~= wireless.encryption or
+     device.wireless.authentication ~= wireless.authentication or
+     device.wireless.tx_phy_rate ~= wireless.tx_phy_rate or
+     device.wireless.rx_phy_rate ~= wireless.rx_phy_rate then
+    device.wireless = wireless
+    changed = true
+  end
+
+  if device.state ~= state then
+    set_device_state(device, state)
+    changed = true
+  end
+
+  -- Publish our enriched device object over UBUS
+  if changed then
+    ubus_conn:send('hostmanager.devicechanged', transform_device_to_ubus_message(device))
+  end
+end
+
+-- Handles a mapVendorExtensions.agent event on UBUS
+--
+-- Parameters:
+-- - msg: [table] the UBUS message
+local function handle_map_agent_update(msg)
+  -- Reject bad events
+  if type(msg)~="table" or
+    type(msg["state"])~="string" or
+    type(msg["ExtenderMAC"])~="string" then
+    log:info("Ignoring improper mapVendorExtensions.agent event")
+    return
+  end
+
+  local event = msg["state"]
+  local mapid = msg["ExtenderMAC"]
+
+  if event == "Disconnect" then
+    -- Remove repeater state on disconnect
+    flush_repeater_state(connected_wireless_repeaters[mapid])
+    new_wireless_repeaters[mapid] = nil
+  elseif event == "Connect" then
+    new_wireless_repeaters[mapid] = true
+    wireless_repeater_discovery_timer:set(WIRELESS_REPEATER_DISCOVERY_TIMEOUT * 1000)
+  elseif event == "Update" then
+    -- Update parent related info of this repeater
+    local macaddress = connected_wireless_repeaters[mapid]
+    if type(macaddress) == "string" and type(connected_wireless_repeaters[macaddress]) == "table" then
+      local repeater = connected_wireless_repeaters[macaddress]
+      local repeater_id, repeater_conntype, repeater_parent, repeater_macaddr, repeater_bssids = get_map_agent_data(macaddress)
+
+      if repeater_macaddr then
+	local changed
+	if repeater_id ~= repeater.mapid or
+	  repeater_conntype ~= repeater.conntype or
+	  repeater_parent ~= repeater.parent or
+	  repeater_macaddr ~= repeater.station or
+          #repeater_bssids ~= #(repeater.bssid) then
+	  changed = true
+	else
+	  for i in ipairs(repeater_bssids) do
+	    if repeater_bssids[i] ~= repeater.bssid[i] then
+	      changed = true
+	      break
+	    end
+	  end
+	end
+	if changed then
+	  log:error("Repeater " .. macaddress .. " state changed, flush its cached state")
+	  flush_repeater_state(macaddress)
+	end
+      end
+    end
+  end
+end
+
 -- Update l2interface by brctl_info
 local function update_l2interface()
   for mac, l3interface in pairs(devices_linkdown) do
-    local brctl_info = brctl_showmac(l3interface, mac)
-    local l2interface = brctl_info.portno and bridge_getport(l3interface, brctl_info.portno) or ""
-    if l2interface ~= "" then
+    local device = alldevices[mac]
+
+    if device.state == "disconnected" then
       devices_linkdown[mac] = nil
-      if l2interface ~= alldevices[mac]["l2interface"] then
-        alldevices[mac]["l2interface"] = l2interface
-        -- Publish device change over UBUS
-        ubus_conn:send('hostmanager.devicechanged', transform_device_to_ubus_message(alldevices[mac]))
+    else
+      local brctl_info = brctl_showmac(l3interface, mac)
+      local l2interface = brctl_info.portno and bridge_getport(l3interface, brctl_info.portno) or ""
+      if l2interface ~= "" then
+	devices_linkdown[mac] = nil
+	if device.l2interface ~= l2interface then
+	  device.l2interface = l2interface
+
+	  local wireless_dev, radio, ap_x, ssid, stai = is_wireless(l2interface, mac)
+	  if wireless_dev then
+	    device.technology = 'wireless'
+	    device.wireless = {
+	      radio = radio,
+	      accesspoint = ap_x,
+	      ssid = ssid,
+	      parent = stai.parent,
+	      station = stai.station,
+	      encryption = stai.encryption,
+	      authentication = stai.authentication,
+	      tx_phy_rate = stai.tx_phy_rate,
+	      rx_phy_rate = stai.rx_phy_rate,
+	    }
+	  else
+	    device.technology = 'ethernet'
+	    device.wireless = nil
+	  end
+
+	  -- Publish device change over UBUS
+	  ubus_conn:send('hostmanager.devicechanged', transform_device_to_ubus_message(device))
+	end
       end
+    end
+  end
+
+  device_linkdown_trial = device_linkdown_trial + 1
+  if next(devices_linkdown) then
+    -- Try a couple of times to update the l2interface
+    if device_linkdown_trial <= MAX_LINKDOWN_RETRIES then
+      devices_linkdown_timer:set(LINKDOWN_TIMER_VALUE * 1000)
+    else
+      devices_linkdown = {}
     end
   end
 end
@@ -1264,7 +2031,16 @@ local function handle_rpc_status(req)
     deferred_wireless_status_scan = deferred_wireless_status_scan,
     remote_radio_interfaces = remote_radio_interfaces,
     active_wireless_ssids = active_wireless_ssids,
+    connected_wireless_repeaters = connected_wireless_repeaters,
   }
+
+  if next(new_wireless_repeaters) then
+    local wireless_repeaters_to_discover = {}
+    for mapid, _ in pairs(new_wireless_repeaters) do
+      wireless_repeaters_to_discover[#wireless_repeaters_to_discover + 1] = mapid
+    end
+    transformed_response.wireless_repeaters_to_discover = wireless_repeaters_to_discover
+  end
 
   ubus_conn:reply(req, transformed_response);
 end
@@ -1412,9 +2188,7 @@ end
 -- Parameters:
 -- - msg: [table] the UBUS message
 local function handle_device_link(msg)
-  local device
-  local interface
-  local action
+  local interface, action, bridge
 
   -- Reject bad events
   if (type(msg)~="table" or
@@ -1426,36 +2200,35 @@ local function handle_device_link(msg)
 
   interface = msg['interface']
   action = msg['action']
+  bridge = get_bridge_from_if(interface)
 
   if action ~= "down" then
-    -- Bridge may need a few seconds to learn the mac, such as 3 seconds
-    -- After that, do update_l2interface()
-    devices_linkdown_timer:set(3000)
-    return
-  end
-
-  local bridge = get_bridge_from_if(interface)
-  if bridge == "" then
-    return
-  end
-
-  -- Probe all of the devices on this interface
-  for mac, _ in pairs(alldevices) do
-    device = alldevices[mac]
-    if (device['l2interface'] == interface) then
-      -- Device's l2interface needs update, mark it
-      devices_linkdown[mac] = bridge
-      for _, mode in ipairs(ip_modes) do
-	for _, ip in pairs(device[mode]) do
-	  if ip.state ~= "disconnected" then
-	    ubus_conn:call("network.neigh", "probe", {
-				["interface"]=bridge,
-				["mac-address"]=mac,
-				[mode.."-address"]=ip.address})
-	  end
-	end
-      end
+    local ipv4_mode = { "ipv4" }
+    if bridge == "" then
+      -- Probe all devices disconnected from this L3 interface that have a static IPv4 address
+      probe_selected_interface_devices(interface, ipv4_mode, ip_static_state_disconnected)
+    else
+      -- Probe all devices disconnected from this L2 interface that have a static IPv4 address
+      probe_selected_bridge_devices(bridge, interface, ipv4_mode, ip_static_state_disconnected)
     end
+    return
+  end
+
+  if type(connected_wireless_repeaters[interface]) == "string" then
+    -- Disconnect and remove repeater state when wds interface gets disconnected
+    local repeater_macaddr = connected_wireless_repeaters[interface]
+    local device = alldevices[repeater_macaddr]
+    if type(device) == "table" and device.state == "connected" then
+      set_device_state(device, "disconnected")
+      -- Publish our enriched device object over UBUS
+      ubus_conn:send('hostmanager.devicechanged', transform_device_to_ubus_message(device))
+    end
+    flush_repeater_state(repeater_macaddr)
+  end
+
+  if bridge ~= "" then
+    -- Probe all devices connected on this L2 interface
+    probe_selected_bridge_devices(bridge, interface, ip_modes, ip_state_connected)
   end
 end
 
@@ -1467,6 +2240,7 @@ if not ubus_conn then
 end
 delete_timer = uloop.timer(timeout_delete)
 devices_linkdown_timer = uloop.timer(update_l2interface)
+wireless_repeater_discovery_timer = uloop.timer(timeout_wireless_repeater_discovery)
 
 -- Read configuration
 load_configuration()
@@ -1484,8 +2258,12 @@ ubus_conn:listen({ ['network.neigh'] = handle_device_update,
                    ['network.link'] = handle_device_link,
                    ['wireless.radio'] = handle_wireless_radio_update,
                    ['wireless.ssid'] = handle_wireless_ssid_update,
-                   ['wireless.accesspoint.station'] = handle_wireless_station_update, } )
+                   ['wireless.accesspoint.station'] = handle_wireless_station_update,
+                   ['mapVendorExtensions.agent.station'] = handle_map_agent_station_update,
+                   ['mapVendorExtensions.agent'] = handle_map_agent_update,
+                 })
 
+scan_map_agent_data()
 scan_full_wireless_status()
 scan_network_neigh_cachedstatus()
 

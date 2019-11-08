@@ -70,7 +70,8 @@ Device_NAT_InterfaceSetting_i_.entries = function(mapping)
   uciHelper.foreach_on_uci(networkBinding, function(s)
     if not v6Proto[s.proto] then
       local ifname = s[".name"]
-      if interfaceToZone(ifname) then
+      local zoneinfo = interfaceToZone(ifname)
+      if zoneinfo and next(zoneinfo) then
         entries[#entries + 1] = ifname
       end
     end

@@ -577,7 +577,7 @@ function M.createSimpleCheckboxGroup(name, values, checked, attributes)
         if check[v[1]] then
             checked = "checked"
         end
-        content[#content + 1] = format('<input %s value="%s" id="%s" %s> %s</label>', input, v[1], v[1], checked, v[2])
+        content[#content + 1] = format('<input %s value="%s" %s> %s</label>', input, v[1], checked, v[2])
     end
     return content
 end
@@ -1255,6 +1255,28 @@ local function createTableDataEditAggregElem(v, data, helpmsg)
     return content
 end
 
+--- copy table data
+--  @param #table
+--  @return #table new table
+local function copy_table(value)
+    local copy = {}
+    for k, v in pairs(value) do
+        copy[k] = v
+    end
+    return copy
+end
+
+--- This function create the table of subColumnbutton attributes
+--  @param #table attributes
+--  @return #table subColumnbutton attributes
+local function attrSubColumnButton(attributes)
+    local attr = copy_table(attributes.button)
+    attr["data-original-title"] = nil
+    attr["class"] = gsub(attr["class"], "%s*tooltip%-on", "" )
+    attr["class"] = gsub(attr["class"], "btn%-mini", "btn-small")
+    return {button=attr}
+end
+
 --- Create a line of edit component to add a new element
 --  @param #table columns
 --  @param #table data array
@@ -1340,12 +1362,12 @@ local function createTableDataEdit(columns, data, add, helpmsg)
     if  #aggreg_lines > 0  then
         content[#content + 1] = format('<tr> <td class="btn-col-OK" colspan="%d">', numcolumns)
             if not add then
-               content[#content + 1] = M.createSimpleButton("","icon-ok", attrModify)
+               content[#content + 1] = M.createSimpleButton(T"Apply","", attrSubColumnButton(attrModify))
             else
-               content[#content + 1] = M.createSimpleButton("","icon-plus-sign", attrAdd)
+               content[#content + 1] = M.createSimpleButton(T"Save","", attrSubColumnButton(attrAdd))
             end
         content[#content + 1] = " "
-        content[#content + 1] = M.createSimpleButton("","icon-remove", attrCancel)
+        content[#content + 1] = M.createSimpleButton(T"Cancel","", attrSubColumnButton(attrCancel))
         content[#content + 1] = "</td></tr>"
     end
 
@@ -1819,7 +1841,7 @@ function M.createHeader(name, hasAdvanced, hasRefresh, autorefresh, helpLink)
 
     -- Display the refresh button in the modal header if required
     if hasRefresh == true then
-        html[#html + 1] = format('<span class="modal-action modal-action-refresh" id="Refresh_id"><i class="icon-refresh"></i> %s</span>', T"refresh data")
+        html[#html + 1] = format('<span class="modal-action"><span class="modal-action-refresh" id="Refresh_id"><i class="icon-refresh"></i> %s</span></span>', T"refresh data")
     end
 
     -- Display the show advanced button in the modal header if required

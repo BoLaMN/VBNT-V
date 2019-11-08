@@ -56,7 +56,7 @@ function Mapper:get_device_capabilities(device, info)
 	info.supported_auth_types = "none pap chap"
 
 	if device.pid == "68aa" then
-		info.supported_pdp_types = "ipv4"
+		info.supported_pdp_types = {"ipv4"}
 	end
 end
 

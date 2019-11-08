@@ -93,8 +93,6 @@ local Device_IP_Interface_i_IPv6Address_i_ = {
   }
 }
 
-local os = os
-
 -- Entries are formed based on the contents of /proc/net/if_inet6 and ubus call
 
 -- 00000000000000000000000000000001 01 80 10 80 lo
@@ -125,6 +123,7 @@ end
 
 local ipaddr = require 'transformer.shared.models.device2.ipaddr'
 local dmordering = require 'transformer.shared.models.dmordering'
+local network = require 'transformer.shared.common.network'
 local ipcache = {}
 
 local function preprocessIP(primaryIntf, ip)
@@ -165,20 +164,6 @@ local function getPrefix(ip)
   return resolve("Device.IP.Interface.{i}.IPv6Prefix.{i}.", ip.ifname) or ""
 end
 
-local function getPreferredLifetime(ip)
-  if ip.preferred then
-    return os.date("!%Y-%m-%dT%H:%M:%SZ", ip.preferred)
-  end
-  return "9999-12-31T23:59:59Z"
-end
-
-local function getValidLifetime(ip)
-  if ip.valid then
-    return os.date("!%Y-%m-%dT%H:%M:%SZ", ip.valid)
-  end
-  return "9999-12-31T23:59:59Z"
-end
-
 local originMap = {
   ['local'] = "AutoConfigured",
   dhcpv6 = "DHCPv6",
@@ -203,10 +188,10 @@ Device_IP_Interface_i_IPv6Address_i_.get = {
     return getPrefix(ipcache[key])
   end,
   PreferredLifetime = function(_, _, key)
-    return getPreferredLifetime(ipcache[key])
+    return network.convertEpochToISO(ipcache[key].preferred)
   end,
   ValidLifetime = function(_, _, key)
-    return getValidLifetime(ipcache[key])
+    return network.convertEpochToISO(ipcache[key].valid)
   end,
   Origin = function(_, _, key)
     return getOrigin(ipcache[key])
@@ -220,8 +205,8 @@ Device_IP_Interface_i_IPv6Address_i_.getall = function(mapping,key,parentKey)
     Status = getStatus(ip),
     IPAddress = getIPAddress(ip),
     Prefix = getPrefix(ip),
-    PreferredLifetime = getPreferredLifetime(ip),
-    ValidLifetime = getValidLifetime(ip),
+    PreferredLifetime = network.convertEpochToISO(ip.preferred),
+    ValidLifetime = network.convertEpochToISO(ip.valid),
     Origin = getOrigin(ip),
   }
 end

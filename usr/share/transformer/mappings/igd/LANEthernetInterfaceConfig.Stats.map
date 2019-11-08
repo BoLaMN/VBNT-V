@@ -27,12 +27,12 @@ local Multi_Stats_ = {
         activeNotify = "canDeny",
         type = "unsignedInt",
       },
-      X_TCH_PacketsDropped = {
+      X_000E50_PacketsDropped = {
         access = "readOnly",
         activeNotify = "canDeny",
         type = "unsignedInt",
       },
-      X_TCH_PacketsErrored = {
+      X_000E50_PacketsErrored = {
         access = "readOnly",
         activeNotify = "canDeny",
         type = "unsignedInt",
@@ -173,11 +173,11 @@ local ethernetExtStatsMap = {
 }
 
 Multi_Stats_.get = function(mapping, param, key)
-  if param == "X_TCH_PacketsDropped" then
+  if param == "X_000E50_PacketsDropped" then
     local rx = tonumber(getIntfInfo(key, "rx_dropped")) or 0
     local tx = tonumber(getIntfInfo(key, "tx_dropped")) or 0
     return tostring(rx + tx)
-  elseif param == "X_TCH_PacketsErrored" then
+  elseif param == "X_000E50_PacketsErrored" then
     local rx = tonumber(getIntfInfo(key, "rx_errors")) or 0
     local tx = tonumber(getIntfInfo(key, "tx_errors")) or 0
     return tostring(rx + tx)

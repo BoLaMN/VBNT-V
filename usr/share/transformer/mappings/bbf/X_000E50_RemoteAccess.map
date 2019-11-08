@@ -4,26 +4,36 @@ local Multi_Services_X_000E50_RemoteAccess_i_= {
     access = "readOnly",
     minEntries = 0,
     maxEntries = math.huge,
+    description = "Object represeting WebUI remote assistance",
     parameters = {
       Name = {
         access = "readOnly",
         type = "string",
+        description = "Name of the remote assistant"
       },
       Status = {
         access = "readOnly",
         type = "string",
+        enumeration = {
+          "Active",
+          "Inactive"
+        },
+        decription = "Current status of the remote assistant"
       },
       URL = {
         access = "readOnly",
         type = "string",
+        description = "The URL to remotel access the WebUI"
       },
       Secure = {
         access = "readOnly",
         type = "boolean",
+        description = "True if the assistant uses HTTPS",
       },
       Port = {
         access = "readOnly",
         type = "unsignedInt",
+        description = "The port number in use"
       },
       Mode = {
         access = "readWrite",
@@ -32,30 +42,38 @@ local Multi_Services_X_000E50_RemoteAccess_i_= {
           "Temporary",
           "Permanent",
         },
+        description = "If 'Temorary' the remote assistant is automatically disabled after a period of inactivity",
       },
       IPIntf = {
         access = "readOnly",
         type = "string",
+        description = "Cross reference to the interface the remote assistant is reachable on",
       },
       RandomPassword = {
         access = "readOnly",
         type = "boolean",
+        description = "Is the password randomly generated or not",
       },
       RandomPort = {
         access = "readOnly",
         type = "boolean",
+        description = "Is the port randomly assigned or not",
       },
       Password = {
         access = "readWrite",
         type = "string",
+        description = [[The password for the user. Can only be read if randomly generated.
+          Setting this to empty string reverts to randomly generated password.]],
       },
       User = {
         access = "readOnly",
         type = "string",
+        description = "The username to log in into WebUI",
       },
       Start = {
         access = "readWrite",
         type = "boolean",
+        description = "Set to 1 to start the remote assistant, 0 to stop",
       },
     }
   }
@@ -116,6 +134,22 @@ local function loadState(name)
   return state
 end
 
+local function readRAConfig(name, option, sectiondata)
+  if sectiondata and option then
+    return sectiondata[option] or ""
+  elseif not option then
+    webBinding.sectionname = name
+    webBinding.option = nil
+    webBinding.default = nil
+    return uci_helper.getall_from_uci(webBinding)
+  else
+    webBinding.sectionname = name
+    webBinding.option = option
+    webBinding.default = nil
+    return uci_helper.get_from_uci(webBinding)
+  end
+end
+
 local function getStatus(state)
   return state.enabled == "1" and "Active" or "Inactive"
 end
@@ -131,12 +165,21 @@ local function getSecure()
   return "1" --only https is supported
 end
 
-local function getPort(state)
-  local port = ""
-  if state.enabled == "1" then
-    port = state.wanport or ""
+local function configuredPort(key, sectiondata)
+  local port = readRAConfig(key, "port", sectiondata)
+  if port:match("^%d+$") then
+    -- single port configured
+    return port
+  else
+    return ""
   end
-  return port
+end
+
+local function getPort(key, state, sectiondata)
+  if state.enabled == "1" then
+    return state.wanport or ""
+  end
+  return configuredPort(key, sectiondata)
 end
 
 local function getMode(state)
@@ -147,36 +190,36 @@ local function getRandomPassword(state)
   return state.password == "" and "0" or "1"
 end
 
-local function getRandomPort()
-  return "1" -- only random port is supported in current remote assistance implementation
+local function getRandomPort(key, sectiondata)
+  if configuredPort(key, sectiondata)=="" then
+    return "1"
+  else
+    return "0"
+  end
 end
 
-
-local function getPwdCfg()
-  webBinding.sectionname = "remote"
-  webBinding.option = "password_mode"
-  local passwordMode = uci_helper.get_from_uci(webBinding)
-  if passwordMode == "" then
-    return "fixed" -- default to `fixed` if no password_mode specified in uci
-  end
-  return passwordMode
+local function passwordConfig(key, sectiondata)
+  return readRAConfig(key, "password_mode", sectiondata)
 end
 
-local function getPassword(state)
-  local pw
-  if state.enabled == "1" then
-    if getPwdCfg() ~= "srpuci" then
-      pw = state.password
-    end
+local function passwordReadable(key, sectiondata)
+  return passwordConfig(key, sectiondata)~="srpuci"
+end
+
+local function passwordWriteable(key, sectiondata)
+  return passwordConfig(key, sectiondata)~="fixed"
+end
+
+local function getPassword(key, state, sectiondata)
+  if state.enabled == "1" and passwordReadable(key, sectiondata) then
+    return state.password
   end
-  return pw or ""
+  return ""
 end
 
 -- TODO can this be improved and/or simplified?
-local function getIPinterface(mapping, key)
-  webBinding.sectionname=key
-  webBinding.option="interface"
-  local interface = uci_helper.get_from_uci(webBinding)
+local function getIPinterface(mapping, key, sectiondata)
+  local interface = readRAConfig(key, "interface", sectiondata)
   if interface == "" then
     interface = "wan"
   end
@@ -188,25 +231,19 @@ local function getIPinterface(mapping, key)
       return resolve('InternetGatewayDevice.LANDevice.{i}.LANHostConfigManagement.IPInterface.{i}.', interface) or ""
     end
   end
-  local key, status = wanconn.get_connection_key(interface)
-  if key and status then
+  local connkey, status = wanconn.get_connection_key(interface)
+  if connkey and status then
     if status.proto == "pppoe" or status.proto == "pppoa" then
-      return resolve("InternetGatewayDevice.WANDevice.{i}.WANConnectionDevice.{i}.WANPPPConnection.{i}.", key) or ""
+      return resolve("InternetGatewayDevice.WANDevice.{i}.WANConnectionDevice.{i}.WANPPPConnection.{i}.", connkey) or ""
     else
-      return resolve("InternetGatewayDevice.WANDevice.{i}.WANConnectionDevice.{i}.WANIPConnection.{i}.", key) or ""
+      return resolve("InternetGatewayDevice.WANDevice.{i}.WANConnectionDevice.{i}.WANIPConnection.{i}.", connkey) or ""
     end
   end
   return ""
 end
 
-local function getUser(key)
-  webBinding.sectionname=key
-  webBinding.option="user"
-  local usr = uci_helper.get_from_uci(webBinding)
-  if usr ~= "" then
-    return usr
-  end
-  return ""
+local function getUser(key, sectiondata)
+  return readRAConfig(key, "user", sectiondata)
 end
 
 local function getStart(state)
@@ -225,7 +262,7 @@ Multi_Services_X_000E50_RemoteAccess_i_.get = {
   end,
   Secure = getSecure(),
   Port = function(mapping, param, key)
-    return getPort(loadState(key))
+    return getPort(key, loadState(key))
   end,
   Mode = function(mapping, param, key)
     return getMode(loadState(key))
@@ -236,9 +273,11 @@ Multi_Services_X_000E50_RemoteAccess_i_.get = {
   RandomPassword = function(mapping, param, key)
     return getRandomPassword(loadState(key))
   end,
-  RandomPort = getRandomPort(),
+  RandomPort = function(_, _, key)
+    return getRandomPort(key)
+  end,
   Password = function(mapping, param, key)
-    return getPassword(loadState(key))
+    return getPassword(key, loadState(key))
   end,
   User = function(mapping, param, key)
     return getUser(key)
@@ -250,25 +289,31 @@ Multi_Services_X_000E50_RemoteAccess_i_.get = {
 
 Multi_Services_X_000E50_RemoteAccess_i_.getall = function(mapping, key)
   local state = loadState(key)
+  local sectiondata = readRAConfig(key)
 
   return {
     Name = key,
     Status = getStatus(state),
     URL = getURL(state),
     Secure = getSecure(),
-    Port = getPort(state),
+    Port = getPort(key, state, sectiondata),
     Mode = getMode(state),
-    IPIntf = getIPinterface(mapping, key),
+    IPIntf = getIPinterface(mapping, key, sectiondata),
     RandomPassword = getRandomPassword(state),
-    RandomPort = getRandomPort(),
-    Password = getPassword(state),
-    User = getUser(key),
+    RandomPort = getRandomPort(key, sectiondata),
+    Password = getPassword(key, state, sectiondata),
+    User = getUser(key, sectiondata),
     Start = getStart(state),
   }
 end
 
 local function setGuiPw(user, username, value)
-  local srp_salt, srp_verifier = srp.new_user(username, value)
+  local srp_salt = ""
+  local srp_verifier = ""
+  
+  if value~="" then
+    srp_salt, srp_verifier = srp.new_user(username, value)
+  end
   webBinding.sectionname = user
 
   -- srp_salt
@@ -280,18 +325,17 @@ local function setGuiPw(user, username, value)
   -- clear legacy_salt  (  [NG-48489] handle the GUI username/password migration from legacy build  )
   webBinding.option = "legacy_salt"
   setOnUci(webBinding, "")
+  
+  isConfigChanged = true
 end
 
 local transaction={}
 
-local function setPassword(user, password)
-  local state = loadState(user)
-
-  -- Only when password mode is SRP uci (srp_salt + srp_verifier), update salt/verifier to web config.
-  if getPwdCfg() == "srpuci" then
+local function setPassword(key, password)
+  if passwordWriteable(key) then
      local user_section
 
-     local assistusername = getUser(user)
+     local assistusername = getUser(key)
      webBinding.sectionname = "user"
      uci_helper.foreach_on_uci(webBinding, function(s)
        if s.name == assistusername then
@@ -318,8 +362,8 @@ local function setPassword(user, password)
   end
 
   -- Finally, prepare actions for commit()
-  transaction[user] = transaction[user] or {}
-  transaction[user]["password"] = password
+  transaction[key] = transaction[key] or {}
+  transaction[key].password = password
 end
 
 Multi_Services_X_000E50_RemoteAccess_i_.set = {
@@ -376,11 +420,11 @@ local function writeRemoteAccess(cmd)
   end
 end
 
-local function buildCommand(name, enable, mode, passwordConfig, password)
+local function buildCommand(name, enable, mode, pwdcfg, password)
   local mode_s = (mode == "0") and "temporary" or "permanent"
   local enable_s = (enable == "0") and "off" or "on"
   -- wget cmd to enable/disable remote assistance
-  return format("/usr/bin/wget http://127.0.0.1:55555/ra?%s=%s_%s_%s_%s -O /dev/null", name, enable_s, mode_s, passwordConfig, password)
+  return format("/usr/bin/wget http://127.0.0.1:55555/ra?%s=%s_%s_%s_%s -O /dev/null", name, enable_s, mode_s, pwdcfg, password)
 end
 
 Multi_Services_X_000E50_RemoteAccess_i_.commit = function()
@@ -396,7 +440,7 @@ Multi_Services_X_000E50_RemoteAccess_i_.commit = function()
        -- when we shut down remote assistant, the mode should be changed to Temporary
        mode = "0"
     end
-    local pwdcfg=getPwdCfg()
+    local pwdcfg=passwordConfig(key)
     local pwd=transactionstate.password
     if not pwd then
       pwdcfg="keep"

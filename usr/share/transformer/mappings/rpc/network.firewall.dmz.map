@@ -1,6 +1,6 @@
 -- global functions used
 local require, mapper, register = require, mapper, register
-local string, table, pairs, tostring, error = string, table, pairs, tostring, error
+local string = string
 
 -- library helpers
 local fw_helper = require("transformer.shared.firewall_helper")
@@ -10,7 +10,7 @@ local mapping_dmz_rpc = {
     objectType = {
         name = "rpc.network.firewall.dmz.",
         access = "readOnly",
-        minEntries = 1,
+        minEntries = 0,
         maxEntries = 1,
         parameters = {
             enable = {
@@ -26,6 +26,17 @@ local mapping_dmz_rpc = {
 }
 
 local uci_helper = mapper("ucihelper")
+local forEachOnUci = uci_helper.foreach_on_uci
+
+local firewallBinding = {config = "firewall", sectionname = "dmzredirects" }
+mapping_dmz_rpc.entries = function(mapping)
+  local dmzredirect = uci_helper.get_from_uci(firewallBinding)
+  if dmzredirect ~= "" then
+    return {"1"}
+  else
+    return {}
+  end
+end
 
 mapping_dmz_rpc.get = {
     enable = function(mapping, param)
@@ -64,12 +75,25 @@ local mapping_dmzredirect_rpc = {
     }
 }
 local redirect_key = "dmzredirect"
+local dhcpBinding = { config = "dhcp" , sectionname = "host" }
+local firewallDmzBinding = { config = "firewall", sectionname = "dmzredirect", option = "dest_mac" }
 
 mapping_dmzredirect_rpc.get = function(mapping, param)
     mapping.uciMap.entries(mapping.uciMap)
     local result, errmsg = mapping.uciMap.get(mapping.uciMap, param, redirect_key)
     if param == "dest_ip" and (result == "0.0.0.0" or result == "::") then
+      local dmzMacAddr = uci_helper.get_from_uci(firewallDmzBinding)
+      local macMatched = false
+      forEachOnUci(dhcpBinding,function(s)
+        if s.mac == dmzMacAddr then
+          result = s.ip
+          macMatched = true
+	  return false
+        end
+      end)
+      if not macMatched then
         result = "unknown"
+      end
     end
     return result, errmsg
 end
@@ -78,7 +102,7 @@ mapping_dmzredirect_rpc.getall = function(mapping)
     mapping.uciMap.entries(mapping.uciMap)
     local result, errmsg = mapping.uciMap.getall(mapping.uciMap, redirect_key)
     if type(result) == "table" and (result.dest_ip == "0.0.0.0" or result.dest_ip == "::") then
-        result.dest_ip = "unknown"
+      result.dest_ip = nil
     end
     return result, errmsg
 end
@@ -89,15 +113,17 @@ mapping_dmzredirect_rpc.set = function(mapping, param, value)
         if param == "dest_ip" then
             local family -- family deduced from the IP value
             local macAddr -- mac address of dest_ip value
+            local ipConfiguration
 
             if string.find(value, ":") then
                 family = "ipv6"
             else
                 family = "ipv4"
+                ipConfiguration = "dynamic"
             end
             mapping.uciMap.set(mapping.uciMap, "family", family, redirect_key)
 
-            macAddr = fw_helper.ip2mac(ubus_connect, family, value) or ""
+            macAddr = fw_helper.ip2mac(ubus_connect, family, value, ipConfiguration) or ""
             mapping.uciMap.set(mapping.uciMap, "dest_mac", macAddr, redirect_key)
 
             if macAddr ~= "" then

@@ -1,6 +1,6 @@
-local Multi_InternetGatewayDevice_Services_Client_i_ = {
+local InternetGatewayDevice_Services_Client_i_ = {
   objectType = {
-    name = "#ROOT.{i}.",
+    name = "InternetGatewayDevice.Services.X_000E50_Wifi.Client.{i}.",
     access = "readOnly",
     description = "ONO-Wifi client service related parameters",
     numEntriesParameter = "ClientsCounter",
@@ -33,7 +33,7 @@ local fon_helper = require('transformer.shared.fon_helper')
 local wirelessBinding = { config = "wireless" }
 local accpoints, assocTime = {}, {}
 
-Multi_InternetGatewayDevice_Services_Client_i_.entries = function(mapping, param, key)
+InternetGatewayDevice_Services_Client_i_.entries = function(mapping, param, key)
   local entries = {}
   accpoints = {}
   assocTime = {}
@@ -53,7 +53,7 @@ Multi_InternetGatewayDevice_Services_Client_i_.entries = function(mapping, param
   return entries
 end
 
-Multi_InternetGatewayDevice_Services_Client_i_.get = {
+InternetGatewayDevice_Services_Client_i_.get = {
   MAC = function(mapping, param, key)
     return key or ""
   end,
@@ -71,8 +71,4 @@ Multi_InternetGatewayDevice_Services_Client_i_.get = {
   end
 }
 
-local duplicator = mapper("multiroot").duplicate
-local duplicates = duplicator(Multi_InternetGatewayDevice_Services_Client_i_, "#ROOT", {"InternetGatewayDevice.Services.X_VFWifi.Client", "InternetGatewayDevice.Services.X_000E50_Wifi.Client"})
-for _, dupli in ipairs(duplicates) do
-  register(dupli)
-end
+register(InternetGatewayDevice_Services_Client_i_)

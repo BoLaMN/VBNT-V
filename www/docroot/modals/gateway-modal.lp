@@ -14,6 +14,14 @@ local floor, ipairs = math.floor, ipairs
 local currentuserrole = ngx.ctx.session:getrole()
 local timezone = require("transformer.shared.timezone")
 local gVCS = post_helper.getValidateCheckboxSwitch()
+local session = ngx.ctx.session
+local gOV = post_helper.getOrValidation
+local gAV = post_helper.getAndValidation
+local process = require 'tch.process'
+local telstra_helper = require("telstra_helper")
+local symbolv1 = telstra_helper.symbolnamev1
+local symbolv2 = telstra_helper.symbolnamev2
+local untaint_mt = require("web.taint").untaint_mt
 
 local function wait_for_completion(base_path, return_json, filename)
   local state_path = base_path .. "state"
@@ -236,6 +244,74 @@ local function resetreboot(path, value)
   end)
   ngx.exit(ngx.HTTP_OK)
 end
+
+-- Colors:
+-- cyan = blue + green
+-- magenta = blue + red
+-- orange = green + red
+-- white = blue + green + red
+--
+-- LED maps:
+-- internet/lte/voip/dect = RGO
+-- ethernet/mobile/wireless = G
+
+
+local LOW = "2"
+local MID = "5"
+local HIGH = "8"
+
+local RGO_map = setmetatable({
+  low =    {red = LOW,  green = LOW,  orange = LOW},
+  middle = {red = MID,  green = MID,  orange = MID},
+  high =   {red = HIGH, green = HIGH, orange = HIGH},
+}, untaint_mt)
+
+local G_map = setmetatable({
+  low =    {green = LOW},
+  middle = {green = MID},
+  high =   {green = HIGH},
+}, untaint_mt)
+
+local leds_map = setmetatable({
+  internet = RGO_map,
+  ethernet = G_map,
+  mobile = G_map,
+  lte = RGO_map,
+  voip = RGO_map,
+  wireless = G_map,
+  dect = RGO_map,
+}, untaint_mt)
+
+local ledlevel_values = setmetatable({
+  low = true,
+  middle = true,
+  high = true,
+}, untaint_mt)
+
+local levels_map = RGO_map
+
+function getLedLevel(red, green, blue)
+  local level = "high"
+  for k1, v1 in pairs(levels_map) do
+    if v1["red"] == red and v1["green"] == green then
+      return k1
+    end
+  end
+  return level
+end
+
+local led_levels = {
+  {"low", T"<strong>Low</strong>"},
+  {"middle", T"<strong>Medium</strong>"},
+  {"high", T"<strong>High</strong>"},
+}
+
+local brightness = {
+  red = "uci.ledfw.brightness.@brightness[0].red",
+  green = "uci.ledfw.brightness.@brightness[0].green",
+  blue = "uci.ledfw.brightness.@brightness[0].blue",
+}
+
 local mmpbxPhonebookFlushKeepDefaultPath = "rpc.mmpbx.phonebook.flush.keepDefault"
 
 local mmpbxPhonebookFlushKeepAllPath = "rpc.mmpbx.phonebook.flush.keepAll"
@@ -265,6 +341,7 @@ if ngx.req.get_method() == "POST" then
   end
   if action == "system_reset" then
     proxy.set("rpc.mmpbxbrcmdect.registration.clear", "all")
+    proxy.set("uci.env.var.rtfds", "1") -- "rpc.system.reset" should be "rtfd --soft" for telstra
     ngx.sleep(8)
     local retain_mode = ngx.req.get_post_args().retain
     if retain_mode == "default" then
@@ -276,6 +353,25 @@ if ngx.req.get_method() == "POST" then
   end
   if action == "system_reboot" then
     return resetreboot("rpc.system.reboot", "GUI")
+  end
+  local postargs = ngx.req.get_post_args()
+  local ledlevel = postargs["ledlevel"]
+  if ledlevel_values[ledlevel] then
+    local led_paths = proxy.getPN("uci.ledfw.brightness.", true)
+    for _,v in ipairs(led_paths) do
+      local led_path = v.path
+      local led_name = proxy.get(led_path .. "name")
+      if led_name and led_name[1].value then
+        local name = led_name[1].value
+        if leds_map[name] and leds_map[name][ledlevel] then
+          for k1, v1 in pairs(leds_map[name][ledlevel]) do
+            proxy.set(led_path .. k1, v1)
+          end
+        end
+      end
+    end
+
+    proxy.apply()
   end
 elseif ngx.req.get_method() == "GET" then
   local action = ngx.req.get_uri_args().action
@@ -292,6 +388,14 @@ elseif ngx.req.get_method() == "GET" then
     ngx.print('{ "success":"true" , "banksize":"' .. untaint(content.fwflash_size) .. '" }')
     ngx.exit(ngx.HTTP_OK)
   end
+end
+
+local led_path = "uci.ledfw.brightness.@brightness[0].name"
+local led_internet = proxy.get(led_path)
+local led_level
+if led_internet and led_internet[1].value == "internet" then
+  content_helper.getExactContent(brightness)
+  led_level = getLedLevel(brightness["red"], brightness["green"], brightness["blue"])
 end
 
 -- Non-configurable data
@@ -340,8 +444,48 @@ local ntp_columns = {
   }
 }
 
+local function validateNTP(value, object, key)
+-- Adding localdevicemask in post to find the input is a network or broadcast IPv4 address in advancedIPValidation
+  object["localdevmask"] = proxy.get("uci.network.interface.@lan.netmask")[1].value
+  local ntp_servers = session:retrieve("ntp_data")
+  if ntp_servers then
+    for _,v in pairs(ntp_servers) do
+       if (v[1] == value) then
+         return nil, T"Duplicate entry is not allowed"
+       end
+    end
+  end
+
+  local ok, errmsg, wholeNumber
+  wholeNumber = string.gsub(value,"%.","")
+  if post_helper.getValidateWholeNumber(wholeNumber) then
+    ok, errmsg = post_helper.validateStringIsIPv4(value)
+    if not ok then
+      return nil, errmsg
+    end
+    if post_helper.validateIPv4Netmask(value) then
+      return nil, T"Cannot use IPv4 subnet mask."
+    end
+    local ipaddr = proxy.get("rpc.network.interface.@lan.ipaddr")[1].value
+    local wan_ipaddr = proxy.get("rpc.network.interface.@wan.ipaddr")[1].value
+    if ipaddr and ipaddr == value then
+      return nil, T("Cannot use the " .. symbolv2 .. " IP address.")
+    elseif wan_ipaddr and wan_ipaddr == value then
+      return nil, T("Cannot use the " .. symbolv2 .. " WAN IP address.")
+    else
+      return gOV(gAV(post_helper.reservedIPValidation, post_helper.advancedIPValidation), post_helper.validateStringIsIPv6)(value, object, key)
+    end
+  else
+    if not post_helper.validateStringIsIPv6(value) then
+      return post_helper.validateStringIsDomainName(value)
+    else
+      return true
+    end
+  end
+end
+
 local ntp_valid = {
-  ntp_server = post_helper.validateNonEmptyString,
+  ntp_server = validateNTP
 }
 
 local ntp_options = {
@@ -457,7 +601,7 @@ local uri = ngx.var.uri
 local help_link = { href="/help/index.html?anchor=" .. format("%s", uri:match("/([^/]+)%.lp")) }
   ngx.print('\
 \
-');  ngx.print(ui_helper.createHeader(T"Gateway", true, true, nil, help_link) ); ngx.print('\
+');  ngx.print(ui_helper.createHeader(T(symbolv1), true, true, nil, help_link) ); ngx.print('\
 <div class="modal-body update">\
 ');  ngx.print(ui_helper.createMessages(message_helper.popMessages())); ngx.print('\
 <fieldset>\
@@ -659,6 +803,9 @@ local help_link = { href="/help/index.html?anchor=" .. format("%s", uri:match("/
     local currentTZ_gui = getTimeZoneName(timezones, false)
     html[#html + 1] = ui_helper.createLabel(T"Current Timezone", currentTZ_remote, default_tz_class)
     html[#html + 1] = ui_helper.createInputSelect(T"Current Timezone", "system_timezone", timezones, currentTZ_gui, user_tz_class)
+    if led_level then
+      html[#html + 1] = ui_helper.createSliderSelect(T"Led Level", "ledlevel", led_levels, led_level, basic)
+    end
     ngx.print(html)
   ngx.print('\
 </div>\
@@ -741,28 +888,6 @@ html = {}
   var refreshTimeOut = 5000;\
   var refreshDelay = 3000;\
   var target = $(".modal form").attr("action");\
-\
-  function wait_for_webserver_running() {\
-    $.ajax({ url: "/", timeout: refreshTimeOut })\
-    .done(function(data) {\
-      document.open("text/html");\
-      document.write(data);\
-      document.close();\
-    })\
-    .fail(function() {\
-      window.setTimeout(wait_for_webserver_running, refreshDelay);\
-    });\
-  }\
-\
-  function wait_for_webserver_down() {\
-    $.ajax({ url: target, timeout: refreshTimeOut })\
-    .done(function() {\
-      window.setTimeout(wait_for_webserver_down, refreshDelay);\
-    })\
-    .fail(function() {\
-      window.setTimeout(wait_for_webserver_running, refreshDelay);\
-    });\
-  }\
 \
   function resetreboot(msg, msg_dst, action) {\
     msg_dst.after(msg);\

@@ -3,14 +3,19 @@ local o = uc.uci('old')
 local n = uc.uci('new')
 
 local enabled = o:get('dhcprelay', 'config', 'enabled')
-if enabled and enabled == '1' then
+if enabled then
   local serverip = o:get('dhcprelay', 'config', 'serverip')
   local serverif = o:get('dhcprelay', 'config', 'serveriface')
   local intf = o:get('dhcprelay', 'config', 'clientiface')
 
   local ipaddr = intf and o:get('network', intf, 'ipaddr')
   if ipaddr and serverip then
-    local sname = n:add('dhcp', 'relay')
+    local sname
+    if enabled == "1" then
+      sname = n:get('dhcp', 'relay')
+    elseif enabled == "0" then
+      sname = n:add('dhcp', 'relaybackup')
+    end
     n:set('dhcp', sname, 'local_addr',  ipaddr)
     n:set('dhcp', sname, 'server_addr',  serverip)
     if serverif then

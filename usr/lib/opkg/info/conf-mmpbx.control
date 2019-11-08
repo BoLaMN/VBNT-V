@@ -1,9 +1,9 @@
 Package: conf-mmpbx
 Version: 1.0
-Depends: libc, libssp, mmpbx
+Depends: libc, libssp, librt, libpthread, mmpbx
 Source: feeds/custo/conf-mmpbx
 Section: conf-mmpbx
 Maintainer: Technicolor <linuxgw@technicolor.com>
 Architecture: brcm63xx-tch
-Installed-Size: 67982
+Installed-Size: 158650
 Description:  Configuration for MMPBX

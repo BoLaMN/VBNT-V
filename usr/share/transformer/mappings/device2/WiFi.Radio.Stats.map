@@ -51,6 +51,14 @@ local Device_WiFi_Radio_i_Stats_ = {
         access = "readOnly",
         type = "int",
       },
+      FCSErrorCount = {
+        access = "readOnly",
+        type = "unsignedInt",
+      },
+      PLCPErrorCount = {
+        access = "readOnly",
+        type = "unsignedInt",
+      },
     }
   }
 }
@@ -90,6 +98,8 @@ local statsEntries = {
   ErrorsReceived = "rx_errors",
   DiscardPacketsSent = "tx_discards",
   DiscardPacketsReceived = "rx_discards",
+  FCSErrorCount = "rx_bad_fcs",
+  PLCPErrorCount = "rx_bad_plcp"
 }
 
 Device_WiFi_Radio_i_Stats_.get = function(mapping, param, key)

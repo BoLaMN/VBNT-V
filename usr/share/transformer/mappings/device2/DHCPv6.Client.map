@@ -40,13 +40,11 @@ local Device_DHCPv6_Client_i_ = {
         },
         default = "Disabled",
       },
---[[TODO
       DUID = {
         access = "readOnly",
         type = "hexBinary",
         max = "130",
       },
---]]
       RequestAddresses = {
         access = "readWrite",
         type = "boolean",
@@ -87,12 +85,12 @@ local Device_DHCPv6_Client_i_ = {
           },
         },
       },
+--]]
       SupportedOptions = {
         access = "readOnly",
         list = true,
         type = "unsignedInt",
       },
---]]
       RequestedOptions = {
         access = "readWrite",
         list = true,
@@ -109,8 +107,10 @@ local Device_DHCPv6_Client_i_ = {
 }
 
 -- function aliases
+local string, pairs, tonumber, resolve, mapper = string, pairs, tonumber, resolve, mapper
 local nwCommon = mapper("nwcommon")
 local uciHelper = mapper("ucihelper")
+local conn = mapper("ubus").connect()
 local nwBinding = { config = "network"}
 local getUbusInterfaceStatus=nwCommon.get_ubus_interface_status
 local isConfigChanged = false
@@ -166,9 +166,44 @@ Device_DHCPv6_Client_i_.entries = function()
   return dhcpv6Interfaces
 end
 
+local function getDeviceDetails(key)
+  local device
+  local iface = model:getBaseKey(key)
+  nwBinding.state = false
+  iface = getUciParam(iface or key, "ifname")
+  if iface == "" then
+    return "1", "00:00:00:00:00:00"
+  end
+  nwBinding.sectionname = "device"
+  uciHelper.foreach_on_uci(nwBinding, function(s)
+    if s[".name"] == iface then
+      device = s.ifname
+      return false
+    end
+  end)
+  local deviceType = nwCommon.getIntfInfo(device or iface, "type", "1")
+  local deviceMac = conn:call("network.device", "status", {["name"] = device or iface})
+  deviceMac = deviceMac and deviceMac.macaddr or "00:00:00:00:00:00"
+  return deviceType, deviceMac
+end
+
 local function getEnable(_, _, key)
   local status = getUciParam(key, "auto")
   return status == '0' and '0' or '1'
+end
+
+local function getDuid(mapping, param, key)
+  local clientid = getUciParam(key, "clientid")
+  if clientid ~= "" then
+    return nwCommon.string2Hex(clientid)
+  end
+  local type, mac = getDeviceDetails(key)
+  -- By default we are choosing "DUID Based on Link-layer Address [DUID-LL]". This is type 3 DUID.
+  -- Since it is type 3 DUID as per RFC3315, Default Format if not clientid is found is represented below:
+  -- Two octets containing the DUID type 3 ("00:03:"), a two octet network hardware type code ("00:<hardware type>"),
+  -- followed by the link-layer address of any one network interface.
+  local duid = string.format("00:03:00:%02d:%s", type, mac)
+  return nwCommon.string2Hex(duid)
 end
 
 local function getInterface(mapping, param, key)
@@ -232,13 +267,15 @@ end
 
 Device_DHCPv6_Client_i_.get = {
   Enable = getEnable,
+  DUID = getDuid,
   Interface = getInterface,
   Status = getStatus,
   RequestAddresses = getRequestAddresses,
   RequestPrefixes = getRequestPrefixes,
   RapidCommit = getRapidCommit,
   Renew = '0',
-  RequestedOptions = getRequestedOptions
+  RequestedOptions = getRequestedOptions,
+  SupportedOptions = '01,15,16,18'
 }
 
 Device_DHCPv6_Client_i_.getall = function(mapping, key)

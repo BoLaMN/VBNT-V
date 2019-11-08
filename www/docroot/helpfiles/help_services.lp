@@ -3,7 +3,11 @@
 local lp = require("web.lp")
 lp.setpath("/www/snippets/")
   ngx.print('\
-\
+');  
+local telstra_helper = require("telstra_helper")
+local symbolv1 = telstra_helper.symbolnamev1
+local symbolv2 = telstra_helper.symbolnamev2
+  ngx.print('\
 <!DOCTYPE HTML>\
 ');  ngx.print( string.format('<html lang="%s">', gettext.language()) ); ngx.print('\
     <head>\
@@ -13,7 +17,7 @@ lp.setpath("/www/snippets/")
     <link href="/css/gw-telstra.css" rel="stylesheet">\
     <!--[if IE 7]><link rel="stylesheet" href="/css/font-awesome-ie7.css"><![endif]-->\
     <script src="/js/main-telstra-min.js" ></script>\
-    <title>');  ngx.print( T"Telstra Gateway" ); ngx.print('</title>\
+    <title>');  ngx.print( T("Telstra " .. symbolv1) ); ngx.print('</title>\
 \
     <style type="text/css">\
         .service_legend { \

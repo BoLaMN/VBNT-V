@@ -110,8 +110,8 @@ if bspeerwl and bspeerap then
     if isBaseIface(wl) then
       local bandsteerAddParams = {
             bspifacessid = piface .. "@" .. bspeerwl .. ".ssid",
-            bspeer_security_mode = pap .. "@" .. bspeerap .. ".security_mode",
-            bspeer_wpa_psk_key = pap .. "@" .. bspeerap .. ".wpa_psk_key",
+            bspeer_security = pap .. "@" .. bspeerap .. ".security_mode",
+            bspeer_wpa_psk = pap .. "@" .. bspeerap .. ".wpa_psk_key",
         }
         for k,v in pairs(bandsteerAddParams) do
             bandsteerParams[k] = v
@@ -123,23 +123,83 @@ if bspeerwl and bspeerap then
     end
 end
 
+local multiap_state = {
+      agent = "uci.multiap.agent.enabled",
+      controller = "uci.multiap.controller.enabled",
+}
+content_helper.getExactContent(multiap_state)
+
+local multiap_enabled = multiap_state.agent == "1" and multiap_state.controller == "1"
+
+local multiap_cred_path = "uci.multiap.controller_credentials."
+local multiap_cred_data = content_helper.convertResultToObject(multiap_cred_path .. "@.", proxy.get(multiap_cred_path))
+local multiap_cred = {}
+for i,v in ipairs(multiap_cred_data) do
+    if v.fronthaul == '1' then
+        if strmatch(v.frequency_bands, "radio_2G") then
+            multiap_cred.primary = v.paramindex
+        else
+            multiap_cred.secondary = v.paramindex
+        end
+    end
+end
+
+local multiap_cred_primary_path = multiap_cred.primary and multiap_cred_path .."@" .. multiap_cred.primary
+local multiap_cred_secondary_path = multiap_cred.secondary and multiap_cred_path .."@" .. multiap_cred.secondary
+if multiap_cred_primary_path and multiap_cred_secondary_path then
+    mapParams["multiap_cred_primary_bands"] = multiap_cred_primary_path .. ".frequency_bands"
+    mapParams["multiap_cred_secondary_state"] = multiap_cred_secondary_path .. ".state"
+end
+
+local _, bandsteer_enabled = bandsteer_helper.getBandSteerState(bspeerap, ap, multiap_enabled and multiap_cred_secondary_path)
+local multiap_prefix = "multiap_"
+if multiap_enabled then
+    multiap_prefix = ""
+end
+
+if not isBaseIface(wl) and not bandsteer_enabled and multiap_cred_secondary_path then
+    mapParams[multiap_prefix .. "ssid"] = multiap_cred_secondary_path .. ".ssid"
+    mapParams[multiap_prefix .. "wpa_psk"] = multiap_cred_secondary_path .. ".wpa_psk_key"
+    mapParams[multiap_prefix .. "security"] = multiap_cred_secondary_path .. ".security_mode"
+elseif multiap_cred_primary_path then
+    mapParams[multiap_prefix .. "ssid"] = multiap_cred_primary_path .. ".ssid"
+    mapParams[multiap_prefix .. "wpa_psk"] = multiap_cred_primary_path .. ".wpa_psk_key"
+    mapParams[multiap_prefix .. "security"] = multiap_cred_primary_path .. ".security_mode"
+end
+if mapParams.bspifacessid and multiap_cred_secondary_path then
+    mapParams[multiap_prefix .. "bspifacessid"] = multiap_cred_secondary_path .. ".ssid"
+    mapParams[multiap_prefix .. "bspeer_wpa_psk"] = multiap_cred_secondary_path .. ".wpa_psk_key"
+    mapParams[multiap_prefix .. "bspeer_security"] = multiap_cred_secondary_path .. ".security_mode"
+end
+
 -- We're defining the listbox enums here to be able to use them to validate the input
 
-local secmodes
-if getargs.radio == "5" then
-    -- do NOT show wep in 5G wifi
-    secmodes={
-        { "none", T"None"},
-        { "wpa2-psk", T"WPA2 PSK"},
-        { "wpa-wpa2-psk", T"WPA+WPA2 PSK"},
-    }
-else
-    secmodes={
-        { "none", T"None"},
-        { "wep", T"WEP"},
-        { "wpa2-psk", T"WPA2 PSK"},
-        { "wpa-wpa2-psk", T"WPA+WPA2 PSK"},
-    }
+local supported_modes_data  = proxy.get("rpc.wireless.ap.@" .. ap .. ".security.supported_modes")
+local supported_modes = format("%s", supported_modes_data and supported_modes_data[1] and supported_modes_data[1].value or "")
+local secmodes = {}
+local secmodes_matched = {
+     ["none"] = T"None",
+     ["wpa2-psk"] = T"WPA2 PSK",
+     ["wpa-wpa2-psk"] =  T"WPA+WPA2 PSK",
+     ["wpa-wpa2"] =  T"WPA+WPA2",
+}
+supported_modes:gsub("[^%s]+", function(c)
+    if secmodes_matched[c] then
+        secmodes[#secmodes+1] = { c, secmodes_matched[c] }
+    else
+        secmodes[#secmodes+1] = { c, T(string.upper(c)) }
+    end
+end)
+
+-- remove radius modes if no radio server
+local pathradius = format("uci.wireless.wifi-radius-server.@%s_", ap)
+if not proxy.get(pathradius .. "auth0.") then
+    local num = #secmodes
+    for i=num, 1, -1 do
+        if secmodes[i][1] == "wpa2" or secmodes[i][1] == "wpa-wpa2" then
+            table.remove(secmodes, i)
+        end
+    end
 end
 
 -- Listbox that shows the supported Access Control modes
@@ -187,6 +247,10 @@ post_helper.mergeTables(radioData, rdata);
 
 local curband = radioData.supported_frequency_bands
 
+local cw_20 = {
+    {"20MHz", T"20MHz"}
+}
+
 local cw_40 = {
     {"20MHz", T"20MHz"},
     {"auto", T"Auto (20/40MHz)"},
@@ -199,6 +263,7 @@ local cw_80 = {
 
 cw = setmetatable({
     ["2.4GHz"] = setmetatable({
+        bg = cw_20,
         bgn = cw_40,
     },untaint_mt),
     ["5GHz"] = setmetatable({
@@ -206,7 +271,7 @@ cw = setmetatable({
         anac = cw_80,
     }, untaint_mt),
 }, untaint_mt)
-local channelwidth = cw[curband][radioData.supported_standards]
+local channelwidth = cw[curband][radioData.standard]
 
 -- Define different Channel Width contain different Channel
 local list5g20 = {
@@ -325,17 +390,27 @@ local function vApPinEnabled (value, postdata, key)
 end
 
 local function getValidateBandSteerPeerFields(value, object, key)
+    if object.multiap_security then
+        object.multiap_security = object.security
+        object.multiap_wpa_psk = object.wpa_psk
+        object.multiap_ssid = object.ssid
+    end
     if "table" == type(object.band_steer_supported) then
-        if "" ~= object.bsid and "off" ~= object.bsid then
+        if object.bsid ~= "" and ((not multiap_enabled and object.bsid ~= "off") or (multiap_enabled and object.multiap_cred_secondary_state == "0")) then
             if object.security == "wep" then
                 return nil, T"The Band Steering can not be supported under WEP security mode."
             end
 
             if isBaseIface(wl) then
-                if object.bspeer_security_mode then
-                    object.bspeer_security_mode = object.security
-                    object.bspeer_wpa_psk_key = object.wpa_psk
+                if object.bspeer_security then
+                    object.bspeer_security = object.security
+                    object.bspeer_wpa_psk = object.wpa_psk
                     object.bspifacessid = object.ssid
+                end
+                if object.multiap_bspifacessid then
+                    object.multiap_bspeer_security = object.security
+                    object.multiap_bspeer_wpa_psk = object.wpa_psk
+                    object.multiap_bspifacessid = object.ssid
                 end
             end
             return true
@@ -351,19 +426,33 @@ local function getValidateBandSteerPeerFields(value, object, key)
                 end
 
                 if isBaseIface(wl) then
-                    object.bsid = bsid
-                    object.bspeerid = bsid
+                    if not multiap_enabled then
+                        object.bsid = bsid
+                        object.bspeerid = bsid
+                    else
+                        object.bsid = "off"
+                        object.bspeerid = "off"
+                    end
 
-                    if object.bspeer_security_mode then
-                        object.bspeer_security_mode = object.security
-                        object.bspeer_wpa_psk_key = object.wpa_psk
+                    if object.bspeer_security then
+                        object.bspeer_security = object.security
+                        object.bspeer_wpa_psk = object.wpa_psk
                         object.bspifacessid = object.ssid
+                    end
+                    if object.multiap_bspifacessid then
+                        object.multiap_bspeer_security = object.security
+                        object.multiap_bspeer_wpa_psk = object.wpa_psk
+                        object.multiap_bspifacessid = object.ssid
                     end
                 end
             end
         end
+        if object.multiap_cred_primary_bands then
+            object.multiap_cred_primary_bands = "radio_2G,radio_5Gu,radio_5Gl"
+            object.multiap_cred_secondary_state = "0"
+        end
     elseif object.band_steer_supported then --to disable bandsteer
-        return disableBandSteer(object)
+        return disableBandSteer(object, multiap_enabled)
     end
 
     return true
@@ -435,23 +524,7 @@ local content, helpmsg = post_helper.handleQuery(mapParams, mapValid)
 -- Support for device PIN code
 content["wps_device_pin_code"] = ""
 
-local band_steer_supported = 0
-local band_steer_enabled = "0"
-
-if bspeerwl and bspeerap then
-    local content_band_steer = {
-        band_steer_id = "uci.wireless.wifi-ap.@" .. ap .. ".bandsteer_id",
-    }
-    content_helper.getExactContent(content_band_steer)
-
-    --To get the content_band_steer value
-    if "" ~= content_band_steer.band_steer_id then
-        band_steer_supported = 1
-        if "off" ~= content_band_steer.band_steer_id then
-            band_steer_enabled = "1"
-        end
-    end
-end
+local band_steer_supported, band_steer_enabled = bandsteer_helper.getBandSteerState(bspeerap, ap, multiap_enabled and multiap_cred_secondary_path)
 
 -- triggered only on a POST with action set wps_device_pin_code (button next to field should trigger that)
 if ngx.req.get_method() == "POST" then
@@ -649,7 +722,7 @@ if default_ap_enabled == "0" then
   ssidclass["input"]["disabled"] = "disabled"
 end
 
-if "1" == band_steer_enabled and not isBaseIface(wl) then
+if band_steer_enabled and not isBaseIface(wl) then
     html[#html + 1] = ui_helper.createLabel(T"Network Name", content["ssid"], ssidclass)
 else
     html[#html + 1] = ui_helper.createInputText(T"Network Name", "ssid", content["ssid"], ssidclass, helpmsg["ssid"])
@@ -679,7 +752,7 @@ if default_ap_enabled == "0" then
   secattributes["select"]["disabled"] = "1"
 end
 
-if "1" == band_steer_enabled and not isBaseIface(wl) then
+if band_steer_enabled and not isBaseIface(wl) then
     html[#html + 1] = ui_helper.createLabel(T"Security Mode", content["security"], secattributes)
 else
     html[#html + 1] = ui_helper.createInputSelect(T"Security Mode", "security", secmodes, content["security"], secattributes)
@@ -715,7 +788,7 @@ if default_ap_enabled == "0" then
   pskclass["input"]["disabled"] = "disabled"
 end
 
-if "1" == band_steer_enabled and not isBaseIface(wl) then
+if band_steer_enabled and not isBaseIface(wl) then
     if "wep" == content["security"] then
         html[#html + 1] = ui_helper.createLabel(T"WEP Key", content["wep_key"], wepclass)
     end
@@ -805,7 +878,7 @@ wps_class["button"] = {
 }
 html[#html + 1] = ui_helper.createButton(T"Connect using WPS", T"Start", "icon-refresh", wps_class)
 
-if 1 == band_steer_supported and "wep" ~= content["security"] then
+if band_steer_supported and "wep" ~= content["security"] then
     local bssecclass = {
         group = {
             class ="monitor-security monitor-wpa-psk monitor-wpa2-psk monitor-wpa-wpa2-psk monitor-none",
@@ -818,10 +891,10 @@ if 1 == band_steer_supported and "wep" ~= content["security"] then
         },
     }
     if isBaseIface(wl) then
-        html[#html + 1] = ui_helper.createCheckboxSwitch(T"Band Steering Enabled", "band_steer_supported", band_steer_enabled, bssecclass)
+        html[#html + 1] = ui_helper.createCheckboxSwitch(T"Band Steering Enabled", "band_steer_supported", band_steer_enabled and "1" or "0", bssecclass)
         html[#html + 1] = ui_helper.createAlertBlock(T"The Band Steering actively guides the client to the most suitable Wi-Fi band, by detecting the client's capabilities and monitoring the interfaces.", bs_warning)
     else
-        html[#html + 1] = ui_helper.createLabel(T"Band Steering Enabled", band_steer_enabled == "1" and "Yes" or "No", ssidclass)
+        html[#html + 1] = ui_helper.createLabel(T"Band Steering Enabled", band_steer_enabled and "Yes" or "No", ssidclass)
     end
 end
 
@@ -867,7 +940,7 @@ if isguest ~= "1" then
     -- Detect whether NFC module exists, if exists, show the pop up info
     -----------------------------------------------------------
     local nfc_enabled = proxy.get("rpc.nfc.exists")
-    if (nfc_enabled and nfc_enabled[1].value == "true") then 
+    if (nfc_enabled and nfc_enabled[1].value == "true") then
         local nfc_alert = {
             alert = {
                 class = "alert alert-warning"

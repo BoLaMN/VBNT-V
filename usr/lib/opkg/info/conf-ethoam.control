@@ -1,6 +1,6 @@
 Package: conf-ethoam
 Version: 1.0
-Depends: libc, libssp, tmsctl
+Depends: libc, libssp, librt, libpthread, tmsctl
 Source: feeds/custo/conf-ethoam
 Section: conf-ethoam
 Maintainer: Technicolor <linuxgw@technicolor.com>

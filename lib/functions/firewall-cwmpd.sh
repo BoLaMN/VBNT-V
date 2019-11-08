@@ -13,11 +13,20 @@ add_cwmpd_fw_rule() {
   LOAD_STATE=1
 
   config_get state cwmpd_config state 0
-  [ $state -eq 0 ] && return
+  [ $state -eq 0 ] && {
+    uci_revert_state system.cwmpd
+  }
   config_get interface cwmpd_config interface "wan"
   zone=$(fw3 -q network "$interface")
   config_get port cwmpd_config connectionrequest_port "51007"
   config_get ip cwmpd_config connectionrequest_allowedips ""
+
+  [ "$zone" = "wan" ] && {
+    [ "$(uci_get_state system.cwmpd)" = "wan-service" ] ||
+      uci_set_state system cwmpd '' wan-service
+    uci_set_state system cwmpd proto tcp
+    uci_set_state system cwmpd ports "$port"
+  }
 
   # We do not (always) follow the UCI syntax and it is possible
   # to create a comma separated list

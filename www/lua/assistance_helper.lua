@@ -11,8 +11,8 @@ local function writeState(name, state)
             f:write(format("%s=%s\n", key, value))
         end
         f:close()
-        local uci = format("uci.web.assistance.@%s.active", name)
-        dm.set(uci, state.enabled or "trigger")
+        local uci = format("uci.web.assistance.@%s.interface", name)
+        dm.set(uci, state.ifname)
         dm.apply()
     end
 end
@@ -46,20 +46,7 @@ end
 local function process()
     local getargs = ngx.req.get_uri_args()
     for k, v in pairs(getargs) do
-        local enable, mode, pwdcfg, pwd = string.match(string.untaint(v), "(.*)_(.*)_(.*)_(.*)")
-        if enable then
-            local assistant = assistance.getAssistant(k)
-            if pwdcfg == "random" then
-                pwd=nil
-            elseif pwdcfg == "keep" then
-                pwd=false
-            end
-            if enable == "on" then
-                assistant:enable(true, mode=="permanent", pwd)
-            elseif enable == "off" then
-                assistant:enable(false, mode=="permanent", pwd)
-            end
-        elseif v == "reload_interface" then
+        if v == "reload_interface" then
             local interface = dm.get(format("uci.web.assistance.@%s.interface",k))
             local interface6 = dm.get(format("uci.web.assistance.@%s.interface6",k))
             interface = interface and interface[1].value
@@ -75,6 +62,7 @@ local function process()
             end
         end
     end
+    require("web.reload_assistance").reload(getargs)
 end
 
 M.change_interface = change_interface

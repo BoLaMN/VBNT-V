@@ -19,30 +19,15 @@ local Device_DHCPv4_Server_ = {
 
 local mapper, ipairs = mapper, ipairs
 local uciHelper = mapper("ucihelper")
-local common = mapper("nwcommon")
+local network = require("transformer.shared.common.network")
 local getFromUci = uciHelper.get_from_uci
-local forEachOnUci = uciHelper.foreach_on_uci
 local setOnUci = uciHelper.set_on_uci
 local dhcpBinding = {config="dhcp"}
 local isConfigChanged = false
 
-local function lanInterfaces(mapping, param, key)
-  local interfaces = {}
-  dhcpBinding.sectionname = "dhcp"
-  local lan = common.findLanWanInterfaces(false)
-  forEachOnUci(dhcpBinding, function(s)
-    for _,v in pairs(lan) do
-      if s['interface'] == v then
-        interfaces[#interfaces + 1] = s['.name']
-      end
-    end
-  end)
-  return interfaces
-end
-
 Device_DHCPv4_Server_.get = {
   Enable = function(mapping, param, key)
-    local interfaces = lanInterfaces()
+    local interfaces = network.getDHCPLanInterfaces()
     dhcpBinding.option = "dhcpv4"
     dhcpBinding.default = "server"
     for _,val in ipairs(interfaces) do
@@ -58,7 +43,7 @@ Device_DHCPv4_Server_.get = {
 
 Device_DHCPv4_Server_.set = {
   Enable = function(mapping, param, value, key)
-    local interfaces = lanInterfaces()
+    local interfaces = network.getDHCPLanInterfaces()
     dhcpBinding.option = "dhcpv4"
     value = (value == "1") and "server" or "disabled"
     for _,val in ipairs(interfaces) do

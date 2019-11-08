@@ -216,7 +216,6 @@ local Device_DSL_Line_i_ = {
           "L4",
         },
       },
---[[ TODO
       SuccessFailureCause = {
         access = "readOnly",
         type = "unsignedInt",
@@ -227,6 +226,7 @@ local Device_DSL_Line_i_ = {
           },
         },
       },
+--[[ TODO
       UPBOKLER = {
         access = "readOnly",
         type = "unsignedInt",
@@ -533,6 +533,12 @@ local Device_DSL_Line_i_ = {
         access = "readOnly",
         type = "unsignedInt",
       },
+      X_NumberOfCuts = {
+        access = "readOnly",
+        activeNotify = "canDeny",
+        type = "unsignedInt",
+        description = "Number of times the DSL connection was lost and reestablished since boot",
+      },
     }
   }
 }
@@ -805,6 +811,12 @@ Device_DSL_Line_i_.get = {
   XTUCANSIRev = function (mapping, param, key)
     return xdslctl.infoValue("XTUCANSIRev", nil, nil, xdslctlLineIdMap[key])
   end,
+  SuccessFailureCause = function (mapping, param, key)
+    return xdslctl.infoValue("SuccessFailureCause", "", "", key)
+  end,
+  X_NumberOfCuts = function(mapping, param, key)
+    return xdslctl.stats("total", "retr")
+  end,
 }
 
 Device_DSL_Line_i_.getall = function(mapping, key)
@@ -846,6 +858,7 @@ Device_DSL_Line_i_.getall = function(mapping, key)
     US0MASK = xdslInfoValues["MASK"] or "0",
     VirtualNoisePSDds = VirtualNoisePSDds:match("^%d+") or "0",
     VirtualNoisePSDus = VirtualNoisePSDus:match("^%d+") or "0",
+    SuccessFailureCause = "0",
     XTUCVendor = xdslInfoValues["XTUCVendor"] or "0",
     XTUCANSIStd = xdslInfoValues["XTUCANSIStd"] or "0",
     XTUCANSIRev = xdslInfoValues["XTUCANSIRev"] or "0",

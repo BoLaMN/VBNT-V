@@ -26,6 +26,7 @@ local function main(...)
   -- Get instance name from index
   local name
   local rotate
+  local persistenlog_enabled = false
   if tonumber(index) < 1 then
     name = "logread"
   else
@@ -36,7 +37,6 @@ local function main(...)
     end
 
     --check if persistentlog enabled
-    local persistenlog_enabled = false
     local log_binding = {config="system", sectionname="log"}
     uci_helper.foreach_on_uci(log_binding, function(s)
        if s.path and s.size and s.rotate then

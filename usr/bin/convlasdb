@@ -77,6 +77,8 @@ local new_indexes = {
     'FarEndReceiveDevInterarrivalJitter',
     'AverageFarEndInterarrivalJitter',
     'FarEndWorstReceiveInterarrivalJitter',
+    'InboundTotalRTCPXrPackets',
+    'OutboundTotalRTCPXrPackets',
     'InboundTotalRTCPPackets',
     'OutboundTotalRTCPPackets',
     'InboundSumFractionLoss',
@@ -147,6 +149,9 @@ if file_exists(homeware_lasdb) == true then
      else
         echo_debug ("Entry Already exist: %s", new_index)
      end
+  end
+  if db_lasdb:exec('delete from DectContactTypes') == sqlite.OK then
+      echo_debug("delete from DectContactTypes success")
   end
   db_lasdb:close()
 

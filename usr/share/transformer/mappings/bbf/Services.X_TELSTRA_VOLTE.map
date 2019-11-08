@@ -17,6 +17,11 @@ local Multi_Services_X_TELSTRA_VOLTE_ = {
         type = "boolean",
         default = "0",
       },
+      ActiveCall = {
+        access = "readOnly",
+        type = "boolean",
+        default = "0",
+      },
     }
   }
 }
@@ -25,6 +30,8 @@ local mapper = mapper
 local uci_helper = mapper("ucihelper")
 local binding = { config = "mmpbxmobilenet", sectionname="profile" }
 local configChanged = false
+local conn = mapper("ubus").connect()
+local table, type = table, type
 
 Multi_Services_X_TELSTRA_VOLTE_.get = {
   Enable = function(mapping, param, key)
@@ -37,6 +44,19 @@ Multi_Services_X_TELSTRA_VOLTE_.get = {
     end)
     return enabled
   end,
+  ActiveCall = function(config, name)
+    local calls_lte = conn:call("mobiled.voice", "call_info", {})
+    if type(calls_lte) == "table" then
+      for _,v in pairs(calls_lte) do
+        for _,v2 in pairs(v) do
+          if v2.call_state ~= nil then
+            return "1"
+          end
+        end
+      end
+    end
+    return "0"
+  end,
 }
 
 Multi_Services_X_TELSTRA_VOLTE_.set = {
@@ -44,8 +64,10 @@ Multi_Services_X_TELSTRA_VOLTE_.set = {
     local _binding = { config = "mmpbxmobilenet", option = "enabled"}
     uci_helper.foreach_on_uci(binding, function(s)
       _binding.sectionname = s[".name"]
-      uci_helper.set_on_uci(_binding, value, commitapply)
-      configChanged = true
+      if s["enabled"] ~= value then
+        uci_helper.set_on_uci(_binding, value, commitapply)
+        configChanged = true
+      end
     end)
   end,
 }

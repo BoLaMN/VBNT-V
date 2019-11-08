@@ -109,21 +109,30 @@ if bspeerwl and bspeerap then
         mapParams[k] = v
     end
 end
-local secmodes
-if getargs.guest == "2g_1" or getargs.guest == "2g_2" then
-    secmodes = {
-        { "none", T"None"},
-        { "wep", T"WEP"},
-        { "wpa2-psk", T"WPA2 PSK"},
-        { "wpa-wpa2-psk", T"WPA+WPA2 PSK"},
-    }
-else
-    -- do NOT show wep in 5G wifi
-    secmodes = {
-        { "none", T"None"},
-        { "wpa2-psk", T"WPA2 PSK"},
-        { "wpa-wpa2-psk", T"WPA+WPA2 PSK"},
-    }
+
+local supported_modes_data  = proxy.get("rpc.wireless.ap.@" .. ap .. ".security.supported_modes")
+local supported_modes = format("%s", supported_modes_data and supported_modes_data[1] and supported_modes_data[1].value or "")
+local secmodes = {}
+local secmodes_matched = {
+     ["none"] = T"None",
+     ["wpa2-psk"] = T"WPA2 PSK",
+     ["wpa-wpa2-psk"] =  T"WPA+WPA2 PSK",
+     ["wpa-wpa2"] =  T"WPA+WPA2",
+}
+supported_modes:gsub("[^%s]+", function(c)
+    if secmodes_matched[c] then
+        secmodes[#secmodes+1] = { c, secmodes_matched[c] }
+    else
+        secmodes[#secmodes+1] = { c, T(string.upper(c)) }
+    end
+end)
+
+-- remove radius modes if in guest ap page
+local num = #secmodes
+for i=num, 1, -1 do
+    if secmodes[i][1] == "wpa2" or secmodes[i][1] == "wpa-wpa2" then
+        table.remove(secmodes, i)
+    end
 end
 
 -- Shortcuts to validation helpers to make lines shorter
@@ -239,7 +248,7 @@ end
 content["phy_rate"] = content["phy_rate"] or 0
 
 -- Mac Address
-content["macaddress"] = proxy.get("sys.class.net.@" .. wl .. ".address")[1].value
+content["macaddress"] = proxy.get("rpc.wireless.ssid.@".. wl .. ".mac_address")[1].value
 
 local uri = ngx.var.uri
 if ngx.var.args and string.len(ngx.var.args) > 0 then

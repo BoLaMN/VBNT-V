@@ -179,15 +179,19 @@ local InternetGatewayDevice_WANDevice_i_WANDSLDiagnostics_ = {
 }
 
 local logger = require 'transformer.logger'
-local xdslctl = require("transformer.shared.xdslctl")
+local dsl_supported, xdslctl = pcall(require,"transformer.shared.xdslctl")
 local cmdhelper = require("transformer.shared.cmdhelper")
-local execute = os.execute
+local process = require 'tch.process'
 local pcall = pcall
 local uciHelper = mapper("ucihelper")
 local diagresult = ""
 
 local wandevice = require 'transformer.shared.models.igd.wandevice'
 local getDevtypeAndName = wandevice.getDevtypeAndName
+
+local function is35bProfile(key)
+  return  (xdslctl.infoValue("vdsl2profile","","",key) or "") == "35b"
+end
 
 local function getDiagStatus()
     local none_mt = { __index = function() return "None" end }
@@ -214,6 +218,9 @@ local function xdslctl_loopinfo(mapping, paramname, key)
 end
 
 local function xdslctl_info(mapping, paramname, key)
+  if is35bProfile(key) and (mapping == "HLINps" or mapping == "HLOGps" or mapping == "SNRps" or mapping == "QLNps") then
+     return "0"
+  end
   local status, result = pcall(xdslctl.infoValue, mapping, paramname, "", key)
   return status and result or ""
 end
@@ -261,7 +268,7 @@ end
 
 InternetGatewayDevice_WANDevice_i_WANDSLDiagnostics_.revert = function(mapping)
     logger:debug("====== Resume DSL ======")
-    execute("xdslctl connection --up")
+    process.execute("xdslctl", {"connection", "--up"})
 end
 
 register(InternetGatewayDevice_WANDevice_i_WANDSLDiagnostics_)

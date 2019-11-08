@@ -4,7 +4,7 @@
 			<title>Advanced View </title>
 		</chapter>
 		<chapter id="3" location="Gateway0.xml" anchors="gateway-modal">
-			<title>Gateway</title>
+			<title><var name="1-productname01" /></title>
 		</chapter>
 		<chapter id="4" location="Broadband0.xml" anchors="broadband-modal">
 			<title>Broadband</title>
@@ -64,88 +64,100 @@
 				<title>DMZ</title>
 			</section>
 			<section id="22" location="WAN Services2.xml">
-				<title>Port forwarding table</title>
+				<title>IPv4 Port forwarding table</title>
 			</section>
 			<section id="23" location="WAN Services3.xml">
-				<title>UPnP</title>
+				<title>IPv6 forwarding table</title>
 			</section>
 			<section id="24" location="WAN Services4.xml">
-				<title>DynDNS</title>
+				<title>DNS rules</title>
 			</section>
 			<section id="25" location="WAN Services5.xml">
+				<title>UPnP</title>
+			</section>
+			<section id="26" location="WAN Services6.xml">
+				<title>DynDNS</title>
+			</section>
+			<section id="27" location="WAN Services7.xml">
 				<title>Wake On Lan</title>
 			</section>
+			<section id="28" location="WAN Services8.xml">
+				<title>ALG Configuration</title>
+			</section>
+			<section id="29" location="WAN Services9.xml">
+				<title>NAT Configuration</title>
+			</section>
 		</chapter>
-		<chapter id="26" location="Firewall0.xml" anchors="firewall-modal">
+		<chapter id="30" location="Firewall0.xml" anchors="firewall-modal">
 			<title>Firewall</title>
 		</chapter>
-		<chapter id="27" location="Telephony0.xml" anchors="mmpbx-info-modal">
+		<chapter id="31" location="Telephony0.xml" anchors="mmpbx-info-modal">
 			<title>Telephony</title>
-			<section id="28" location="Telephony1.xml">
+			<section id="32" location="Telephony1.xml">
 				<title>Information</title>
 			</section>
-			<section id="29" location="Telephony2.xml" anchors="mmpbx-volte-modal">
+			<section id="23" location="Telephony2.xml" anchors="mmpbx-volte-modal">
 				<title>VoLTE</title>
 			</section>
-			<section id="30" location="Telephony3.xml" anchors="mmpbx-dect-modal">
+			<section id="34" location="Telephony3.xml" anchors="mmpbx-dect-modal">
 				<title>DECT</title>
 			</section>
 		</chapter>
-		<chapter id="31" location="Diagnostics0.xml" anchors="diagnostics-xdsl-modal">
+		<chapter id="35" location="Diagnostics0.xml" anchors="diagnostics-xdsl-modal">
 			<title>Diagnostics</title>
-			<section id="32" location="Diagnostics1.xml">
+			<section id="36" location="Diagnostics1.xml">
 				<title>xDSL</title>
 			</section>
-			<section id="33" location="Diagnostics2.xml" anchors="diagnostics-ping-modal">
+			<section id="37" location="Diagnostics2.xml" anchors="diagnostics-ping-modal">
 				<title>Ping &amp;#38; Traceroute</title>
 			</section>
-			<section id="34" location="Diagnostics3.xml" anchors="diagnostics-connection-modal">
+			<section id="38" location="Diagnostics3.xml" anchors="diagnostics-connection-modal">
 				<title>Connection</title>
 			</section>
-			<section id="35" location="Diagnostics4.xml" anchors="diagnostics-network-modal">
+			<section id="39" location="Diagnostics4.xml" anchors="diagnostics-network-modal">
 				<title>Network</title>
 			</section>
-			<section id="36" location="Diagnostics5.xml" anchors="logviewer-modal">
+			<section id="40" location="Diagnostics5.xml" anchors="logviewer-modal">
 				<title>Log viewer</title>
 			</section>
 		</chapter>
-		<chapter id="37" location="TelstraWiFiCommunity0.xml" anchors="fon-modal">
+		<chapter id="41" location="TelstraWiFiCommunity0.xml" anchors="fon-modal">
 			<title>Telstra Air</title>
 		</chapter>
-		<chapter id="38" location="Mobile0.xml" anchors="lte-modal">
+		<chapter id="42" location="Mobile0.xml" anchors="lte-modal">
 			<title>Mobile</title>
-			<section id="39" location="Mobile1.xml">
+			<section id="43" location="Mobile1.xml">
                 <title>Configuration</title>
 			</section>
-			<section id="40" location="Mobile2.xml" anchors="lte-sim">
+			<section id="44" location="Mobile2.xml" anchors="lte-sim">
                 <title>SIM</title>
 			</section>
-			<section id="41" location="Mobile3.xml" anchors="lte-doctor">
+			<section id="45" location="Mobile3.xml" anchors="lte-doctor">
                 <title>Diagnostics</title>
 			</section>
-			<section id="42" location="Mobile4.xml" anchors="lte-profiles">
+			<section id="46" location="Mobile4.xml" anchors="lte-profiles">
                 <title>Profiles</title>
 			</section>
 		</chapter>
-		<chapter id="43" location="Management0.xml" anchors="usermgr-modal">
+		<chapter id="47" location="Management0.xml" anchors="usermgr-modal">
 			<title>Management</title>
-			<section id="44" location="Management1.xml">
+			<section id="48" location="Management1.xml">
 				<title>User Manager</title>
 			</section>
-			<section id="45" location="Management2.xml" anchors="assistance-modal">
+			<section id="49" location="Management2.xml" anchors="assistance-modal">
 				<title>Remote assistance</title>
 			</section>
 		</chapter>
-		<chapter id="46" location="Content Sharing0.xml" anchors="contentsharing-modal">
+		<chapter id="50" location="Content Sharing0.xml" anchors="contentsharing-modal">
 			<title>Content Sharing</title>
 		</chapter>
-		<chapter id="47" location="Printer Sharing0.xml" anchors="printersharing-modal">
+		<chapter id="51" location="Printer Sharing0.xml" anchors="printersharing-modal">
 			<title>Printer Sharing</title>
 		</chapter>
-		<chapter id="48" location="ParentalControls0.xml" anchors="parental-modal">
+		<chapter id="52" location="ParentalControls0.xml" anchors="parental-modal">
 			<title>Parental Controls</title>
 		</chapter>
-		<chapter id="49" location="TimeofDay0.xml" anchors="tod-modal">
+		<chapter id="53" location="TimeofDay0.xml" anchors="tod-modal">
 			<title>Time of Day</title>
 		</chapter>
 	</book>

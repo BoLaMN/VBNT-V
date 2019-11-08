@@ -230,7 +230,7 @@ local function get_profile_info(device, info)
 				elseif pdp == "IPV6" then
 					pdptype = "ipv6"
 				end
-				table.insert(profiles, { id = id, apn = apn, pdptype = pdptype })
+				table.insert(profiles, { name = "Profile " .. id, id = id, apn = apn, pdptype = pdptype, authentication = "none" })
 			end
 		end
 	end
@@ -257,9 +257,12 @@ local function get_device_info(device, info)
 	end
 
 	if not device.buffer.device_info.imei then
-		ret = device:send_singleline_command("AT+CGSN", "")
-		if tonumber(ret) then
-			device.buffer.device_info.imei = ret
+		for _ = 1, 5 do
+			ret = device:send_singleline_command("AT+CGSN", "")
+			if tonumber(ret) then
+				device.buffer.device_info.imei = ret
+				break
+			end
 		end
 	end
 
@@ -323,7 +326,7 @@ local function get_device_capabilities(device, info)
 	for k in pairs(types) do
 		table.insert(supported_pdp_types, k)
 	end
-	info.supported_pdp_types = table.concat(supported_pdp_types, " ")
+	info.supported_pdp_types = supported_pdp_types
 end
 
 function M.get_device_capabilities(dev_idx)
@@ -333,21 +336,15 @@ function M.get_device_capabilities(dev_idx)
 end
 
 local function get_radio_signal_info(device, info)
-	local ret = device:send_singleline_command('AT+CSQ', "+CSQ:")
+	local ret = device:send_singleline_command('AT+CESQ', "+CESQ:")
 	if ret then
-		local rssi, ber = string.match(ret, "+CSQ:%s?(%d+),%s?(%d+)")
+		local rssi, ber, rscp, ecno, rsrq, rsrp = string.match(ret, "%+CESQ:%s*(%d+)%s*,%s*(%d+)%s*,%s*(%d+)%s*,%s*(%d+)%s*,%s*(%d+)%s*,%s*(%d+)")
+
 		rssi = tonumber(rssi)
-		if rssi then
-			if rssi == 0 then
-				info.rssi = -113
-			elseif rssi == 1 then
-				info.rssi = -111
-			elseif rssi == 31 then
-				info.rssi = -51
-			elseif rssi ~= 99 then
-				info.rssi = (((56-(rssi-2))*-1)-53)
-			end
+		if rssi and 0 <= rssi and rssi <= 63 then
+			info.rssi = rssi - 111
 		end
+
 		ber = tonumber(ber)
 		if ber then
 			if ber == 0 then
@@ -366,6 +363,57 @@ local function get_radio_signal_info(device, info)
 				info.ber = 9.05
 			elseif ber == 7 then
 				info.ber = 18.10
+			end
+		end
+
+		rscp = tonumber(rscp)
+		if rscp and 0 <= rscp and rscp <= 96 then
+			info.rscp = rscp - 121
+		end
+
+		ecno = tonumber(ecno)
+		if ecno and 0 <= ecno and ecno <= 49 then
+			info.ecno = ecno / 2 - 24.5
+		end
+
+		rsrq = tonumber(rsrq)
+		if rsrq and 0 <= rsrq and rsrq <= 34 then
+			info.rsrq = rsrq / 2 - 20
+		end
+
+		rsrp = tonumber(rsrp)
+		if rsrp and 0 <= rsrp and rsrp <= 97 then
+			info.rsrp = rsrp - 141
+		end
+	else
+		ret = device:send_singleline_command('AT+CSQ', "+CSQ:")
+		if ret then
+			local rssi, ber = string.match(ret, "+CSQ:%s?(%d+),%s?(%d+)")
+
+			rssi = tonumber(rssi)
+			if rssi and 0 <= rssi and rssi <= 31 then
+				info.rssi = 2 * rssi - 113
+			end
+
+			ber = tonumber(ber)
+			if ber then
+				if ber == 0 then
+					info.ber = 0.14
+				elseif ber == 1 then
+					info.ber = 0.28
+				elseif ber == 2 then
+					info.ber = 0.57
+				elseif ber == 3 then
+					info.ber = 1.13
+				elseif ber == 4 then
+					info.ber = 2.26
+				elseif ber == 5 then
+					info.ber = 4.53
+				elseif ber == 6 then
+					info.ber = 9.05
+				elseif ber == 7 then
+					info.ber = 18.10
+				end
 			end
 		end
 	end

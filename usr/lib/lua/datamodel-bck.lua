@@ -536,20 +536,36 @@ function M.subscribe(uuid, path, address, subtype, options)
     return nil, errmsg
   end
   -- process the response
-  local tag, is_last, resp
-  local data = sk:recv()
-  tag, is_last = msg:init_decode(data)
-  if tag == SUBSCRIBE_RESP then
-    resp = msg:decode()
-    release_sk(sk)
-    return resp.id, resp.nonevented
-  elseif tag == ERROR then
-    resp = msg:decode()
-    release_sk(sk)
-    return nil, resp.errmsg
+  local subscription_id
+  local non_evented = {}
+  local is_last = false
+  while not is_last do
+    local tag, resp
+    local data = sk:recv()
+    tag, is_last = msg:init_decode(data)
+    if tag == SUBSCRIBE_RESP then
+      resp = msg:decode()
+      if subscription_id and subscription_id ~= resp.id then
+        return nil, "invalid subscription ID", fault.INTERNAL_ERROR
+      end
+      subscription_id = resp.id
+      if resp.nonevented then
+        for _, path in ipairs(resp.nonevented) do
+          non_evented[#non_evented + 1] = path
+        end
+      end
+    elseif tag == ERROR then
+      resp = msg:decode()
+      release_sk(sk)
+      return nil, resp.errmsg, resp.errcode
+    else
+      release_sk(sk)
+      return nil, "invalid response type", fault.INTERNAL_ERROR
+    end
   end
+
   release_sk(sk)
-  return nil, "invalid response type"
+  return subscription_id, non_evented
 end
 
 function M.unsubscribe(uuid, subscr_id)

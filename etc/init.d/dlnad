@@ -3,6 +3,8 @@
 START=98
 STOP=02
 
+. "$IPKG_INSTROOT"/lib/functions/network.sh
+
 DLNAD_BIN=/usr/bin/dlnad
 DLNAD_PID_FILE=/var/run/dlnad.pid
 CONF_FILE=/var/etc/dlnad.conf
@@ -16,8 +18,9 @@ start()
    fi
 
    config_load dlnad
-   local enabled mountpath manufacturer_url radiostations_enabled friendly_name uuid modelname
+   local enabled mountpath manufacturer_url radiostations_enabled friendly_name uuid modelname interface
    local loglevel
+   local iface
    config_get enabled config enabled
    config_get mountpath config mount_path
    config_get manufacturer_url config manufacturer_url
@@ -26,6 +29,7 @@ start()
    config_get friendly_name config friendly_name
    config_get uuid config uuid
    config_get modelname config model_name
+   config_get interface config interface
    config_get loglevel log dlnad_logLevel
 
    config_load env
@@ -59,6 +63,14 @@ start()
        echo "friendly_name=$friendly_name" >> $CONF_FILE
 
        echo "model_name=$modelname" >> $CONF_FILE
+       if [ -n "$interface" ]; then
+          for iface in $interface; do
+            network_get_device wan_intf "$iface"
+            if [ -n "$wan_intf" ]; then
+              echo "interface=$wan_intf" >> $CONF_FILE
+            fi
+          done
+        fi
        echo "uuid=$uuid" >> $CONF_FILE
        echo "loglevel=$loglevel" >> $CONF_FILE
      fi

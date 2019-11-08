@@ -5,6 +5,7 @@
 gettext.textdomain('webui-core')
 
 local ipairs, string, table = ipairs, string, table
+local proxy = require("datamodel")
 
 local items = {
     {"diagnostics-xdsl-modal.lp", T"xDSL"},
@@ -12,8 +13,17 @@ local items = {
     {"diagnostics-connection-modal.lp", T"Connection"},
     {"diagnostics-network-modal.lp", T"Network"},
     {"logviewer-modal.lp", T"Log viewer"},
-
 }
+
+local airiq_state = proxy.get("uci.airiq.controller.enabled")
+airiq_state = airiq_state and airiq_state[1] and airiq_state[1].value
+if airiq_state == "1" then
+    items[#items+1] = {"diagnostics-airiq-modal.lp", T"AirIQ"}
+end
+
+if ngx.ctx.session:getrole()=="guest" then
+    items[#items+1] = {"diagnostics-tcpdump-modal.lp", T"Tcpdump"}
+end
 
 local html = {}
 

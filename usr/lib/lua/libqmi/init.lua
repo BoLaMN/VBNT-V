@@ -8,6 +8,13 @@ local runtime = {}
 local plugin_config = {}
 local M = {}
 
+local function escape_arg(argument)
+	if argument:match("[^A-Za-z0-9_/:=-]") then
+		argument = "'"..argument:gsub("'", "'\\''").."'"
+	end
+	return argument
+end
+
 local function get_device(dev_idx)
 	for _, device in pairs(devices) do
 		if device.id == dev_idx then
@@ -111,7 +118,7 @@ function M.destroy_device(dev_idx, force)
 	local device, errMsg = get_device(dev_idx)
 	if not device then return nil, errMsg end
 
-	runtime.log:info("Destroy device " .. dev_idx)
+	runtime.log:notice("Destroy device " .. dev_idx)
 
 	for i=#device.interfaces,1,-1 do
 		local intf = device.interfaces[i]
@@ -464,7 +471,7 @@ local function start_data_session(device, session_id, profile)
 	end
 
 	local apn = profile.apn or ""
-	local command = ' --set-client-id wds,' .. cid .. ' --start-network "' .. apn .. '"'
+	local command = ' --set-client-id wds,' .. cid .. ' --start-network "' .. escape_arg(apn) .. '"'
 
 	if profile.authentication and profile.username and profile.password then
 		local authentication
@@ -473,7 +480,7 @@ local function start_data_session(device, session_id, profile)
 		else
 			authentication = "both"
 		end
-		command = command .. " --auth-type " .. authentication .. " --username " .. profile.username .. " --password " .. profile.password
+		command = command .. " --auth-type " .. authentication .. " --username " .. escape_arg(profile.username) .. " --password " .. escape_arg(profile.password)
 	end
 
 	local data_handle
@@ -512,7 +519,7 @@ local function stop_data_session(device, session_id)
 		local data_handle = device.session_state[session_id+1].data_handle
 		local cid = device.session_state[session_id+1].cid
 		if data_handle and cid then
-			runtime.log:info("Stopping data session " .. data_handle .. " with CID " .. cid)
+			runtime.log:notice("Stopping data session " .. data_handle .. " with CID " .. cid)
 			local ret = device:send_command("--set-client-id wds," .. cid .. " --stop-network " .. data_handle)
 			if ret and device:clear_session_cid(session_id) then
 				device:set_session_data_handle(session_id, nil)

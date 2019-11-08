@@ -83,8 +83,27 @@ mask2cidr() {
 	echo "$nbits"
 }
 
+address_offset() {
+	local remaining_netmask="$1."
+	local remaining_address="$2."
+	local offset=0
+	local netmask_octet address_octet
+
+	while [ "$remaining_netmask" ]; do
+		netmask_octet="${remaining_netmask%%.*}"
+		remaining_netmask="${remaining_netmask#*.}"
+
+		address_octet="${remaining_address%%.*}"
+		remaining_address="${remaining_address#*.}"
+
+		offset="$((offset << 8 | (~netmask_octet & address_octet)))"
+	done
+
+	echo "$offset"
+}
+
 setup_ip_passthrough() {
-	if ! uci -q "get network.${passthrough}.ifname"; then
+	if ! uci -q get "network.${passthrough}.ifname"; then
 		proto_notify_error "$interface" "INVALID_PASSTHROUGH_CONFIG"
 		exit 1
 	fi
@@ -96,11 +115,10 @@ setup_ip_passthrough() {
 	proto_add_ipv4_address "192.168.$((session_id+225)).1" "32"
 	if [ "$defaultroute" = "1" ]; then
 		proto_add_ipv4_route "0.0.0.0" 0 "0.0.0.0" "" "$metric"
-		#TODO add default IPv6 route
 	fi
 	proto_send_update "$interface"
 
-	uci set "network.${passthrough}.proto='static'"
+	uci set "network.${passthrough}.proto=static"
 	uci set "network.${passthrough}.ipaddr=$ipv4_gw"
 	uci set "network.${passthrough}.netmask=$ipv4_subnet"
 	uci commit network
@@ -108,19 +126,19 @@ setup_ip_passthrough() {
 
 	uci set "dhcp.${passthrough}=dhcp"
 	uci -q del "dhcp.${passthrough}.ignore"
-	uci set "dhcp.${passthrough}.leasetime='5m'"
+	uci set "dhcp.${passthrough}.leasetime=5m"
 	uci set "dhcp.${passthrough}.force=1"
 	uci set "dhcp.${passthrough}.interface=$passthrough"
 	uci -q del "dhcp.${passthrough}.dhcp_option"
 	uci add_list "dhcp.${passthrough}.dhcp_option=6,$ipv4_dns1${ipv4_dns2:+,$ipv4_dns2}"
-	uci set "dhcp.${passthrough}.start=$(echo "$ipv4_addr" | cut -d '.' -f 4)"
-	uci set "dhcp.${passthrough}.limit=1"
+	uci set "dhcp.${passthrough}.start=$(address_offset "$ipv4_subnet" "$ipv4_addr")"
+	uci set "dhcp.${passthrough}.limit=0" # ODHCPD chooses and address in the range from start to start + limit inclusive
 	uci commit dhcp
 	/etc/init.d/dnsmasq reload
 }
 
 stop_ip_passthrough() {
-	uci set "network.${passthrough}.proto='none'"
+	uci set "network.${passthrough}.proto=none"
 	uci del "network.${passthrough}.ipaddr"
 	uci del "network.${passthrough}.netmask"
 	uci commit network
@@ -160,6 +178,15 @@ configure_dynamic_interface() {
 		fi
 		let ++zone
 	done
+
+	# Add the dynamic interfaces to the intercept WAN interfaces list
+	local intercept_wan="$(uci_get intercept config wan)"
+	if echo "$intercept_wan" | grep -wq "$parent_interface"; then
+		if ! echo "$intercept_wan" | grep -wq "$interface"; then
+			uci add_list "intercept.config.wan=$interface" && uci commit
+			/etc/init.d/intercept enabled && /etc/init.d/intercept reload
+		fi
+	fi
 }
 
 create_dhcp_interface() {

@@ -296,6 +296,7 @@ end
 local function getDNSOverrideAllowed(mapping, param, key)
   networkBinding.sectionname = mapping._conn:getName(key)
   networkBinding.option = "peerdns"
+  networkBinding.default = "1"
   return get_from_uci(networkBinding)
 end
 
@@ -540,10 +541,7 @@ local getters = {
   ShapingBurstSize = "0",
   X_000E50_IPv6_Enable = function(mapping, param, key)
     local conn = mapping._conn
-    if conn:getInterfaceDhcp6(key) then
-      return conn:getInterfaceOption(key, "ipv6", "1")
-    end
-    return "0"
+    return conn:getInterfaceOption(key, "ipv6", "1")
   end,
   X_000E50_VLANID = function(mapping, param, key)
     local d = mapping._conn.entries[key]
@@ -782,14 +780,11 @@ local setters = {
 
   X_000E50_IPv6_Enable = function(mapping, param, value, key)
     local conn = mapping._conn
-    if conn:getInterfaceDhcp6(key) then
-      local config = conn:setInterfaceOption(key, 'ipv6', value)
-      if not config then
-        return nil, "device not active and no sensing device specified"
-      end
-      return true
+    local config = conn:setInterfaceOption(key, 'ipv6', value)
+    if not config then
+      return nil, "device not active and no sensing device specified"
     end
-    return nil, "IPv6 is not supported on this WANIPConnection"
+    return true
   end,
   DNSServers  = function(mapping, param, value, key)
     local interface = mapping._conn:getInterface(key)
@@ -1015,7 +1010,7 @@ local paramNameToOption = {
 WANIPConnection_Stats.get = function(mapping, param, key, parentKey)
   local conn = mapping.parent._cache[parentKey]
   if stats_map[param] then
-    return conn:getPhysicalInfo(key, stats_map[param], "L3") or "0"
+    return conn:getPhysicalInfo(key, stats_map[param], "L3", "0")
   elseif stats_map_ext[param] then
     local devname = conn:getDevice(key)
     if devname then

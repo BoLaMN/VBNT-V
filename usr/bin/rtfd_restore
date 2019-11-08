@@ -4,10 +4,10 @@ CHANGED=0
 
 restore() {
   local path=$1
-  local value=$2
+  local value="$2"
   local current=$(uci get $path)
   if [ "$current" != "$value" ]; then
-    uci set $path=$value
+    uci set $path="$value"
     CHANGED=1
   fi
 }

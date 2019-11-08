@@ -129,56 +129,22 @@ local InternetGatewayDevice_LANDevice_i_LANHostConfigManagement_ = {
 }
 
 local ipairs, mapper, commitapply = ipairs, mapper, commitapply
-local math, register, string, open = math, register, string, io.open
+local math, register, string = math, register, string
 local format, tonumber = string.format, tonumber
 local uci_helper = mapper("ucihelper")
 local bit = require("bit")
 local min = require("math").min
 local nwCommon = mapper("nwcommon")
 local dhcp = require("transformer.shared.dhcp")
+local network = require("transformer.shared.common.network")
 local wifi_binding = {config = "wireless", sectionname = "wifi-iface"}
-local inet = require "tch.inet"
+local inet = require("tch.inet")
 local syspath = "/sys/class/net/"
 local networkBinding = { config = "network", option = "ipaddr" }
 local dhcpBinding = { config = "dhcp" }
 local getFromUci = uci_helper.get_from_uci
 local setOnUci = uci_helper.set_on_uci
-local dhcp_transaction = {}
-
--- Return number representing the IP address / netmask (first byte is first part ...)
-local ipmatch = "(%d+)%.(%d+)%.(%d+)%.(%d+)"
-local function ipv42num(ipstr)
-    local result = 0
-    local ipblocks = { string.match(ipstr, ipmatch) }
-    if #ipblocks < 4 then
-        return nil
-    end
-
-    for _,v in ipairs(ipblocks) do
-        result = bit.lshift(result, 8) + v
-    end
-    return result
-end
-
-local function num2ipv4(ip)
-    local ret = bit.band(ip, 255)
-    local ip = bit.rshift(ip,8)
-    for i=1,3 do
-        ret = bit.band(ip,255) .. "." .. ret
-        ip = bit.rshift(ip,8)
-    end
-    return ret
-end
-
-local function firstline(filename)
-   local fd = open(filename)
-   if not fd then
-     return nil
-   end
-   local result = fd:read("*l")
-   fd:close()
-   return result
-end
+local transactions = {}
 
 local conditionalsection = {
    ["mac"] = true,
@@ -228,10 +194,11 @@ end
 -- @function setUciParam
 -- @param #string option the option to be set in uci
 -- @param #string value the value to be set in uci config
-local function setUciValue(binding, section, option, value)
+local function setUciValue(binding, option, value)
   binding.sectionname = "lan"
   binding.option = option
   setOnUci(binding, value, commitapply)
+  transactions[binding.config] = true
 end
 
 --- get first non conditional pool on intf key
@@ -272,19 +239,6 @@ local function getIfacesForNetwork(network)
     return ifaces
 end
 
--- For a given wifi iface name (wl0 for instance), return the active ap sections associated with it in UCI
-local function getAPForIface(iface)
-    local binding={config = "wireless", sectionname = "wifi-ap"}
-    local ap = ""
-    uci_helper.foreach_on_uci(binding, function(s)
-    if s["iface"] == iface then
-        ap = s[".name"]
-        return false
-    end
-    end)
-    return ap
-end
-
 local function getDHCPConfig(key, param, default)
     local section = getDHCPConfigSectionForIntf(key)
     if section == nil then
@@ -307,19 +261,6 @@ local function setDHCPConfig(key, param, value)
     setDHCPConfigForSection(section, param, value)
 end
 
-local function getDHCPnetworkForIntf(key)
-    local network_cfg = uci_helper.getall_from_uci({
-        config = "network", sectionname = key
-    })
-    local network = ''
-    local baseip = ipv42num(network_cfg[ "ipaddr"] or '')
-    local netmask = ipv42num(network_cfg["netmask"] or '')
-    if baseip and netmask then
-        network = bit.band(baseip, netmask)
-    end
-    return network
-end
-
 local function getMACAddress(key)
     local macAddr
     local ifnames = uci_helper.get_from_uci({
@@ -330,18 +271,18 @@ local function getMACAddress(key)
     --or in the format ptm0
     --or in the format vlan100 vlan200
         local file = syspath .. ifname .. "/address"
-        macAddr = firstline(file)
-        if not macAddr then
+        macAddr = network.getFirstLine(file)
+        if macAddr == "" then
             -- consider that getting the ifname from the vlan
             local ifnameFromVlan = uci_helper.get_from_uci({
             config = "network", sectionname = ifname, option = "ifname"
             })
             if ifnameFromVlan ~="" then
                 file  = syspath .. ifnameFromVlan .. "/address"
-                macAddr = firstline(file)
+                macAddr = network.getFirstLine(file)
             end
         end
-        if macAddr then
+        if macAddr ~= "" then
             break
         end
     end
@@ -352,8 +293,8 @@ local function getDHCPdata(key)
     local network_cfg = uci_helper.getall_from_uci({
         config = "network", sectionname = key
     })
-    local baseip = ipv42num(network_cfg[ "ipaddr"] or '') or 0
-    local netmask = ipv42num(network_cfg["netmask"] or '') or 0
+    local baseip = nwCommon.ipv4ToNum(network_cfg.ipaddr or '') or 0
+    local netmask = nwCommon.ipv4ToNum(network_cfg.netmask or '') or 0
     local section = getDHCPConfigSectionForIntf(key)
     local dhcp_cfg
     if section then
@@ -409,52 +350,34 @@ end
 local function setVIPEnable(mapping, param, value, key)
     local data = getDHCPdata(key)
     if  value == "1" then
-      setUciValue(dhcpBinding, section, "tch_map_start_backup", data.start)
-      setUciValue(dhcpBinding, section, "tch_map_limit_backup", data.numips)
-      setUciValue(dhcpBinding, section, "start", "")
-      setUciValue(dhcpBinding, section, "limit", "")
+      setUciValue(dhcpBinding, "tch_map_start_backup", data.start)
+      setUciValue(dhcpBinding, "tch_map_limit_backup", data.numips)
+      setUciValue(dhcpBinding, "start", "")
+      setUciValue(dhcpBinding, "limit", "")
     elseif value == "0" then
       local dhcpConfig = uci_helper.getall_from_uci(dhcpBinding)
-      setUciValue(dhcpBinding, section, "start",dhcpConfig["tch_map_start_backup"])
-      setUciValue(dhcpBinding, section, "limit", dhcpConfig["tch_map_limit_backup"])
-      setUciValue(dhcpBinding, section, "tch_map_start_backup", "")
-      setUciValue(dhcpBinding, section, "tch_map_limit_backup", "")
-      return false
-    end
-end
-
-local function setDHCPMinMax_address(key, param, value)
-    local newvalue = ipv42num(value)
-    if newvalue == nil then
-       return nil, "Please input correct ip address"
-    end
-    local data = getDHCPdata(key)
-    -- Validation of parameters delayed to commit
-    if param == "MinAddress" then
-       setDHCPConfig(key, "start", newvalue - data.network)
-       setDHCPConfig(key, "limit", data.ipend - newvalue + 1)
-    else
-       setDHCPConfig(key, "limit", newvalue - data.ipstart + 1)
-    end
-    dhcp_transaction[key] = true
-end
-
-local function getDHCPServerEnable(key)
-    local intf = getDHCPConfig(key, "interface")
-    local dhcpv4 = getDHCPConfig(key, "dhcpv4", "server")
-    -- consider that the DHCP server is disabled if there is no IP pool defined for the interface or if the
-    -- dhcpv4 parameter is set to disabled
-    if intf == "" or dhcpv4 == "disabled" then
-        return "0"
-    else
-        return "1"
+      if(dhcpConfig["tch_map_start_backup"] and dhcpConfig["tch_map_limit_backup"]) then
+        setUciValue(dhcpBinding, "start",dhcpConfig["tch_map_start_backup"])
+        setUciValue(dhcpBinding, "limit", dhcpConfig["tch_map_limit_backup"])
+        setUciValue(dhcpBinding, "tch_map_start_backup", "")
+        setUciValue(dhcpBinding, "tch_map_limit_backup", "")
+      end
+        return false
     end
 end
 
 local InternetGatewayDevice_LANDevice_i_LANHostConfigManagement_get = {
     DHCPServerConfigurable = "1",
     DHCPServerEnable = function(mapping, param, key)
-        return getDHCPServerEnable(key)
+        local intf = getDHCPConfig(key, "interface")
+        local dhcpv4 = getDHCPConfig(key, "dhcpv4", "server")
+        -- consider that the DHCP server is disabled if there is no IP pool defined for the interface or if the
+        -- dhcpv4 parameter is set to disabled
+        if intf == "" or dhcpv4 == "disabled" then
+            return "0"
+        else
+            return "1"
+        end
     end,
     DHCPRelay = "0", -- We don't want to be a DHCP relay
     MACAddress = function(mapping, param, key)
@@ -463,11 +386,11 @@ local InternetGatewayDevice_LANDevice_i_LANHostConfigManagement_get = {
 
     MinAddress = function(mapping, param, key)
         local data = getDHCPdata(key)
-        return num2ipv4(data.ipstart)
+        return nwCommon.numToIPv4(data.ipstart)
     end,
     MaxAddress = function(mapping, param, key)
         local data = getDHCPdata(key)
-        return num2ipv4(data.ipend)
+        return nwCommon.numToIPv4(data.ipend)
     end,
     ReservedAddresses = function(mapping, param, key)
         return ""
@@ -539,10 +462,10 @@ local InternetGatewayDevice_LANDevice_i_LANHostConfigManagement_get = {
     --only support getting from WLAN interface
     AllowedMACAddresses = function(mapping, param, key)
         local macList = {}
-        local result = ""
+        local result
         local ifaces = getIfacesForNetwork(key)
         for _,iface in ipairs(ifaces) do
-            wifi_binding.sectionname = getAPForIface(iface)
+            wifi_binding.sectionname = network.getAPForIface(iface)
             wifi_binding.option = "acl_accept_list"
             result = uci_helper.get_from_uci(wifi_binding)
             if result ~= "" then
@@ -563,14 +486,15 @@ local InternetGatewayDevice_LANDevice_i_LANHostConfigManagement_get = {
         return  table.concat(macList, ',') or ""
     end,
     X_000E50_IPv6Enable = function(mapping, param, key)
-        -- get that for the given interface from state in UCI
-        local result = uci_helper.get_from_uci({
-            config = "network", sectionname = key, option = "ipv6"
-        })
-        if result == "" then
-           result = "1"
+      local ipv6Enable
+      dhcpBinding.sectionname = "dhcp"
+      uci_helper.foreach_on_uci(dhcpBinding, function(s)
+        if s.interface == key then
+          ipv6Enable = s.dhcpv6 == "server" and s.ra == "server" and "1" or "0"
+          return false
         end
-        return result or ""
+      end)
+      return ipv6Enable and ipv6Enable or "0"
     end,
     X_0876FF_DNSProxyEnabled = getDnsProxyEnable,
     X_0876FF_VIPEnable = getVIPEnable,
@@ -613,12 +537,12 @@ local function InternetGatewayDevice_LANDevice_i_LANHostConfigManagement_getall(
     if dnsServer == "" then
       dnsServer = network_cfg["ipaddr"]
     end
-    local macAddressList = ""
+    local macAddressList
     local macList = {}
-    local result = ""
+    local result
     local ifaces = getIfacesForNetwork(key)
     for _,iface in ipairs(ifaces) do
-        wifi_binding.sectionname = getAPForIface(iface)
+        wifi_binding.sectionname = network.getAPForIface(iface)
         wifi_binding.option = "acl_accept_list"
         result = uci_helper.get_from_uci(wifi_binding)
         if result ~= "" then
@@ -641,8 +565,8 @@ local function InternetGatewayDevice_LANDevice_i_LANHostConfigManagement_getall(
     return {
         DHCPServerConfigurable = "1",
         DHCPRelay = "0", -- We don't want to be a DHCP relay
-        MinAddress = num2ipv4(dhcp_data.ipstart),
-        MaxAddress = num2ipv4(dhcp_data.ipend),
+        MinAddress = nwCommon.numToIPv4(dhcp_data.ipstart),
+        MaxAddress = nwCommon.numToIPv4(dhcp_data.ipend),
         MACAddress = getMACAddress(key),
         ReservedAddresses = "",
         SubnetMask = network_cfg["netmask"] or '',
@@ -659,47 +583,6 @@ local function InternetGatewayDevice_LANDevice_i_LANHostConfigManagement_getall(
     }
 end
 
-local function overlapCheck(network, poolname, ipstart, limit)
-    local binding = { config = "dhcp",}
-    local ipend = min(ipstart + limit - 1, network + 254)
-    local result = 0
-    uci_helper.foreach_on_uci(binding, function(s)
-        if s[".type"] == "dhcp" and s[".name"] ~= poolname and s["interface"] then
-            local inetwork = getDHCPnetworkForIntf(s["interface"])
-            if inetwork == network and s["start"] and s["limit"] then
-                if (ipstart >= tonumber(s["start"]) and ipstart < (tonumber(s["start"]) + tonumber(s["limit"]))) or
-                   (ipend >= tonumber(s["start"]) and ipend < (tonumber(s["limit"]) + tonumber(s["start"]))) then
-                    result = 1
-                end
-                if ipstart < tonumber(s["start"]) and ipend > (tonumber(s["limit"]) + tonumber(s["start"])) then
-                    result = 1
-                end
-            end
-        end
-    end)
-    if result == 1 then
-        return nil ,"The specified range overlaps an existing range."
-    else
-        return true
-    end
-end
-
-local logger = require("transformer.logger")
-local function validate_DHCPMinMax()
-    for key in pairs(dhcp_transaction) do
-        local no_overlap, err
-        local data = getDHCPdata(key)
-        if (data.start > 0) and (data.numips > 0) and (data.ipmin < data.ipmax) then
-           no_overlap, err = overlapCheck(data.network, key, data.start, data.numips)
-        end
-        no_overlap = no_overlap or setDHCPConfig(key, "dhcpv4", "disabled")
-        if err or not no_overlap then
-           logger:error(err or "DHCP Min Max address provisioned is not valid")
-        end
-    end
-    dhcp_transaction = {}
-end
-
 local InternetGatewayDevice_LANDevice_i_LANHostConfigManagement_set = {
     DHCPServerEnable = function(mapping, param, value, key)
         if value == "1" then
@@ -708,13 +591,22 @@ local InternetGatewayDevice_LANDevice_i_LANHostConfigManagement_set = {
             value = "disabled"
         end
         setDHCPConfig(key, "dhcpv4", value)
-        dhcp_transaction[key] = true
     end,
     MinAddress = function(mapping, param, value, key)
-        setDHCPMinMax_address(key, param, value)
+        local res, err = network.setDHCPMinAddress(key, value, commitapply)
+        if res then
+            transactions["dhcp"] = true
+            return true
+        end
+        return nil, err
     end,
     MaxAddress = function(mapping, param, value, key)
-        setDHCPMinMax_address(key, param, value)
+        local res, err = network.setDHCPMaxAddress(key, value, commitapply)
+        if res then
+            transactions["dhcp"] = true
+            return true
+        end
+        return nil, err
     end,
     SubnetMask = function(mapping, param, value, key)
         uci_helper.set_on_uci({
@@ -749,13 +641,27 @@ local InternetGatewayDevice_LANDevice_i_LANHostConfigManagement_set = {
     DHCPLeaseTime = function(mapping, param, value, key)
       if value == '-1' then
         value = "infinite" -- set infinite lease time.
+      elseif tonumber(value) < 120 then
+        return nil, "minimum lease time must be 120 seconds"
+      elseif tonumber(value) > 1814400 then
+        return nil, "maximum lease time must be 1814400 seconds"
       end
       setDHCPConfig(key, "leasetime", value)
     end,
     X_000E50_IPv6Enable = function(mapping, param, value, key)
-        uci_helper.set_on_uci({
-            extended = 1, config = "network", sectionname = key, option = "ipv6"
-        }, value, commitapply)
+      local result = value == "1" and "server" or "disabled"
+      dhcpBinding.sectionname = "dhcp"
+      uci_helper.foreach_on_uci(dhcpBinding, function(s)
+        if s.interface == key then
+          dhcpBinding.sectionname = s[".name"]
+          dhcpBinding.option = "dhcpv6"
+          setOnUci(dhcpBinding, result, commitapply)
+          dhcpBinding.option = "ra"
+          setOnUci(dhcpBinding, result, commitapply)
+          transactions[dhcpBinding.config] = true
+          return false
+        end
+      end)
     end,
     IPRouters = function(mapping, param, value, key)
 	local section = getDHCPConfigSectionForIntf(key) or key
@@ -779,7 +685,7 @@ local InternetGatewayDevice_LANDevice_i_LANHostConfigManagement_set = {
             end
         end
         for _,iface in ipairs(ifaces) do
-            wifi_binding.sectionname = getAPForIface(iface)
+            wifi_binding.sectionname = network.getAPForIface(iface)
             wifi_binding.option = "acl_accept_list"
             uci_helper.set_on_uci(wifi_binding, macList, commitapply)
         end
@@ -788,17 +694,17 @@ local InternetGatewayDevice_LANDevice_i_LANHostConfigManagement_set = {
 
 local function commit()
     uci_helper.commit({config = "wireless"})
-    uci_helper.commit({config = "network"})
-    validate_DHCPMinMax()
     uci_helper.commit({config = "dhcp"})
+    uci_helper.commit({config = "network"})
 end
 
 local function revert()
     uci_helper.commit({config = "wireless"})
     uci_helper.revert({config = "network"})
     uci_helper.revert({config = "dhcp"})
-    dhcp_transaction = {}
 end
+
+local logger = require("transformer.logger")
 
 local function translate_cb(mapping, action, config, sectiontype, sectionname, option)
     logger:debug("translate_cb called")
@@ -943,8 +849,8 @@ local InternetGatewayDevice_LANDevice_i_LANHostConfigManagement_DHCPConditionalS
 
 local function getConditionalDHCPdata(parentkey, key)
     local network_cfg = uci_helper.getall_from_uci({config = "network", sectionname = parentkey})
-    local baseip = ipv42num(network_cfg[ "ipaddr"] or '') or 0
-    local netmask = ipv42num(network_cfg["netmask"] or '') or 0
+    local baseip = nwCommon.ipv4ToNum(network_cfg.ipaddr or '') or 0
+    local netmask = nwCommon.ipv4ToNum(network_cfg.netmask or '') or 0
     local dhcp_cfg
     if key then
         dhcp_cfg = uci_helper.getall_from_uci({config = "dhcp", sectionname = key})
@@ -994,7 +900,10 @@ end
 local binding = {config = "dhcp", sectionname ="", option = ""}
 local getconditional = {
     Enable = function(mapping, param, key)
-	return getDHCPServerEnable(key)
+        binding.option = "enable"
+        binding.sectionname = key
+        binding.default = "0"
+        return uci_helper.get_from_uci(binding)
     end,
     PoolOrder = "0",
     SourceInterface = "",
@@ -1050,11 +959,11 @@ local getconditional = {
     LocallyServed = "1",
     MinAddress = function(mapping, param, key, parentkey)
         local data = getConditionalDHCPdata(parentkey,key)
-        return num2ipv4(data.ipstart)
+        return nwCommon.numToIPv4(data.ipstart)
     end,
     MaxAddress = function(mapping, param, key, parentkey)
         local data = getConditionalDHCPdata(parentkey,key)
-        return num2ipv4(data.ipend)
+        return nwCommon.numToIPv4(data.ipend)
     end,
     ReservedAddresses = "",
     SubnetMask = function(mapping, param, key,parentkey)
@@ -1111,13 +1020,7 @@ local getconditional = {
 
 local setconditional = {
     Enable = function(mapping, param, value, key)
-        if value == "1" then
-           value = "server"
-        else
-           value = "disabled"
-        end
-        setDHCPConfig(key, "dhcpv4", value)
-        dhcp_transaction[key] = true
+        uci_helper.set_on_uci({config = "dhcp", sectionname = key, option = "enable"}, value, commitapply)
     end,
     VendorClassID = function(mapping, param, value, key)
         binding.sectionname = nil
@@ -1196,24 +1099,38 @@ local setconditional = {
         end
     end,
     MinAddress = function(mapping, param, value, key, parentkey)
-        local newstart = ipv42num(value)
+        local newstart = nwCommon.ipv4ToNum(value)
         if newstart == nil then
             return nil, "Please input correct ip address"
         end
         local data = getConditionalDHCPdata(parentkey, key)
-        uci_helper.set_on_uci({config = "dhcp", sectionname = key, option = "start"}, newstart - data.network, commitapply)
-        uci_helper.set_on_uci({config = "dhcp", sectionname = key, option = "limit"}, data.ipend - newstart + 1, commitapply)
-        dhcp_transaction[key] = true
+        if newstart < data.ipmin or newstart >= data.ipend then
+            return nil, "Invalid start address"
+        end
+        local result ,errmsg = overlapCheck(data.network, key, newstart - data.network, data.ipend - newstart + 1)
+        if result ~= nil then
+            uci_helper.set_on_uci({config = "dhcp", sectionname = key, option = "start"}, newstart - data.network, commitapply)
+            uci_helper.set_on_uci({config = "dhcp", sectionname = key, option = "limit"}, data.ipend - newstart + 1, commitapply)
+        else
+            return result, errmsg
+        end
     end,
     MaxAddress = function(mapping, param, value, key, parentkey)
-        local newend = ipv42num(value)
+        local newend = nwCommon.ipv4ToNum(value)
         if newend == nil then
             return nil, "Please input correct ip address"
         end
         local data = getConditionalDHCPdata(parentkey, key)
+        if newend < data.ipstart or newend > data.ipmax + 1 then
+            return nil, "Invalid end address"
+        end
         local newvalue = newend - data.ipstart + 1
-        uci_helper.set_on_uci({config = "dhcp", sectionname = key, option = "limit"}, newvalue, commitapply)
-        dhcp_transaction[key] = true
+        local result ,errmsg = overlapCheck(data.network, key, data.ipstart - data.network, newvalue)
+        if result ~= nil then
+            uci_helper.set_on_uci({config = "dhcp", sectionname = key, option = "limit"}, newvalue, commitapply)
+        else
+            return result , errmsg
+        end
     end,
     SubnetMask = function(mapping, param, value, key, parentkey)
         uci_helper.set_on_uci({config = "network", sectionname = parentkey, option = "netmask"}, value, commitapply)

@@ -10,3 +10,8 @@ config service 'voip'
 
 config timeout 'timeout'
 	option ms '3000'
+
+config status_led 'status_led'
+
+config syslog 'syslog'
+	option trace '0'

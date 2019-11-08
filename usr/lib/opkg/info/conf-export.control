@@ -1,6 +1,6 @@
 Package: conf-export
 Version: 1.0
-Depends: libc, libssp
+Depends: libc, libssp, librt, libpthread
 Source: feeds/custo/conf-export
 Section: conf-export
 Maintainer: Technicolor <linuxgw@technicolor.com>

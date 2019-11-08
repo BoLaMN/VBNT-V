@@ -34,13 +34,13 @@ local Device_PTM_Link_i_ = {
         type = "string",
         max = "64",
       },
---[[
+
       LastChange = {
-        access = "readOnly", --TODO
+        access = "readOnly",
         activeNotify = "canDeny",
         type = "unsignedInt",
       },
---]]
+
       Name = {
         access = "readOnly",
         type = "string",
@@ -68,13 +68,17 @@ local PTMLink = nwmodel.register("PTMLink", Device_PTM_Link_i_.objectType.name)
 local model
 
 local xtmBinding = { config = "xtm", sectionname = "", option = "" }
+local networkBinding = {config = "network"}
 local uciHelper = mapper("ucihelper")
+local forEachOnUci = uciHelper.foreach_on_uci
 local conn = mapper("ubus").connect()
 local getIntfInfo = mapper('nwcommon').getIntfInfo
-local xtmctl = require("transformer.shared.xtmctl")
-local enableXtmDevice = xtmctl.enableXtmDevice
+local xtm_supported, xtmctl = pcall(require,"transformer.shared.xtmctl")
 local getXtmDeviceStatus = xtmctl.getXtmDeviceStatus
 local format = string.format
+local posix = require("tch.posix")
+local getClockTime = posix.clock_gettime
+local lastStateChangeTime = {}
 
 local function uci_get(intf, option)
   xtmBinding.sectionname = intf
@@ -173,6 +177,40 @@ Device_PTM_Link_i_.get = {
   MACAddress = function(mapping,param,key)
     return getIntfInfo(model:getDevice(key),"address")
   end,
+
+  LastChange = function(mapping, param, key)
+    return tostring(getClockTime(posix.CLOCK_MONOTONIC) - (lastStateChangeTime[key] or 0))
+  end,
 }
+
+--This function is to get interface of namespace network.link as ptm0 whenever ptm device status comes up
+local function getPtmInterface(binding, data)
+  local interface
+  forEachOnUci(binding, function(s)
+    if s['.name'] == data then
+      interface = binding.config == "xtm" and s['.name'] or s['ifname']
+      return false
+    end
+  end)
+  return interface
+end
+
+local function ubusEventTriggered(mapping, action, data)
+  local ptminterface
+  xtmBinding.sectionname = "ptmdevice"
+  ptminterface = getPtmInterface(xtmBinding, data.interface)
+  if not ptminterface then
+    networkBinding.sectionname = "device"
+    ptminterface = getPtmInterface(networkBinding, data.interface)
+  end
+  if ptminterface then
+    lastStateChangeTime[ptminterface] = getClockTime(posix.CLOCK_MONOTONIC)
+  end
+end
+
+Device_PTM_Link_i_.add_watchers = function(mapping)
+  local ubusEventSource = eventsource("ubus")
+  ubusEventSource.watch_event(mapping, ubusEventTriggered, "network.link")
+end
 
 register(Device_PTM_Link_i_)

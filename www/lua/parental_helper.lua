@@ -6,7 +6,6 @@ gettext.textdomain('webui-core')
 local post_helper = require("web.post_helper")
 local content_helper = require("web.content_helper")
 local proxy = require("datamodel")
-local wifitod_path = "rpc.wifitod."
 local accesscontroltod_path = "uci.tod.host."
 local format = string.format
 local uinetwork = require("web.uinetwork_helper")
@@ -98,15 +97,10 @@ local function getWeekDays(value, object, key)
     if not ok then
         return ok, msg
     end
-    local canary
-    local canaryvalue = ""
-    for k,v in ipairs(object[key]) do
-        if v == canaryvalue then
-            canary = k
+    for i = #object[key], 1, -1 do
+        if object[key][i] == "" then
+            table.remove(object[key], i)
         end
-    end
-    if canary then
-        table.remove(object[key], canary)
     end
     return true
 end
@@ -117,13 +111,20 @@ end
 
 function M.mac_to_hostname(mac)
   local hostname = ""
-  if not mac then return hostname end
-  local dev_detail_info = r_hosts_ac[mac]
-  if dev_detail_info then
-     hostname = string.match(dev_detail_info, "(%S+)%s+%(") or "Unknown-"..mac
-  else
-     hostname = "Unknown-"..mac
+
+  if mac then
+    local hosts = uinetwork.getHostsList()
+    for i,v in ipairs(hosts) do
+      if mac == v.MACAddress then
+        hostname = v.FriendlyName
+        break
+      end
+    end
+    if hostname == "" then
+      hostname = "Unknown-" .. mac
+    end
   end
+
   return hostname
 end
 
@@ -158,7 +159,7 @@ function M.getTod()
         attr = { input = { class="span1" } },
     }, --[1]
     {
-        header = T"Hostname",
+        header = T"Device",
         name = "id",
         param = "id",
         type = "text",
@@ -207,7 +208,7 @@ function M.getTod()
         synthesis = nil, --tod_aggregate,
         subcolumns = {
             {
-                header = T"Enabled",
+                header = T"Status",
                 name = "enabled",
                 param = "enabled",
                 type = "switch",
@@ -215,11 +216,11 @@ function M.getTod()
                 attr = {switch = { class="inline" } },
             },
             {   -- NOTE: don't foget update M.getTod() when change position
-                header = T"MAC address",
+                header = T"Device",
                 name = "id",
                 param = "id",
                 type = "text",
-                attr = { input = { class="span2", maxlength="17"}, autocomplete=M.get_hosts_ac() },
+                attr = { input = { class="span2", id="device", maxlength="17"}, autocomplete=M.get_hosts_ac() },
             },
             {
                 header = T"Mode",
@@ -252,7 +253,7 @@ function M.getTod()
                 param = "weekdays",
                 type = "checkboxgroup",
                 values = theWeekdays(),
-                attr = { checkbox = { class="inline" } },
+                attr = { checkbox = { class="inline", id="dayofwork" } },
             },
         }
     }, --[7]
@@ -441,12 +442,11 @@ function M.compareTodRule(oldTODRules, newTODRule)
   local newStart, newEnd, newDay
   local oldStart, oldEnd, oldDay
   local overlap
-  local currentEditIndex = tonumber(ngx.req.get_post_args().index)
   for _,newrule in ipairs(newTODRule) do
     newStart = newrule.start_time
     newEnd = newrule.stop_time
     newDay = newrule.weekdays
-    for oldIndex,oldrule in ipairs(oldTODRules) do
+    for _,oldrule in ipairs(oldTODRules) do
       oldStart = oldrule.start_time
       oldEnd = oldrule.stop_time
       oldDay = oldrule.weekdays
@@ -455,15 +455,16 @@ function M.compareTodRule(oldTODRules, newTODRule)
         for _,newWeekDay in ipairs(newDay) do
           if oldWeekDay == newWeekDay then
             duplicate = true
+            break
           else
             if (oldWeekDay == "All" and newWeekDay == "All") or (oldWeekDay == "All" and #newWeekDay > 0) or (newWeekDay == "All" and #oldWeekDay > 0) then
               duplicate = true
+              break
             end
-            break
           end
         end
       end
-      if duplicate == true and oldIndex ~= currentEditIndex then
+      if duplicate == true then
         if(newStart == oldStart and newEnd == oldEnd) then
           return nil, T"Duplicate contents are not allowed"
         else
@@ -489,7 +490,7 @@ function M.compareTodRule(oldTODRules, newTODRule)
       end
     end
     if overlap then
-      return nil, T"Overlap contents are not allowed"
+      return nil, T"The new rule could not be added because a pre-existing rule for the device already exists in an overlapping time window."
     end
   end
   return true
@@ -513,14 +514,13 @@ function M.getWifiTodRuleLists()
     local daysList = proxy.get(weekdaysPath)
     daysList = content_helper.convertResultToObject(weekdaysPath, daysList)
     --The DUT will block/allow all the time if none of the days are selected
-    if (#daysList == 2) then
-      oldTodRules[#oldTodRules].weekdays[#oldTodRules[#oldTodRules].weekdays+1] = "All"
-    else
-      for _, day in pairs(daysList) do
-        if day.value ~= "" then
-          oldTodRules[#oldTodRules].weekdays[#oldTodRules[#oldTodRules].weekdays+1] = day.value
-        end
-      end
+    for _,day in pairs(daysList) do
+     if day.value ~= "" then
+       oldTodRules[#oldTodRules].weekdays[#oldTodRules[#oldTodRules].weekdays+1] = day.value
+     end
+    end
+    if (#oldTodRules[#oldTodRules].weekdays == 0) then
+     oldTodRules[#oldTodRules].weekdays[#oldTodRules[#oldTodRules].weekdays+1] = "All"
     end
   end
   return oldTodRules
@@ -529,29 +529,29 @@ end
 -- function to retrieve existing access control tod rules list
 -- @param #mac_id have the mac name of new tod rule request
 -- @return access control tod rules list
-function M.getAccessControlTodRuleLists(mac_id)
+function M.getAccessControlTodRuleLists(mac_id, curIndex)
    local rulePath = content_helper.convertResultToObject(accesscontroltod_path, proxy.get(accesscontroltod_path))
    local oldTodRules = {}
    for _,rule in pairs(rulePath) do
-     oldTodRules[#oldTodRules + 1] = {}
-     oldTodRules[#oldTodRules].rule_name = rule.name
-     oldTodRules[#oldTodRules].start_time = rule.start_time
-     oldTodRules[#oldTodRules].stop_time = rule.stop_time
-     oldTodRules[#oldTodRules].enable = rule.mode
-     oldTodRules[#oldTodRules].index = rule.paramindex
-     oldTodRules[#oldTodRules].weekdays = {}
-     if (rule["id"] == mac_id) then
+     local editRuleIdx = curIndex and "@" .. curIndex
+     if rule["id"] == mac_id and editRuleIdx ~= rule.paramindex then
+       oldTodRules[#oldTodRules + 1] = {}
+       oldTodRules[#oldTodRules].rule_name = rule.name
+       oldTodRules[#oldTodRules].start_time = rule.start_time
+       oldTodRules[#oldTodRules].stop_time = rule.stop_time
+       oldTodRules[#oldTodRules].enable = rule.mode
+       oldTodRules[#oldTodRules].index = rule.paramindex
+       oldTodRules[#oldTodRules].weekdays = {}
        local weekdaysPath = format("uci.tod.host.%s.weekdays.",rule.paramindex)
        local daysList = content_helper.convertResultToObject(weekdaysPath, proxy.get(weekdaysPath))
        --The DUT will block/allow all the time if none of the days are selected
-       if (#daysList == 2) then
-         oldTodRules[#oldTodRules].weekdays[#oldTodRules[#oldTodRules].weekdays+1] = "All"
-       else
-         for _,day in pairs(daysList) do
-           if day.value ~= "" then
-             oldTodRules[#oldTodRules].weekdays[#oldTodRules[#oldTodRules].weekdays+1] = day.value
-           end
+       for _,day in pairs(daysList) do
+         if day.value ~= "" then
+           oldTodRules[#oldTodRules].weekdays[#oldTodRules[#oldTodRules].weekdays+1] = day.value
          end
+       end
+       if (#oldTodRules[#oldTodRules].weekdays == 0) then
+         oldTodRules[#oldTodRules].weekdays[#oldTodRules[#oldTodRules].weekdays+1] = "All"
        end
      end
    end
@@ -565,11 +565,15 @@ end
 -- @param #todRequest have the string value of request tod rule
 -- @return #boolean or nil+error message
 function M.validateTodRule(value, object, key, todRequest)
+  local ok, msg = getWeekDays(value, object, key)
+  if not ok then
+    return ok, msg
+  end
   local oldTODRules
   if todRequest == "Wireless" then
     oldTODRules = M.getWifiTodRuleLists(object["id"])
   elseif todRequest == "AccessControl" then
-    oldTODRules = M.getAccessControlTodRuleLists(object["id"])
+    oldTODRules = M.getAccessControlTodRuleLists(object["id"], object["index"])
   else
     return nil, T"Function input param is missing"
   end
@@ -583,16 +587,16 @@ function M.validateTodRule(value, object, key, todRequest)
   newTODRule[#newTODRule].start_time = object["start_time"]
   newTODRule[#newTODRule].stop_time = object["stop_time"]
   newTODRule[#newTODRule].enable = object["mode"]
-  newTODRule[#newTODRule].index = object["paramindex"]
+  newTODRule[#newTODRule].index = object["index"]
   newTODRule[#newTODRule].weekdays = {}
   --The DUT will block/allow all the time if none of the days are selected
-  if (#value == 2) then
-    newTODRule[#newTODRule].weekdays[#newTODRule[#newTODRule].weekdays+1] = "All"
-  else
-    -- index start with 3 because userdata is reserved index 1 and 2
-    for index = 3, #value do
-      newTODRule[#newTODRule].weekdays[#newTODRule[#newTODRule].weekdays+1] = value[index]
+  for _,v in pairs(object[key]) do
+    if v ~= "" then
+      newTODRule[#newTODRule].weekdays[#newTODRule[#newTODRule].weekdays+1] = v
     end
+  end
+  if (#newTODRule[#newTODRule].weekdays == 0) then
+    newTODRule[#newTODRule].weekdays[#newTODRule[#newTODRule].weekdays+1] = "All"
   end
   return M.compareTodRule(oldTODRules, newTODRule)
 end

@@ -1,1 +1,2 @@
-/lib/modules/3.4.11/GobiSerial.ko
+/lib/modules/4.1.38/GobiSerial.ko
+/etc/modules.d/80-gobiserial

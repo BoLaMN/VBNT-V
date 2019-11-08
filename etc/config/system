@@ -1,6 +1,6 @@
 
 config system
-	option hostname 'mygateway'
+	option hostname 'mymodem'
 	option timezone 'AEST-10AEDT,M10.1.0,M4.1.0/3'
 	option zonename 'Australia/Sydney'
 	option network_timezone 1
@@ -54,4 +54,3 @@ config fwupgrade fwupgrade
     option keeprebootingonlybank '0'
     option maxbootattempts '1'
     option switchbacktofailedbank '0'
-

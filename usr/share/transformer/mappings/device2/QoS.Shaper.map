@@ -71,6 +71,8 @@ local transactions = {}
 local eth_binding = {config = "ethernet"}
 local port_binding = {config = "ethernet", sectionname = "port"}
 local xdsl_binding = {config = "xdsl"}
+local qos_binding = {config = "qos"}
+local swshaper2device, isSwshaper = {}, {}
 
 Device_QoS_Shaper_i_.entries = function()
   local Shapers = {}
@@ -80,11 +82,27 @@ Device_QoS_Shaper_i_.entries = function()
   foreach_on_uci(eth_binding, function(s)
     Shapers[#Shapers+1] = "ETH|" .. s['.name']
   end)
+
   -- check xdsl maxusdatarate
   xdsl_binding.sectionname = "xdsl"
   xdsl_binding.option = nil
   foreach_on_uci(xdsl_binding, function(s)
     Shapers[#Shapers+1] = "DSL|" .. s['.name']
+  end)
+
+  -- check max_bit_rate of swshaper
+  swshaper2device = {}
+  qos_binding.sectionname = "device"
+  qos_binding.option = nil
+  foreach_on_uci(qos_binding, function(s)
+    if s.swshaper then
+        swshaper2device[s.swshaper] = s['.name']
+    end
+  end)
+  qos_binding.sectionname = "swshaper"
+  foreach_on_uci(qos_binding, function(s)
+     Shapers[#Shapers+1] = "DSL|" .. s['.name']
+     isSwshaper[s['.name']] = true
   end)
   return Shapers
 end
@@ -101,16 +119,23 @@ Device_QoS_Shaper_i_.get = {
         end
       end)
       eth_binding.sectionname = sectname
-      eth_binding.option = "mbr"
-      local mbr = get_from_uci(eth_binding)
-      eth_binding.option = "mbs"
-      local mbs = get_from_uci(eth_binding)
-      return (intf and mbr ~= "" and mbs ~= "" and "true") or "false"
+      eth_binding.option = "max_bit_rate"
+      local max_bit_rate = get_from_uci(eth_binding)
+      eth_binding.option = "max_burst_size"
+      local max_burst_size = get_from_uci(eth_binding)
+      return (intf and max_bit_rate ~= "" and max_burst_size ~= "" and "true") or "false"
     elseif devtype == "DSL" then
-      xdsl_binding.sectionname = sectname
-      xdsl_binding.option = "maxusdatarate"
-      local maxusdatarate = get_from_uci(xdsl_binding)
-      return (maxusdatarate ~= "" and "true") or "false"
+      if isSwshaper[sectname] then
+        qos_binding.sectionname = sectname
+        qos_binding.option = "enable"
+        local shaper_enable = get_from_uci(qos_binding)
+        return (shaper_enable == "1" and "true") or "false"
+      else
+        xdsl_binding.sectionname = sectname
+        xdsl_binding.option = "maxusdatarate"
+        local maxusdatarate = get_from_uci(xdsl_binding)
+        return (maxusdatarate ~= "" and "true") or "false"
+      end
     end
     return "false"
   end,
@@ -125,16 +150,23 @@ Device_QoS_Shaper_i_.get = {
         end
       end)
       eth_binding.sectionname = sectname
-      eth_binding.option = "mbr"
-      local mbr = get_from_uci(eth_binding)
-      eth_binding.option = "mbs"
-      local mbs = get_from_uci(eth_binding)
-      return (intf and mbr ~= "" and mbs ~= "" and "Enabled") or "Disabled"
+      eth_binding.option = "max_bit_rate"
+      local max_bit_rate = get_from_uci(eth_binding)
+      eth_binding.option = "max_burst_size"
+      local max_burst_size = get_from_uci(eth_binding)
+      return (intf and max_bit_rate ~= "" and max_burst_size ~= "" and "Enabled") or "Disabled"
     elseif devtype == "DSL" then
-      xdsl_binding.sectionname = sectname
-      xdsl_binding.option = "maxusdatarate"
-      local maxusdatarate = get_from_uci(xdsl_binding)
-      return (maxusdatarate ~= "" and "Enabled") or "Disabled"
+      if isSwshaper[sectname] then
+        qos_binding.sectionname = sectname
+        qos_binding.option = "enable"
+        local shaper_enable = get_from_uci(qos_binding)
+        return (shaper_enable == "1" and "Enabled") or "Disabled"
+      else
+        xdsl_binding.sectionname = sectname
+        xdsl_binding.option = "maxusdatarate"
+        local maxusdatarate = get_from_uci(xdsl_binding)
+        return (maxusdatarate ~= "" and "Enabled") or "Disabled"
+      end
     end
     return "Disabled"
   end,
@@ -150,7 +182,12 @@ Device_QoS_Shaper_i_.get = {
       end)
       return resolve("Device.Ethernet.Interface.{i}.", intf) or ""
     elseif devtype == "DSL" then
-      return resolve("Device.DSL.Line.{i}.", "dsl:"..sectname) or ""
+      local device = swshaper2device[sectname]
+      if isSwshaper[sectname] and device then
+        return resolve("Device.PTM.Link.{i}.", device) or resolve("Device.ATM.Link.{i}.", device) or ""
+      else
+        return resolve("Device.DSL.Line.{i}.", "dsl:"..sectname) or ""
+      end
     end
     return ""
   end,
@@ -158,16 +195,29 @@ Device_QoS_Shaper_i_.get = {
     local devtype, sectname = split_key(key)
     if devtype == "ETH" then
       eth_binding.sectionname = sectname
-      eth_binding.option = "mbr"
-      local mbr = get_from_uci(eth_binding)
-      mbr = tonumber(mbr)
-      return mbr and tostring(mbr * 1000) or "-1"
+      eth_binding.option = "max_bit_rate"
+      local max_bit_rate = get_from_uci(eth_binding)
+      max_bit_rate = tonumber(max_bit_rate)
+      return max_bit_rate and tostring(max_bit_rate * 1000) or "-1"
     elseif devtype == "DSL" then
-      xdsl_binding.sectionname = sectname
-      xdsl_binding.option = "maxusdatarate"
-      local maxusdatarate = get_from_uci(xdsl_binding)
-      maxusdatarate = tonumber(maxusdatarate)
-      return maxusdatarate and tostring(maxusdatarate * 1000) or "-1"
+      if isSwshaper[sectname] then
+        qos_binding.sectionname = sectname
+        qos_binding.option = "enable"
+        local shaper_enable = get_from_uci(qos_binding)
+        if shaper_enable == "1" then
+          qos_binding.sectionname = sectname
+          qos_binding.option = "max_bit_rate"
+          local max_bit_rate = get_from_uci(qos_binding)
+          max_bit_rate = tonumber(max_bit_rate)
+          return max_bit_rate and tostring(max_bit_rate * 1000) or "-1"
+        end
+      else
+        xdsl_binding.sectionname = sectname
+        xdsl_binding.option = "maxusdatarate"
+        local maxusdatarate = get_from_uci(xdsl_binding)
+        maxusdatarate = tonumber(maxusdatarate)
+        return maxusdatarate and tostring(maxusdatarate * 1000) or "-1"
+      end
     end
     return "-1"
   end,
@@ -175,7 +225,7 @@ Device_QoS_Shaper_i_.get = {
     local devtype, sectname = split_key(key)
     if devtype == "ETH" then
       eth_binding.sectionname = sectname
-      eth_binding.option = "mbs"
+      eth_binding.option = "max_burst_size"
       return get_from_uci(eth_binding)
     elseif devtype == "DSL" then
       -- Now not implemented rate limiting at the xdsl layer
@@ -187,8 +237,22 @@ Device_QoS_Shaper_i_.get = {
 
 Device_QoS_Shaper_i_.set = {
   Enable = function(mapping, param, value, key)
-    -- Not implemented, US NG-85602 has been created for this
-    return nil,"Not supported"
+    local devtype, sectname = split_key(key)
+    if isSwshaper[sectname] then
+      local enable = "0"
+      if value == "true" or value == "1" then
+        enable = "1"
+      end
+      qos_binding.sectionname=sectname
+      qos_binding.option="enable"
+      if value ~= get_from_uci(qos_binding) then
+        set_on_uci(qos_binding, enable, commitapply)
+        transactions[qos_binding.config] = true
+      end
+    else
+      -- Not implemented, US NG-85602 has been created for this
+      return nil,"Not supported"
+    end
   end,
   Interface = function(mapping, param, value, key)
     local devtype, sectname = split_key(key)
@@ -229,19 +293,39 @@ Device_QoS_Shaper_i_.set = {
     end
     if devtype == "ETH" then
       eth_binding.sectionname = sectname
-      eth_binding.option = "mbr"
+      eth_binding.option = "max_bit_rate"
       local old_value = get_from_uci(eth_binding)
       if old_value ~= value then
         set_on_uci(eth_binding, value, commitapply)
         transactions[eth_binding.config] = true
       end
     elseif devtype == "DSL" then
-      xdsl_binding.sectionname=sectname
-      xdsl_binding.option="maxusdatarate"
-      local old_value = get_from_uci(xdsl_binding)
-      if old_value ~= value then
-        set_on_uci(xdsl_binding, value, commitapply)
-        transactions[xdsl_binding.config] = true
+      if isSwshaper[sectname] then
+        qos_binding.sectionname=sectname
+        qos_binding.option="max_bit_rate"
+        local shaper_enable = "0"
+        if value ~= "" then
+          local old_value = get_from_uci(qos_binding)
+          if old_value ~= value then
+            set_on_uci(qos_binding, value, commitapply)
+            transactions[qos_binding.config] = true
+          end
+          shaper_enable = "1"
+        end
+        qos_binding.option="enable"
+        local old_value = get_from_uci(qos_binding)
+        if old_value ~= shaper_enable then
+          set_on_uci(qos_binding, shaper_enable, commitapply)
+          transactions[qos_binding.config] = true
+        end
+      else
+        xdsl_binding.sectionname=sectname
+        xdsl_binding.option="maxusdatarate"
+        local old_value = get_from_uci(xdsl_binding)
+        if old_value ~= value then
+          set_on_uci(xdsl_binding, value, commitapply)
+          transactions[xdsl_binding.config] = true
+        end
       end
     end
   end,
@@ -252,7 +336,7 @@ Device_QoS_Shaper_i_.set = {
         return nil, "Invalid value"
       end
       eth_binding.sectionname = sectname
-      eth_binding.option = "mbs"
+      eth_binding.option = "max_burst_size"
       local old_value = get_from_uci(eth_binding)
       if old_value ~= value then
         set_on_uci(eth_binding, value, commitapply)

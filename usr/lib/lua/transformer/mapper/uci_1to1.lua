@@ -17,10 +17,10 @@ local format = string.format
 -- @module transformer.mapper.uci_1to1
 local M = {}
 
-local function set_objecttype_parameters(params, paramType, objectType)
+local function set_objecttype_parameters(params, paramType, objectType, access)
   for _, v in ipairs(params) do
     objectType.parameters[v] = {
-      access = "readWrite",
+      access = access or "readWrite",
       type = paramType
     }
   end
@@ -64,6 +64,12 @@ local function complete_simplemap(mapinfo, mapping, binding)
     set_objecttype_parameters(mapinfo.passwords, "password", mapping.objectType)
     set_binding_parameters(mapinfo.passwords, mapinfo, binding)
   end
+
+  -- readOnlyOption does not allow set operation on uci parameter
+  if mapinfo.readOnlyOptions and next(mapinfo.readOnlyOptions) then
+    set_objecttype_parameters(mapinfo.readOnlyOptions, "string", mapping.objectType, "readOnly")
+    set_binding_parameters(mapinfo.readOnlyOptions, mapinfo, binding)
+  end
 end
 
 local function complete_multimap(mapinfo, mapping, binding)
@@ -89,6 +95,12 @@ local function complete_multimap(mapinfo, mapping, binding)
   if mapinfo.passwords and next(mapinfo.passwords) then
     set_objecttype_parameters(mapinfo.passwords, "password", mapping.objectType)
     set_binding_parameters_multimap(mapinfo.passwords, binding)
+  end
+
+  -- readOnlyOption does not allow set operation on uci parameter
+  if mapinfo.readOnlyOptions and next(mapinfo.readOnlyOptions) then
+    set_objecttype_parameters(mapinfo.readOnlyOptions, "string", mapping.objectType, "readOnly")
+    set_binding_parameters_multimap(mapinfo.readOnlyOptions, binding)
   end
 end
 

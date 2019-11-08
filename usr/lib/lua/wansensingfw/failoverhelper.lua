@@ -240,10 +240,62 @@ local function mobiled_ims_timer_cb(runtime, enabled, ims_session)
 end
 
 local function mobiled_ims_timer_cancel(runtime)
+    local logger = runtime.logger
     if runtime.mobiled_ims_timer then
         runtime.mobiled_ims_timer:cancel()
         runtime.mobiled_ims_timer = nil
         logger:notice("mass failover protection, mobiled ims timer is canceled")
+    end
+end
+
+local function reload_cwmpd_timer_cancel(runtime)
+    local logger = runtime.logger
+    if runtime.reload_cwmpd_timer then
+        runtime.reload_cwmpd_timer:cancel()
+        runtime.reload_cwmpd_timer = nil
+        logger:notice("Reload cwmpd timer is canceled")
+    end
+end
+
+local function reload_cwmpd_timer_cb(runtime)
+    local logger = runtime.logger
+    local count = 5
+    local fixedifaceIsUp
+    local scripthelpers = runtime.scripth
+    local timer = runtime.uloop.timer(function()
+        logger:notice("reload_cwmpd_timer running count=" .. count)
+        if runtime.reload_cwmpd_timer then
+            fixedifaceIsUp = scripthelpers.checkIfInterfaceHasIP("wan6", true)
+            if count > 0 and not fixedifaceIsUp then
+                count = count-1
+                runtime.reload_cwmpd_timer:set(3000)
+            else
+                count = 0
+                reload_cwmpd_timer_cancel(runtime)
+                os.execute("/etc/init.d/cwmpd reload")
+            end
+         end
+    end,3000)
+    return timer
+end
+
+local function set_cwmpd_fixed_network_iface(runtime)
+    local logger = runtime.logger
+    local uci = runtime.uci
+    local scripthelpers = runtime.scripth
+    local x = uci.cursor()
+    local fixedifaceIsUp = scripthelpers.checkIfInterfaceHasIP("wan6", true)
+    if not fixedifaceIsUp then
+        x:set("cwmpd", "cwmpd_config", "ip_preference", "prefer_v6")
+        x:set("cwmpd", "cwmpd_config", "interface", "wan")
+        x:set("cwmpd", "cwmpd_config", "interface6", "wan6")
+        x:commit("cwmpd")
+        reload_cwmpd_timer_cancel(runtime)
+        runtime.reload_cwmpd_timer = reload_cwmpd_timer_cb(runtime)
+    else
+        x:set("cwmpd", "cwmpd_config", "ip_preference", "prefer_v6")
+        x:commit("cwmpd")
+        set_cwmpd_iface("wan", "wan6")
     end
 end
 
@@ -326,7 +378,10 @@ function M.mobiled_enable(runtime, enabled, mobileiface)
 
     local mobileifaceIsUp = scripthelpers.checkIfInterfaceIsUp(mobileiface)
     mobileifaceIsUp = mobileifaceIsUp and "1" or "0"
-
+    -- when mobileifaceIsUp is 0, send event mobiled interface is down
+    if mobileifaceIsUp ~= "1" then
+        conn:send('wwan.state', { status = 'unavailable'})
+    end
     local cwmpdiface = x:get("cwmpd", "cwmpd_config", "interface")
     local ddnsiface = x:get("ddns", "myddns_ipv4", "interface")
     local upnpdiface = x:get("upnpd", "config", "external_iface")
@@ -341,6 +396,7 @@ function M.mobiled_enable(runtime, enabled, mobileiface)
 
         -- TR069 over mobile
         if cwmpdiface ~= mobileiface4 and mobileifaceIsUp == "1" then
+            reload_cwmpd_timer_cancel(runtime)
             x:set("cwmpd", "cwmpd_config", "ip_preference", "v6_only")
             x:commit("cwmpd")
             set_cwmpd_iface(mobileiface4, mobileiface6)
@@ -372,9 +428,7 @@ function M.mobiled_enable(runtime, enabled, mobileiface)
     else
         -- TR069 over fixed network
         if cwmpdiface == mobileiface4 and mobileifaceIsUp ~= "1" then
-            x:set("cwmpd", "cwmpd_config", "ip_preference", "prefer_v6")
-            x:commit("cwmpd")
-            set_cwmpd_iface("wan", "wan6")
+            set_cwmpd_fixed_network_iface(runtime)
         end
 
         -- ddns over fixed network

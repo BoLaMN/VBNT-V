@@ -9,6 +9,7 @@
 /lib/wireless/init_qcacld.sh
 /usr/sbin/hostapd_env.sh
 /usr/sbin/hostapd
+/usr/sbin/wifi_on.sh
 /etc/wireless_acs.conf
 /lib/wireless/fix_uci_config.sh
 /usr/sbin/wireless_autochannel.sh
@@ -24,8 +25,8 @@
 /usr/sbin/wireless_odm_test_init.sh
 /lib/wireless/init_atheros.sh
 /usr/sbin/wireless_txtest.sh
-/lib/netifd/wireless/qcacld.sh
 /lib/wireless/fatal_error.sh
+/lib/netifd/wireless/qcacld.sh
 /usr/sbin/set_wlan_feature.sh
 /usr/sbin/wireless_init_uci_env.sh
 /lib/netifd/wireless/atheros.sh

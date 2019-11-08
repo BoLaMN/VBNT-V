@@ -66,7 +66,7 @@ collect_config_dump( ) {
 				sed  -i '/media_filter/d' $TMPFILE
 				sed -i 's/remove_silence_suppression  = 0/vad = 1/g' $TMPFILE
 				sed -i 's/remove_silence_suppression  = 1/vad = 0/g' $TMPFILE
-				formatAndPrintUnnamedUciOutput "$1" $TMPFILE $TMPFILE2
+				formatAndPrintNamedUciOutput "$1" $TMPFILE $TMPFILE2
 
 				echo -e "======================= TONE RELATED CONFIGURATIONS =============================     \n" >> "$1"
 
@@ -79,12 +79,12 @@ collect_config_dump( ) {
 
 				echo "$(transformer-cli get uci.mmpbx.scc_entry.)" > $TMPFILE
 				sed  -i '/service_base/d' $TMPFILE
-				formatAndPrintUnnamedUciOutput "$1" $TMPFILE $TMPFILE2
+				formatAndPrintNamedUciOutput "$1" $TMPFILE $TMPFILE2
 
 				echo -e "======================= DIAL PLAN RELATED CONFIGURATIONS =============================   \n" >> "$1"
 
 				echo "$(transformer-cli get uci.mmpbx.dial_plan_entry.)" > $TMPFILE
-				formatAndPrintUnnamedUciOutput "$1" $TMPFILE $TMPFILE2
+				formatAndPrintNamedUciOutput "$1" $TMPFILE $TMPFILE2
 
 				echo "$(transformer-cli get uci.mmpbxbrcmfxsdev.device.)" > $TMPFILE
 				formatAndPrintNamedUciOutput "$1" $TMPFILE $TMPFILE2

@@ -343,6 +343,10 @@ local WANPPPConnection = {
         type = "boolean",
         description = "To reload ppp for particular interfcae when each interface is set",
       },
+      SubnetMask = {
+        access = "readWrite",
+        type = "string",
+      },
       -- PortMappingNumberOfEntries
       -- automatically created when InternetGatewayDevice.WANDevice.{i}.WANConnectionDevice.{i}.
       -- WANPPPConnection.{i}.PortMapping.{i}. is loaded
@@ -350,6 +354,9 @@ local WANPPPConnection = {
   }
 }
 
+local inet = require "tch.inet"
+local isValidIPv4 = inet.isValidIPv4
+local isValidIPv6 = inet.isValidIPv6
 local mapper, register, eventsource = mapper, register, eventsource
 local common = mapper("nwcommon")
 local getIntfStats = common.getIntfStats
@@ -363,9 +370,9 @@ local match = string.match
 local open = io.open
 local query_keys = query_keys
 local concat = table.concat
+local format = string.format
 
 local wanconnection = require 'transformer.shared.wanconnection'
-local commitapply = commitapply
 local xtmconnection = require 'transformer.shared.models.igd.xtmconnection'
 local device_key = xtmconnection.resolve_key
 local qosBinding = { config = "qos" }
@@ -436,6 +443,7 @@ end
 local function getDNSOverrideAllowed(mapping, param, key)
   networkBinding.sectionname = mapping._conn:getName(key)
   networkBinding.option = "peerdns"
+  networkBinding.default = "1"
   return get_from_uci(networkBinding)
 end
 
@@ -754,6 +762,7 @@ local getters = {
     local interface = mapping._conn:getInterface(key)
     networkBinding.sectionname = interface
     networkBinding.option = "dns"
+    networkBinding.default = nil
     local dnsServers = get_from_uci(networkBinding)
     dnsServers = dnsServers ~= "" and dnsServers or {}
     local dynamicDns = {}
@@ -792,10 +801,7 @@ local getters = {
   ShapingBurstSize = "0", -- No Shaping
   X_000E50_IPv6_Enable = function(mapping, param, key)
     local conn = mapping._conn
-    if conn:getInterfaceDhcp6(key) then
-      return conn:getInterfaceOption(key, "ipv6", "1")
-    end
-    return "0"
+    return conn:getInterfaceOption(key, "ipv6", "1")
   end,
   X_000E50_VLANID = function(mapping, param, key)
     local d = mapping._conn.entries[key]
@@ -805,10 +811,14 @@ local getters = {
     return '-1'
   end,
   X_000E50_ExternalIPv6Address = function(mapping, param, key)
-    local v = mapping._conn:getInterfaceStatus(key)
-    v = v and v['ipv6-address']
-    v = v and v[1]
-    return (v and v['address']) or ""
+    local interface = mapping._conn:getInterfaceDhcp6(key)
+    if interface then
+      local v = common.get_ubus_interface_status(interface)
+      v = v and v['ipv6-address']
+      v = v and v[1]
+      return (v and v['address']) or ""
+    end
+    return ""
   end,
   X_QoSEnable = getQoSEnable,
   X_000E50_QoSEnable = getQoSEnable,
@@ -822,6 +832,12 @@ local getters = {
     return get_from_uci(igmpBinding)
   end,
   X_0876FF_Reauthenticate = "0",
+  SubnetMask = function(mapping, param, key)
+    local v = mapping._conn:getInterfaceStatus(key)
+    local ipv4mask = v and v['ipv4-address'] and v['ipv4-address'][1] and v['ipv4-address'][1]['mask']
+    local ipv6mask = v and v['ipv6-address'] and v['ipv6-address'][1] and v['ipv6-address'][1]['mask']
+    return ipv4mask and common.netmask2mask(ipv4mask) or ipv6mask and tostring(ipv6mask) or ""
+  end,
 }
 
 -- TODO: add getall() implementation
@@ -904,14 +920,11 @@ local setters = {
   Password = setInterfaceOption,
   X_000E50_IPv6_Enable = function(mapping, param, value, key)
     local conn = mapping._conn
-    if conn:getInterfaceDhcp6(key) then
-      local config = conn:setInterfaceOption(key, 'ipv6', value)
-      if not config then
-        return nil, "device not active and no sensing device specified"
-      end
-      return true
+    local config = conn:setInterfaceOption(key, 'ipv6', value)
+    if not config then
+      return nil, "device not active and no sensing device specified"
     end
-    return nil, "IPv6 is not supported on this WANPPPConnection"
+    return true
   end,
   X_000E50_VLANID = function(mapping, param, value, key, parentkey)
     local config, error = mapping._conn:setVlan(key, value)
@@ -925,6 +938,9 @@ local setters = {
     local devname = getDeviceName(mapping, key)
     if checkVlanDevice(devname) then
       qosBinding.sectionname = devname
+      qosBinding.option = "pcp"
+      set_on_uci(qosBinding, value, commitapply)
+      qosBinding.sectionname = "IPTV"
       qosBinding.option = "pcp"
       set_on_uci(qosBinding, value, commitapply)
       mapping._conn.transactions[qosBinding.config] = true
@@ -963,6 +979,19 @@ local setters = {
     end
   end,
   DNSOverrideAllowed = setDNSOverrideAllowed,
+  SubnetMask = function(mapping, param, value, key)
+    local conn = mapping._conn
+    local v = conn:getInterfaceOption(key, 'proto')
+    if v == "static" then
+      if isValidIPv4(value) or isValidIPv6(value) then
+        conn:setInterfaceOption(key, "netmask", value)
+      else
+        return nil, format("%s is not a valid subnet mask", value or "nil")
+      end
+    else
+      return nil, format("the interface proto is %s instead of static", v)
+    end
+  end,
 }
 
 WANPPPConnection.set = function(mapping, param, value, key, parentkey)
@@ -1105,7 +1134,7 @@ WANPPPConnection_Stats.get = function(mapping, param, key, parentkey)
   local conn = mapping.parent._cache[parentkey]
   local option = stats_map[param]
   if option then
-    return conn:getPhysicalInfo(key, option, "L3") or "0"
+    return conn:getPhysicalInfo(key, option, "L3", "0")
   elseif stats_ext_map[param] then
     local devname = conn:getDevice(key)
     if devname then

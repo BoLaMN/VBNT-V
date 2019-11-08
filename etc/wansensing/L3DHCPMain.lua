@@ -5,60 +5,20 @@ M.SenseEventSet = {
     'xdsl_0',
     'network_device_eth4_down',
     'network_interface_wwan_ifdown',
-    'bfdecho_wan_nok',
-    'bfdecho_wan_ok',
-    'bfdecho_wan6_nok',
-    'bfdecho_wan6_ok',
+    'supervision_wan_nok',
+    'supervision_wan_ok',
+    'supervision_wan6_nok',
+    'supervision_wan6_ok',
+    'dhcp_renew_wan_failed',
+    'dhcp_renew_wan_renew',
+    'dhcp_renew_wan6_failed',
+    'dhcp_renew_wan6_renew',
 }
 
 local events = {
     timeout = true,
     network_interface_wwan_ifdown = true,
 }
---- Get the DNS server list from system file (only IPv4 adresses)
-local function getDNSServerList()
-    local servers = {}
-    local pipe = assert(io.open("/var/resolv.conf.auto", "r"))
-    if pipe then
-        for line in pipe:lines() do
-            local result = line:match("nameserver (%d+%.%d+%.%d+%.%d+)")
-            if result then
-                servers[#servers+1] = result
-            end
-        end
-    end
-    return servers
-end
-
---- Do a DNS check to ensure IP connectivity works
--- @return {boolean} whether the interface is up and a dns query was possible
-local function checkDns(scripth, logger)
-    --DNS Check
-    logger:notice("Launching DNS Request")
-    local server_list=getDNSServerList()
-    if server_list ~= nil then
-        for _,v in ipairs(server_list)
-        do
-            logger:notice("Launching DNS Request with DNS server " .. v)
-            local status,hostname_or_error = scripth.dns_check('fbbwan.telstra.net',v,'fbbwan.telstra.net',nil,nil,nil,1,5)
-            if status and hostname_or_error then
-                return true
-            end
-        end
-        logger:notice("Trying again - Launching DNS Request with GOOGLE DNS server")
-        local status,hostname_or_error = scripth.dns_check('apple.com','8.8.8.8','apple.com',nil,nil,nil,1,5)
-        if status and hostname_or_error then
-            return true
-        end
-    else
-        logger:notice("Launching DNS Request with default DNS server")
-        local status,hostname_or_error = scripth.dns_check('fbbwan.telstra.net',nil,'fbbwan.telstra.net',nil,nil,nil,1,5)
-        if status and hostname_or_error then
-            return true
-        end
-    end
-    return false
-end
 
 --runtime = runtime environment holding references to ubus, uci, logger
 --L2Type = specifies the sensed layer2 medium (=return parameter of the layer2 main script)
@@ -73,112 +33,92 @@ function M.check(runtime, l2type, event)
         return false
     end
 
-
     local x = uci.cursor()
 
-    if events[event] then
+    if events[event] then --timeout or wwan down
         logger:notice("The L3DHCP main script is checking link connectivity on l2type interface " .. tostring(l2type))
-        local mode = x:get("wansensing", "global", "supervision_mode")
-
-        if runtime.mode == "BFD" then
-            if mode == "Disabled" or mode == "DNS" then
-               -- kill the currently running bfdecho daemons since mode has changed from 'BFD' to 'Disabled' or 'DNS' via GUI or ACS
-               os.execute("killall -9 bfdecho.lua 2>/dev/null")
-            end
-        else
-            if mode == "BFD" then
-               -- first kill the currently possible running bfdecho daemons
-               os.execute("killall -9 bfdecho.lua 2>/dev/null")
-               local v4enable = x:get("bfdecho", "bfdecho_config", "ipv4_enabled")
-               local v6enable = x:get("bfdecho", "bfdecho_config", "ipv6_enabled")
-               if v4enable == "enabled" then
-                  -- start IPv4 BFD echo daemon with wan intf
-                  logger:notice("Starting IPv4 BFD Echo daemon ...")
-                  os.execute("/usr/bin/bfdecho.lua wan ipv4 &")
-               end
-               if v6enable == "enabled" then
-                  -- start IPv6 BFD echo daemon with wan6 intf
-                  logger:notice("Starting IPv6 BFD Echo daemon ...")
-                  os.execute("/usr/bin/bfdecho.lua wan6 ipv6 &")
-               end
-            end
-        end
-        runtime.mode = mode
 
         -- check if wan is up Or wan6 is up and has global IPv6 address
         -- For Telstra, only when wan6 is up and has global IPv6 address, wan6 is applicable for upper layer application
         if scripthelpers.checkIfInterfaceIsUp("wan") or scripthelpers.checkIfInterfaceHasIP("wan6", true) then
-            -- disable 3G/4G
-            failoverhelper.mobiled_enable(runtime, "0", "wwan")
-            -- if supervision mode is disabled or BFD echo mode, it is always "successful" when event is timeout
-            -- if BFD echo mode is selected, BFD daemon is already started in L3DHCPEntry and it will send ubus event regularly about the results.
-            if mode == "Disabled" or mode == "BFD" then
-                runtime.l3dhcp_failures = 0
-                return "L3DHCP"
-            elseif mode == "DNS" then
-                -- DNS Connectivity Check
-                if checkDns(scripthelpers, logger) then
-                    runtime.l3dhcp_failures = 0
-                    return "L3DHCP"
-                else
-                    logger:notice("DNS lookup No " .. tostring(runtime.l3dhcp_failures + 1))
-                end
-            end
+          -- disable 3G/4G
+          failoverhelper.mobiled_enable(runtime, "0", "wwan")
+          runtime.l3dhcp_failures = 0
+        else
+          runtime.l3dhcp_failures = runtime.l3dhcp_failures + 1
+          if runtime.l3dhcp_failures > 3 then
+            return "L3DHCPSense"
+          else
+            return "L3DHCP", true -- do next check using fasttimeout rather than timeout
+          end
         end
-        runtime.l3dhcp_failures = runtime.l3dhcp_failures + 1
-        if runtime.l3dhcp_failures > 3 then
+    elseif event == "dhcp_renew_wan_failed" or event == "dhcp_renew_wan6_failed" then
+        local ipv4 = (event == "dhcp_renew_wan_failed")
+        local wanIntf = ipv4 and "wan" or "wan6"
+
+        logger:notice("DHCP renew failed on ".. wanIntf .. ", to restart it")
+
+        local intfStatus = ipv4 and scripthelpers.checkIfInterfaceHasIP("wan6", true) or scripthelpers.checkIfInterfaceIsUp("wan")
+        if intfStatus == false then
+            -- both wan and wan6 are down
             return "L3DHCPSense"
         else
-            return "L3DHCP", true -- do next check using fasttimeout rather than timeout
+            -- MMPBX and CWMP will switch to wan6/wan intf by itself once it receives the wan/wan6 down event
+            conn:call("network.interface." .. wanIntf, "down", { })
+            conn:call("network.interface." .. wanIntf, "up", { })
         end
-    elseif event == "bfdecho_wan_ok" then
-        runtime.l3dhcp_failures_v4 = 0
-        --logger:notice("IPv4 BFD Echo is successful.")
-        return "L3DHCP"
-    -- BFD echo IPv4 fails
-    elseif event == "bfdecho_wan_nok" then
-        runtime.l3dhcp_failures_v4 = runtime.l3dhcp_failures_v4 + 1
-        logger:notice("IPv4 BFD Echo failed No " .. tostring(runtime.l3dhcp_failures_v4))
+    elseif event == "dhcp_renew_wan_renew" or event == "dhcp_renew_wan6_renew" then
+        local ipv4 = (event == "dhcp_renew_wan_renew")
+        local delay_timer = ipv4 and "l3dhcp_renew_delay_timer_v4" or "l3dhcp_renew_delay_timer_v6"
+        local wait_timer = ipv4 and "l3dhcp_renew_wait_timer_v4" or "l3dhcp_renew_wait_timer_v6"
 
-        local count_limit = x:get("bfdecho", "bfdecho_config", "failed_limit")
-        if runtime.l3dhcp_failures_v4 > count_limit - 1 then
-            -- Failure account has reach the limitation, reset the counter and bring down wan intf, then bring up again
-            runtime.l3dhcp_failures_v4 = 0
-            conn:call("network.interface.wan", "down", { })
-            conn:call("network.interface.wan", "up", { })
-            if scripthelpers.checkIfInterfaceHasIP("wan6", true) then
-               -- MMPBX and CWMP will switch to wan6 intf by itself once it receives the wan down event
-                return "L3DHCP"
-            else -- both wan and wan6 intf are down
-                return "L3DHCPSense"
-            end
-        else
+        runtime[delay_timer] = nil
+        runtime[wait_timer] = nil
+
+        logger:notice("IP" .. (ipv4 and "v4" or "v6") .. " DHCP renew successed.")
+    elseif event == "supervision_wan_ok" or event == "supervision_wan6_ok" then
+        --logger:notice("supervision is successful." .. event)
+        return "L3DHCP"
+    elseif event == "supervision_wan_nok" or event == "supervision_wan6_nok" then
+        local ipv4 = (event == "supervision_wan_nok")
+        local wanIntf = ipv4 and "wan" or "wan6"
+
+        -- supervision IPv4/v6 fails
+        logger:notice("supervision failed " .. event)
+
+        -- Failure account has reach the limitation, bring down wan(wan6) intf, then bring up again
+        -- Telstra : If either IPv4 or IPv6 BFD Echo fails and reaches its fail limit, then that IP interface only is to be brought down and all gateway internal services notified to use the alternate interface. The other IP interface is to remain up, unless it also fails.
+        local delay_timer = ipv4 and "l3dhcp_renew_delay_timer_v4" or "l3dhcp_renew_delay_timer_v6"
+        local wait_timer = ipv4 and "l3dhcp_renew_wait_timer_v4" or "l3dhcp_renew_wait_timer_v6"
+        local wanStatus = ipv4 and scripthelpers.checkIfInterfaceIsUp("wan") or scripthelpers.checkIfInterfaceHasIP("wan6", true)
+
+        if runtime[delay_timer] ~= nil or runtime[wait_timer] ~= nil or wanStatus == false then
             return "L3DHCP"
         end
-    elseif event == "bfdecho_wan6_ok" then
-        runtime.l3dhcp_failures_v6 = 0
-        --logger:notice("IPv6 BFD Echo is successful.")
-        return "L3DHCP"
-    -- BFD echo IPv6 fails
-    elseif event == "bfdecho_wan6_nok" then
-        runtime.l3dhcp_failures_v6 = runtime.l3dhcp_failures_v6 + 1
-        logger:notice("IPv6 BFD Echo failed No " .. tostring(runtime.l3dhcp_failures_v6))
 
-        local count_limit = x:get("bfdecho", "bfdecho_config", "failed_limit")
-        if runtime.l3dhcp_failures_v6 > count_limit - 1 then
-            -- Failure account has reach the limitation, reset the counter and bring down wan6 intf, then bring up again
-            runtime.l3dhcp_failures_v6 = 0
-            conn:call("network.interface.wan6", "down", { })
-            conn:call("network.interface.wan6", "up", { })
-            if scripthelpers.checkIfInterfaceIsUp("wan") then
-               -- MMPBX and CWMP will switch to wan intf by itself once it receives the wan6 down event
-                return "L3DHCP"
-            else -- both wan and wan6 intf are down
-                return "L3DHCPSense"
+        local rand_delay = math.random(1000, 30 * 1000)
+
+        logger:notice("delay " .. rand_delay .. "ms to renew " .. wanIntf)
+        runtime[delay_timer] = runtime.uloop.timer(function()
+            if runtime[delay_timer] ~= nil then
+                runtime[delay_timer] = nil
+                logger:notice("sending DHCP renew for " .. wanIntf)
+                conn:call("network.interface." .. wanIntf, "renew", { })
+
+                -- to start another timer to wait for renew event
+                runtime[wait_timer] = runtime.uloop.timer(function()
+                    if runtime[wait_timer] ~= nil then
+                        runtime[wait_timer] = nil
+                        logger:notice("Interface " .. wanIntf .. " renew timeout")
+                        if wanIntf == "wan" then
+                            os.execute('ubus send dhcp.client  ' .. "'" .. '{"event":"renew_failed","interface":"wan"}' .. "'")
+                        else
+                            os.execute('ubus send dhcpv6.client  ' .. "'" .. '{"event":"renew_failed","interface":"wan6"}' .. "'")
+                        end
+                    end
+                end, 4 * 1000)    -- wait for DHCP renew for 4 seconds according to CR
             end
-        else
-            return "L3DHCP"
-        end
+        end, rand_delay)
     else
         if l2type == 'ETH' then
             if not scripthelpers.l2HasCarrier("eth4") then
@@ -187,8 +127,10 @@ function M.check(runtime, l2type, event)
         elseif scripthelpers.checkIfCurrentL2WentDown(l2type, event, 'eth4') then
             return "L2Sense"
         end
-        return "L3DHCP" -- if we get there, then we're not concerned, the non used L2 went down
+        -- if we get there, then we're not concerned, the non used L2 went down
     end
+
+    return "L3DHCP"
 end
 
 return M

@@ -7,9 +7,6 @@ local fwConfigMap = {
       ["waninput"] = "DROP",
       ["defaultoutgoing"] = "DROP",
     },
-    ["defaults"] = {
-      ["forward"] = "DROP",
-    },
   },
   Low           = {
     ["level"] = "normal",
@@ -18,9 +15,6 @@ local fwConfigMap = {
       ["forward"] = "DROP",
       ["waninput"] = "DROP",
       ["defaultoutgoing"] = "ACCEPT",
-    },
-    ["defaults"] = {
-      ["forward"] = "DROP",
     },
   },
   X_000E50_User = {
@@ -31,9 +25,6 @@ local fwConfigMap = {
       ["waninput"] = "DROP",
       ["defaultoutgoing"] = "ACCEPT",
     },
-    ["defaults"] = {
-      ["forward"] = "DROP",
-    },
   },
   Off = {
     ["level"] = "lax",
@@ -43,9 +34,6 @@ local fwConfigMap = {
       ["waninput"] = "ACCEPT",
       ["defaultoutgoing"] = "ACCEPT",
     },
-    ["defaults"] = {
-      ["forward"] = "REJECT",
-    },
   },
   X_000E50_Lax = {
     ["level"] = "lax",
@@ -54,9 +42,6 @@ local fwConfigMap = {
       ["forward"] = "ACCEPT",
       ["waninput"] = "ACCEPT",
       ["defaultoutgoing"] = "ACCEPT",
-    },
-    ["defaults"] = {
-      ["forward"] = "REJECT",
     },
   },
 }
@@ -200,16 +185,6 @@ local function setFwConfigLevel(config)
   end
 end
 
---- Sets firewall.@defaults[0].forward according to specified config
-local function setDefaultsForward(config)
-  if fwConfigMap[config] then
-    uci_helper.foreach_on_uci({config="firewall", sectionname="defaults"}, function(s)
-      setOnUci({config="firewall", sectionname=s[".name"], option="forward"}, fwConfigMap[config].defaults.forward, commitapply)
-      return false
-    end)
-  end
-end
-
 -- The entry function to change firewall's UCI config
 --  If firewall is `Enabled`:
 --   * activates the rule set belonging to specified config
@@ -225,7 +200,6 @@ local function setConfig(config)
       setOutGoingPolicyTo(config)
       setIncomingPolicyTo(config)
       setFwConfigLevel(config)
-      setDefaultsForward(config)
     else
       setOnUci(fwBinding_admin_config, config, commitapply)
     end

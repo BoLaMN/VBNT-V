@@ -22,6 +22,22 @@ local tonumber = tonumber
 local getargs = ngx.req.get_uri_args()
 local getiface = getargs.iface
 
+local content_multiap = {
+    agent_enabled = "uci.multiap.agent.enabled",
+    controller_enabled = "uci.multiap.controller.enabled",
+}
+content_helper.getExactContent(content_multiap)
+
+local agent_exist
+local agentPath = "Device.Services.X_TELSTRA_MultiAP.Agent."
+local agentList = content_helper.convertResultToObject(agentPath, proxy.get(agentPath))
+for _, k in pairs(agentList) do
+    if k.MACAddress ~= "" then
+        agent_exist = true
+        break
+    end
+end
+
 local check_data_file = "/root/trafficmon/check_data"
 local all_ifaces, content_iface = {}, {}
 
@@ -32,14 +48,17 @@ local piface = "uci.wireless.wifi-iface."
 local awls = content_helper.convertResultToObject(piface .. "@.", proxy.get(piface))
 local wls = {}
 for i,v in ipairs(awls) do
-    wls[#wls+1] = {
-      radio = v.device,
-        ssid = v.ssid,
-        iface = v.paramindex
-    }
+    if v.backhaul ~= "1" or (content_multiap.agent_enabled == "1" and content_multiap.controller_enabled == "1" and agent_exist) then
+        wls[#wls+1] = {
+            radio = v.device,
+            ssid = (v.backhaul == "1") and "Wi-Fi Boosters" or v.ssid,
+            iface = v.paramindex,
+            backhaul = (v.backhaul == "") and 0 or 1
+        }
+    end
     if v.paramindex == getiface then
         curiface = v.paramindex
-        curssid = v.ssid
+        curssid = (v.backhaul == "1") and "Boosters" or v.ssid
     end
     all_ifaces[v.paramindex] = true
 end
@@ -47,10 +66,14 @@ end
 content_iface.wifi = {{ iface = curiface}}
 
 table.sort(wls, function(a,b)
-    if a.radio == b.radio then
-        return a.iface < b.iface
+    if a.backhaul == b.backhaul then
+        if a.radio == b.radio then
+            return a.iface < b.iface
+        else
+            return a.radio < b.radio
+        end
     else
-        return a.radio < b.radio
+        return a.backhaul < b.backhaul
     end
 end)
 
@@ -96,7 +119,7 @@ local function getTrafficHistoryData(direct, ifaces)
     local total = 0
     for _, v in ipairs(ifaces) do
         local i = 0
-        filename = string.format("/root/trafficmon/%s_%s", v.iface, direct)
+        filename = format("/root/trafficmon/%s_%s", v.iface, direct)
         f = io.open(filename, "r")
         if f then
             for line in f:lines() do
@@ -304,7 +327,7 @@ ngx.print(
             active = "active"
         end
         local url = "traffic.lp?iface=" .. v.iface
-        html[#html+1] = string.format('<li class="%s"><a href="%s" target="_self">%s</a></li>', active, url, v.ssid)
+        html[#html+1] = format('<li class="%s"><a href="%s" target="_self">%s</a></li>', active, url, v.ssid)
     end
     ngx.print(html)
     ngx.print('\
@@ -315,6 +338,14 @@ ngx.print(
 </div>\
 \
 <script language ="javascript">\
+  $(window).scroll(function(){\
+    sessionStorage.scrollTop = $(this).scrollTop();\
+  });\
+  $(document).ready(function(){\
+    if(sessionStorage.scrollTop != "undefined") {\
+      $(window).scrollTop(sessionStorage.scrollTop);\
+    }\
+  });\
   var wanLine, lanLine, wifiLine;\
   // Data will be done\
 \

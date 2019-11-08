@@ -32,12 +32,12 @@ end
 function M.parseLine(line)
   local lasthost, lastip, times
   for attempt in line:gmatch("[^*]*%*") do
-    local host, ip, time = match(attempt, "%S+%s+(%S+)%s+%((%S+)%)%s+(%d+)%.%d+%s+ms")
+    local host, ip, time = match(attempt, "%S+%s+(%S+)%s+%((%S+)%)%s+(%d+%.%d+)%s+ms")
     if (host) then
       lasthost = host
       lastip = ip
     else
-      time = match(attempt, "(%d+)%.%d+%s+ms")
+      time = match(attempt, "(%d+%.%d+)%s+ms")
     end
     time = time or "0"
     if (times) then
@@ -83,7 +83,7 @@ function M.read_trace_results(user, file)
 
     if (lasthost and lastip) then
       if times ~= "*" then
-        times = times and sub(times, 1, 16)
+        times = times and sub(times, 1, 20)
       end
       -- If the reverse DNS lookup failed, clear out Hostname
       if (lasthost == lastip) and lasthost ~= "*" then
@@ -126,10 +126,11 @@ function M.startup(user, binding)
     uci.set_on_uci(uci_binding[user]["DataBlockSize"], 38)
     uci.set_on_uci(uci_binding[user]["DSCP"], 0)
     uci.set_on_uci(uci_binding[user]["MaxHopCount"], 30)
+    uci.set_on_uci(uci_binding[user]["ProtocolVersion"], "IPv4")
     if user == "webui" then
-      uci.set_on_uci(uci_binding[user]["ipType"], "ipv4")
+      uci.set_on_uci(uci_binding[user]["Timeout"], 3000)
     end
-    else
+  else
     local value = uci.get_from_uci({config = "traceroute", sectionname = user})
     if value == '' then
       uci.set_on_uci({config = "traceroute", sectionname = user},"user")
@@ -139,8 +140,9 @@ function M.startup(user, binding)
       uci.set_on_uci(uci_binding[user]["DataBlockSize"], 38)
       uci.set_on_uci(uci_binding[user]["DSCP"], 0)
       uci.set_on_uci(uci_binding[user]["MaxHopCount"], 30)
+      uci.set_on_uci(uci_binding[user]["ProtocolVersion"], "IPv4")
       if user == "webui" then
-        uci.set_on_uci(uci_binding[user]["ipType"], "ipv4")
+        uci.set_on_uci(uci_binding[user]["Timeout"], 3000)
       end
     end
   end
@@ -162,6 +164,7 @@ function M.uci_traceroute_get(user, pname)
           DataBlockSize = { config = config, sectionname = user, option = "size" },
           DSCP = { config = config, sectionname = user, option = "dscp" },
           MaxHopCount = { config = config, sectionname = user, option = "hopcount" },
+          ProtocolVersion = { config = config, sectionname = user, option = "type" },
         }
   end
 

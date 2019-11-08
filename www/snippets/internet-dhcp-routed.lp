@@ -7,9 +7,11 @@ local content_helper = require("web.content_helper")
 local ui_helper = require("web.ui_helper")
 local message_helper = require("web.uimessage_helper")
 local tonumber = tonumber
+local proxy = require("datamodel")
 
 -- Process POST query
 local post_helper = require("web.post_helper")
+local match = string.match
 
 -- Configurable data
 local mapParams = {
@@ -42,8 +44,25 @@ local cs = {
     nexthop = "rpc.network.interface.@wan.nexthop",
     ip6addr = "rpc.network.interface.@wan6.ip6addr",
     dns = "rpc.network.interface.@wan.dnsservers",
+    dnsv6 = "rpc.network.interface.@wan6.dnsservers",
+    ip6prefix = "rpc.network.interface.@wan6.ip6prefix",
 }
 
+for key, value in ipairs(proxy.getPN("rpc.network.interface.", true)) do
+  local intf = match(value.path, "rpc%.network%.interface%.@([^%.]+)%.")
+  if intf then
+   if intf == "6rd" then
+      cs.ip6addr = "rpc.network.interface.@6rd.ip6addr"
+      cs.ip6prefix = "rpc.network.interface.@6rd.ip6prefix"
+      cs.dnsv6 = "rpc.network.interface.@6rd.dnsservers"
+    elseif intf == "wan6" then
+      cs.ip6addr = "rpc.network.interface.@wan6.ip6addr"
+      cs.ip6prefix = "rpc.network.interface.@wan6.ip6prefix"
+      cs.dnsv6 = "rpc.network.interface.@wan6.dnsservers"
+      break
+    end
+  end
+end
 content_helper.getExactContent(cs)
 
 -- Figure out interface state
@@ -109,9 +128,17 @@ end
     --html[#html+1] = ui_helper.createSwitch(T"Enabled", "uci_wan_auto", content["uci_wan_auto"])
 
     html[#html+1] = ui_helper.createLabel(T"IP address", cs["ipaddr"])
-    html[#html+1] = ui_helper.createLabel(T"IPv6 address", cs["ip6addr"])
     html[#html+1] = ui_helper.createLabel(T"Gateway", cs["nexthop"])
     html[#html+1] = ui_helper.createLabel(T"DNS servers", cs["dns"])
+    if cs["ip6addr"] and cs["ip6addr"]:len() > 0 then
+       html[#html+1] = ui_helper.createLabel(T"IPv6 Address", cs["ip6addr"])
+    end
+    if cs["ip6prefix"] and cs["ip6prefix"]:len() > 0 then
+       html[#html+1] = ui_helper.createLabel(T"IPv6 Prefix", cs["ip6prefix"])
+    end
+    if cs["dnsv6"] and cs["dnsv6"]:len() > 0 then
+        html[#html+1] = ui_helper.createLabel(T"IPv6 DNS", cs["dnsv6"])
+    end
     html[#html+1] = ui_helper.createLabel(T"Lease obtained", cs["leaseobtained"])
     html[#html+1] = ui_helper.createLabel(T"Lease expires", cs["leaseexpires"])
 

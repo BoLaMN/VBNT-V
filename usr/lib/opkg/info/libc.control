@@ -1,5 +1,5 @@
 Package: libc
-Version: 0.9.33.2-1
+Version: 2.24-1
 Depends: libgcc
 Source: package/libs/toolchain
 License: GPL-3.0-with-GCC-exception
@@ -8,5 +8,5 @@ Status: unknown hold not-installed
 Essential: yes
 Maintainer: Felix Fietkau <nbd@openwrt.org>
 Architecture: brcm63xx-tch
-Installed-Size: 312451
+Installed-Size: 1208880
 Description:  C library

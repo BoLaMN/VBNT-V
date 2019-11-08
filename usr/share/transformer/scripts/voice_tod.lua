@@ -126,12 +126,6 @@ function notify_new_state()
         end
     end)
 
-    if (voice_rules_count == unscheduled_rules_count) then
-        for profile,_ in pairs(profile_ringing_state) do
-             update_current_state(profile, "off")
-        end
-        return
-    end
 
     -- identify all active schedule related profiles
     scan_for_profile_with_schedule(active_schedule_profile, inactive_schedule_profile)

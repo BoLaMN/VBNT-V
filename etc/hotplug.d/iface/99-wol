@@ -14,5 +14,5 @@ config_get dest_ip config dest_ip
     # Add route entry
     ip route add ${dest_ip}/32 dev $DEVICE
     # Add a static ARP spoofing entry
-    ip neigh add $dest_ip lladdr ff:ff:ff:ff:ff:ff nud permanent dev $DEVICE
+    ip neigh replace $dest_ip lladdr ff:ff:ff:ff:ff:ff nud permanent dev $DEVICE
 }

@@ -4,15 +4,15 @@
   <p>
   </p>
   <h1>
-    <a name="44854" />Gateway</h1>
-  <h4>The Gateway card</h4>
-  <stem>The <b>Gateway</b> card in the <link href="Home0.xml#20934">Advanced View </link> displays:</stem>
+    <a name="44854" /><var name="1-productname01" /></h1>
+  <h4>The <var name="1-productname01" /> card</h4>
+  <stem>The <b><var name="1-productname01" /></b> card in the <link href="Home0.xml#20934">Advanced View </link> displays:</stem>
   <li1>The software version currently installed on the <var name="1-productname01" />.</li1>
   <li1>The serial number of your <var name="1-productname01" />.</li1>
   <li1>The uptime. This is the time that has elapsed since power on of the <var name="1-productname01" />.</li1>
-  <h4>The Gateway page<a name="gateway-modal" /></h4>
-  <p>To open the <b>Gateway</b> page, click the <b>Gateway</b> card in the <link href="Home0.xml#20934">Advanced View </link>.</p>
-  <p>The <b>Gateway</b> page displays the following information:</p>
+  <h4>The <var name="1-productname01" /> page<a name="gateway-modal" /></h4>
+  <p>To open the <b><var name="1-productname01" /></b> page, click the <b><var name="1-productname01" /></b> card in the <link href="Home0.xml#20934">Advanced View </link>.</p>
+  <p>The <b><var name="1-productname01" /></b> page displays the following information:</p>
   <li1>
     <b>Product Vendor</b>
   </li1>

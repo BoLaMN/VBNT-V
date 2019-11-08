@@ -28,6 +28,7 @@ local rules = {
 local string, io, os = string, io, os
 local ipairs, next = ipairs, next
 local lfs = require("lfs")
+local proxy = require("datamodel")
 
 local M = {}
 
@@ -39,6 +40,7 @@ local function open_logfile(filename)
   else
      fd:setvbuf("no")
   end
+  fd:write("XXXXXXXXXXXXXXXXXXX luasyslog.lua started XXXXXXXXXXXXXXXXXXX")
   return fd
 end
 
@@ -99,6 +101,25 @@ end
 local function write_logfile(v,s)
   if v.enabled == "0" then return end
   if v.size == 0 then return end
+  local timechkenabled = "0"
+  local timeSet = "0"
+  local rc
+  rc = proxy.get("sys.log.EnableGWLogTimeValidation")
+  if (rc and rc[1] and ((rc[1].value == "0") or (rc[1].value == "1"))) then
+    timechkenabled = rc[1].value
+  end
+  rc = proxy.get("sys.log.ValidTimeSet")
+  if (rc and rc[1] and ((rc[1].value == "0") or (rc[1].value == "1"))) then
+    timeSet = rc[1].value
+  end
+  if timechkenabled  == "1" and timeSet == "0" then
+     local replaceString = "0"
+     rc = proxy.get("sys.log.InvalidTimeReplacemntString")
+      if (rc and rc[1] and rc[1].value) then
+        replaceString = rc[1].value
+      end
+     s = string.gsub(s,"%a%a%a(.-)%d%d%d%d%s" , replaceString)
+  end
   local sLen = #s
   if (sLen + v.length) >= v.size then
      local remainLen = sLen + v.length - v.size

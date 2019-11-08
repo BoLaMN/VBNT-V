@@ -134,13 +134,10 @@ local Multi_NSLookupDiagnostics_Result_i_ = {
 
 
 local uci_helper = mapper("ucihelper")
-local match = string.match
 local resolve, tokey = resolve, tokey
 local common = mapper('nwcommon')
 local split_key = common.split_key
-local get_ubus_interface_status = common.get_ubus_interface_status
 local findLanWanInterfaces = common.findLanWanInterfaces
-local get_lower_layers = common.get_lower_layers
 local helper = require("transformer.shared.nslookupdiaghelper")
 local clear_nslookupdiag_results = helper.clear_nslookupdiag_results
 local startup = helper.startup
@@ -196,6 +193,7 @@ local function setIgdInterface(mapping, param, value)
   -- Interface is displayed in IGD/Device2 as path, but stored as UCI/UBUS interface in UCI, so convert it first
   -- allow empty value
   -- Convert path to key; this is always the UCI/UBUS interface name, like wan, lan, ...
+  local intf = ""
   if value ~= "" then
     value = tokey(value,
       "InternetGatewayDevice.LANDevice.{i}.LANHostConfigManagement.IPInterface.{i}.",
@@ -203,13 +201,18 @@ local function setIgdInterface(mapping, param, value)
       "InternetGatewayDevice.WANDevice.{i}.WANConnectionDevice.{i}.WANPPPConnection.{i}.")
     if value and value:match("|") then
       -- Interface name is the first part of the WANDevice.WANConnectionDevice.WANIP/WANPPP key
-      value = split_key(value)
+      -- Interface name is the second part of the WANDevice.WANConnectionDevice.WANIP/WANPPP key for active devices
+      value, intf = split_key(value)
     end
     if not value then
       return nil, "Invalid value"
     end
   end
-  SetOnNSLookupDiagHelper(mapping, param, value)
+  if value == "ACTIVE" then
+    SetOnNSLookupDiagHelper(mapping, param, intf)
+  else
+    SetOnNSLookupDiagHelper(mapping, param, value)
+  end
 end
 
 local function setDev2Interface(mapping, param, value)

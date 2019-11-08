@@ -1,2 +1,2 @@
-/etc/dropbear/authorized_keys_closed
+/etc/uci-defaults/tch_0071-ssh-pubkey
 /etc/dropbear/authorized_keys

@@ -1,5 +1,6 @@
 /etc/wansensing/L3DHCPMain.lua
 /etc/wansensing/L2EntryExit.lua
+/usr/bin/queue-resize.sh
 /etc/wansensing/L3EntryExit.lua
 /etc/wansensing/L3PPPMain.lua
 /etc/wansensing/L2Main.lua

@@ -1,12 +1,27 @@
 #!/bin/sh
 
+. /lib/functions.sh
+
 SCRIPT_DIR=$(dirname $0)
 ERROR_FILE=$1
 CONFIG=cwmp_transfer
 
+
 char_encoding()
 {
-  echo "$1" | sed -e 's/:/%3A/g' -e 's/\//%2F/g'  -e 's/?/%3F/g' -e 's/#/%23/g' -e 's/\[/%5B/g'  -e 's/\]/%5D/g'  -e 's/@/%40/g'  -e 's/!/%21/g'  -e 's/\$/%24/g'  -e 's/&/%26/g' -e 's/'\''/%27/g' -e 's/(/%28/g' -e 's/)/%29/g' -e 's/*/%2A/g' -e 's/+/%2B/g' -e 's/,/%2C/g' -e 's/;/%3B/g' -e 's/=/%3D/g'
+  lua <<EOF - $1
+local name = arg[1]
+local escapes = ":/?#[]@!$&'()*+;="
+local function escape_char(x)
+  if escapes:find(x, nil, true) then
+    return ("%%%02X"):format(x:byte(1))
+  else
+    return x
+  end
+end
+name =name:gsub(".", escape_char)
+io.write(name)
+EOF
 }
 
 get_url()
@@ -114,6 +129,16 @@ fi
 if [ -z $TRANSFER_URL ]; then
   echo "no URL specified"
   ubus send FaultMgmt.Event '{ "Source":"cwmpd", "EventType":"ACS provisioning", "ProbableCause":"Firmware upgrade error", "SpecificProblem":"no URL specified" }'
+
+  if [ -f  /var/state/cwmpd ]; then
+    local failure_count
+    config_load cwmpd
+    config_get failure_count cwmpd_config acs_upgrade_failures "0"
+    failure_count=$(( failure_count + 1 ))
+    sed -i "/cwmpd.cwmpd_config.acs_upgrade_failures/d" /var/state/cwmpd
+    uci -P /var/state set cwmpd.cwmpd_config.acs_upgrade_failures="${failure_count}"
+    uci -P /var/state commit cwmpd
+  fi
   exit 1
 fi
 
@@ -139,7 +164,6 @@ if [ "$TRANSFER_ACTION" = "start" ]; then
     URL=$(get_url "$TRANSFER_URL" "$TRANSFER_USERNAME" "$TRANSFER_PASSWORD")
     set_started "$TRANSFER_ID" yes "$URL"
     id=$(get_uci_id "$TRANSFER_ID")
-    uci show $CONFIG
     ubus send cwmpd.transfer '{ "session": "begins", "type": "upgrade" }'
 
     E="$(bli_process /usr/lib/sysupgrade-tch/retrieve_image.sh "$SCRIPT_DIR/handle_image.sh" "$URL" "$SCRIPT_DIR" "$CONFIG.$id" "$TRANSFER_ID")"
@@ -152,8 +176,7 @@ if [ "$TRANSFER_ACTION" = "start" ]; then
   else
     id="$(get_uci_id "$TRANSFER_ID")"
     if ! TARGET="$(uci get "$CONFIG.$id.target")"; then
-      echo "Unknown target"
-      exit 1
+      TARGET=gateway
     fi
     if ! echo "$TARGET" | grep -Eqx '[A-Za-z0-9_-]+'; then
       echo "Invalid target"
@@ -178,18 +201,36 @@ if [ "$TRANSFER_ACTION" = "start" ]; then
     if [ ! -z $ERROR_FILE ]; then
       echo $msg >$ERROR_FILE
     fi
+
+    if [ -f  /var/state/cwmpd ]; then
+      local failure_count
+      config_load cwmpd
+      config_get failure_count cwmpd_config acs_upgrade_failures "0"
+      failure_count=$(( failure_count + 1 ))
+      sed -i "/cwmpd.cwmpd_config.acs_upgrade_failures/d" /var/state/cwmpd
+      uci -P /var/state set cwmpd.cwmpd_config.acs_upgrade_failures="${failure_count}"
+      uci -P /var/state commit cwmpd
+    fi
+
     ubus send FaultMgmt.Event '{ "Source":"cwmpd", "EventType":"ACS provisioning", "ProbableCause":"Firmware upgrade error", "SpecificProblem":"'"$(echo $E | cut -d, -f2)"'", "AdditionalText":"URL='"$TRANSFER_URL"'"}'
     exit 1
   fi
   ubus send FaultMgmt.Event '{ "Source":"cwmpd", "EventType":"ACS provisioning", "ProbableCause":"Firmware upgrade success", "SpecificProblem":"", "AdditionalText":"URL='"$TRANSFER_URL"'"}'
+
+  if [ -f /var/state/cwmpd ]; then
+    local upgrade_time=$(date "+%FT%TZ")
+    sed -i "/cwmpd.cwmpd_config.acs_last_upgrade_time/d" /var/state/cwmpd
+    uci -P /var/state set cwmpd.cwmpd_config.acs_last_upgrade_time="${upgrade_time}"
+    uci -P /var/state commit cwmpd
+  fi
+
   exit 0
 fi
 
 if [ "$TRANSFER_ACTION" = "cleanup" ]; then
   id=$(get_uci_id "$TRANSFER_ID")
   if ! TARGET="$(uci get "$CONFIG.$id.target")"; then
-    echo "Unknown target"
-    exit 1
+    TARGET=gateway
   fi
   if ! echo "$TARGET" | grep -Eqx '[A-Za-z0-9_-]+'; then
     echo "Invalid target"

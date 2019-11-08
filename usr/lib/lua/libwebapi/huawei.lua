@@ -230,9 +230,7 @@ function Mapper:get_device_info(device, info)
 			i = get_from_table(tab, "Imei")
 			if i then device.buffer.device_info.imei = i[1] end
 			i = get_from_table(tab, "ImeiSvn")
-			if i and device.buffer.device_info.imei then
-				device.buffer.device_info.imeisv = string.sub(device.buffer.device_info.imei, 1, 14) .. i[1]
-			end
+			if i then device.buffer.device_info.imei_svn = i[1] end
 			i = get_from_table(tab, "SerialNumber")
 			if i then device.buffer.device_info.serial = i[1] end
 			i = get_from_table(tab, "HardwareVersion")
@@ -754,7 +752,6 @@ end
 function Mapper:configure_device(device, config)
 	if device.buffer.device_info and device.buffer.device_info.login_required then
 		if config.device.username and config.device.password then
-			device.runtime.log:info("Logging in to device using " .. config.device.username .. " " .. config.device.password)
 			return login(device, config.device.username, config.device.password)
 		end
 	end

@@ -163,7 +163,7 @@ Multi_Services_X_TELSTRA_IWIFI_i_.getall = function(mapping, key)
     local v = uci_helper.getall_from_uci(binding)
     data.Enable = v and v.deploy and cvtBoolean[v.deploy] or data.Enable
     data.Status = v and v.status and cvtStatus[v.status] or data.Status
-    local logfile = v.extendedstatuslog
+    local logfile = v.extendedstatuslog or ""
     data.ExtendedStatus = getExtendedStatus(logfile)
 
     binding.sectionname = "main"

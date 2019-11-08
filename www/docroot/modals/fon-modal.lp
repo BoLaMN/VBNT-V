@@ -38,28 +38,13 @@ content_helper.getExactContent(content_fon)
 --local tunnelstatus = string.format("%s", content_fon["tunnelstatus"])
 --content_fon["tunnelstatus"] = cvtBoolean[tunnelstatus]
 
-for iface,_ in pairs(ssidMap) do
-    content_fon[iface] = 0
-end
-
-
-
-local hostpath = "sys.hosts.host."
-local hosts = content_helper.convertResultToObject(hostpath, proxy.get(hostpath))
 local clientpath = "sys.fon.client."
 local clients = content_helper.convertResultToObject(clientpath, proxy.get(clientpath))
-for _,v in ipairs(hosts) do
-    local iface = string.format("%s", v.L2Interface or "")
-    if v.L3Interface == content_fon["foniface"] and ssidMap[iface] then
-        local ismatched = false
-        for _,m in ipairs(clients) do
-            if m.mac == v.MACAddress then
-               ismatched = true
-               break
-            end
-        end
 
-        if ismatched then
+for iface,_ in pairs(ssidMap) do
+    content_fon[iface] = 0
+    for _,v in ipairs(clients) do
+        if v.L2Interface == iface and v.State == "1" then
             content_fon[iface] = content_fon[iface] + 1
         end
     end

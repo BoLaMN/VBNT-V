@@ -1,6 +1,6 @@
-local Multi_InternetGatewayDevice_Services_ = {
+local InternetGatewayDevice_Services_X_000E50_Wifi_ = {
   objectType = {
-    name = "#ROOT.",
+    name = "InternetGatewayDevice.Services.X_000E50_Wifi.",
     access = "readOnly",
     description = "ONO-Wifi service related parameters",
     minEntries = 0,
@@ -222,7 +222,7 @@ local position
 local ifnames = {}
 local eapAp, eap5Ap
 
-Multi_InternetGatewayDevice_Services_.entries = function(mapping, param, key)
+InternetGatewayDevice_Services_X_000E50_Wifi_.entries = function(mapping, param, key)
   ifnames = fon_helper.getIfnames()
   eapAp = fon_helper.getAp(ifnames.EAPSSID) or "ap3"
   eap5Ap = fon_helper.getAp(ifnames.EAPSSID5) or "ap5"
@@ -323,7 +323,7 @@ local function getUserSelectable()
   return rolesPresent(roles) and "1" or "0"
 end
 
-Multi_InternetGatewayDevice_Services_.get = {
+InternetGatewayDevice_Services_X_000E50_Wifi_.get = {
   Enabled = function(mapping, param)
     return getGreHotspotUci("global", "enable")
   end,
@@ -471,7 +471,7 @@ local function setUserSelectable(iface, value)
   transactions[webBinding.config] = true
 end
 
-Multi_InternetGatewayDevice_Services_.set = {
+InternetGatewayDevice_Services_X_000E50_Wifi_.set = {
   Enabled = function(mapping, param, value)
     setGreHotspotUci("global", "enable", value)
   end,
@@ -540,22 +540,18 @@ Multi_InternetGatewayDevice_Services_.set = {
   end,
 }
 
-Multi_InternetGatewayDevice_Services_.commit = function()
+InternetGatewayDevice_Services_X_000E50_Wifi_.commit = function()
   for config in pairs(transactions) do
     uciHelper.commit({config = config})
   end
   transactions = {}
 end
 
-Multi_InternetGatewayDevice_Services_.revert = function()
+InternetGatewayDevice_Services_X_000E50_Wifi_.revert = function()
   for config in pairs(transactions) do
     uciHelper.revert({config = config})
   end
   transactions = {}
 end
 
-local duplicator = mapper("multiroot").duplicate
-local duplicates = duplicator(Multi_InternetGatewayDevice_Services_, "#ROOT", {"InternetGatewayDevice.Services.X_VFWifi", "InternetGatewayDevice.Services.X_000E50_Wifi"})
-for _, dupli in ipairs(duplicates) do
-  register(dupli)
-end
+register(InternetGatewayDevice_Services_X_000E50_Wifi_)

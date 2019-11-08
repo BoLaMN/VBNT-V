@@ -3,16 +3,18 @@
 <%
 
 gettext.textdomain('webui-voice')
-
+local content_helper = require("web.content_helper")
 local ipairs, string = ipairs, string
+local format = string.format
+
 local items
 if ngx.ctx.session:getrole()=="guest" then
    items = {
        {"mmpbx-info-modal.lp", T"Information"},
        {"mmpbx-global-modal.lp", T"Global"},
-       {"mmpbx-contacts-modal.lp", T"Phone Book"},
+--       {"mmpbx-contacts-modal.lp", T"Phone Book"},
        {"mmpbx-profile-modal.lp", T"Phone Numbers"},
-       {"mmpbx-service-modal.lp", T"Service"},
+--       {"mmpbx-service-modal.lp", T"Service"},
        {"mmpbx-volte-modal.lp", T"VoLTE"},
        {"mmpbx-log-modal.lp", T"Call Log"},
        {"mmpbx-dect-modal.lp", T"DECT"},
@@ -20,22 +22,47 @@ if ngx.ctx.session:getrole()=="guest" then
 else
    items = {
        {"mmpbx-info-modal.lp", T"Information"},
-       {"mmpbx-contacts-modal.lp", T"Phone Book"},
+--       {"mmpbx-contacts-modal.lp", T"Phone Book"},
        {"mmpbx-volte-modal.lp", T"VoLTE"},
        {"mmpbx-log-modal.lp", T"Call Log"},
        {"mmpbx-dect-modal.lp", T"DECT"},
    }
 end
 
-local tabs = {}
-local session = ngx.ctx.session
+local format = string.format
+local datamodel = require ("datamodel")
+local mmpbx_state, error = datamodel.get("uci.mmpbx.mmpbx.@global.enabled")
 
-for _,v in pairs(items) do
-    if session:hasAccess("/modals/" .. v[1]) then
-       tabs[#tabs+1] = v
-    end
+if mmpbx_state then
+    mmpbx_state = format("%s",mmpbx_state[1].value)
+else
+    mmpbx_state = "0"
 end
 
+-- Retrieving emission state
+
+local emission_content = {
+    emission_state = "rpc.mmpbx.dectemission.state",
+}
+content_helper.getExactContent(emission_content)
+emission_state = format("%s", emission_content.emission_state)
+local tabs = {}
+local session = ngx.ctx.session
+if mmpbx_state == "1" then
+    for _,v in pairs(items) do
+        if session:hasAccess("/modals/" .. v[1]) then
+	    if v[1] == "mmpbx-dect-modal.lp" then
+		if emission_state == "1" then
+		   tabs[#tabs+1] = v
+                end
+	    else
+            tabs[#tabs+1] = v
+	    end
+        end
+    end
+elseif session:hasAccess("/modals/mmpbx-global-modal.lp") then
+    tabs[#tabs+1] = {"mmpbx-global-modal.lp", T"Global"}
+end
 local html = {}
 
 local uri = ngx.var.uri
@@ -51,7 +78,7 @@ for _,v in ipairs(tabs) do
         active = "active"
     end
 
-    html[#html+1] = string.format('<li class="%s"><a href="#" class="open-modal" data-remote="/modals/%s">%s</a></li>', active, v[1], v[2])
+    html[#html+1] = string.format('<li class="%s"><a id ="%s" href="#" class="open-modal" data-remote="/modals/%s">%s</a></li>', active, v[2], v[1], v[2])
 end
 ngx.print(html)
 

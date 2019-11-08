@@ -62,6 +62,7 @@ else
 	logger -s -t "firmware-upgrade-ext" "Updating $component_name firmware version $installed_version -> $target_version" >/dev/console
 	echo '"completion": 0' >"$component_root/status.inprogress"
 
+	sleep 300
 	if upgrade_target "$firmware_file"; then
 		logger -s -t "firmware-upgrade-ext" "Successfully updated $component_name firmware." >/dev/console
 		echo "$component_name successfully upgraded from $installed_version to $target_version" >"$component_root/status.success"

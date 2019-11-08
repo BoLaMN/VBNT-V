@@ -5,6 +5,7 @@ local ubus = require("ubus")
 local binding_wireless = {config = "wireless"}
 local conn = ubus.connect()
 local strmatch, format = string.match, string.format
+local network = require("transformer.shared.common.network")
 
 function M.isBaseIface(iface)
   return "0" == strmatch(iface, "%d+")
@@ -32,10 +33,16 @@ local function getAllSSID()
   return entries
 end
 
-local function getSecurityMode(ap)
-  binding_wireless.sectionname = ap
-  binding_wireless.option = "security_mode"
+local function getWirelessUciValue(sectionName, option)
+  binding_wireless.sectionname = sectionName
+  binding_wireless.option = option
   return uci_helper.get_from_uci(binding_wireless)
+end
+
+local function setWirelessUciValue(value, sectionName, option)
+  binding_wireless.sectionname = sectionName
+  binding_wireless.option = option
+  uci_helper.set_on_uci(binding_wireless, value, commitapply)
 end
 
 function M.getBandSteerPeerIface(key)
@@ -66,13 +73,13 @@ function M.isBandSteerSectionConfigured(bandsteerID)
       return false, "Please configure band steer section " .. bandsteerID
   end
 
-  for k, _ in pairs(data) do
+  for k in pairs(data) do
       if k == bandsteerID then
           return true
       end
   end
 
-  return false
+  return false, "Please configure band steer section " .. bandsteerID
 end
 
 function M.getBandSteerId(iface)
@@ -94,9 +101,7 @@ function M.getBandSteerId(iface)
 end
 
 function M.getApBandSteerId(ap)
-  binding_wireless.sectionname = ap
-  binding_wireless.option = "bandsteer_id"
-  return uci_helper.get_from_uci(binding_wireless)
+  return getWirelessUciValue(ap, "bandsteer_id")
 end
 
 function M.isBandSteerEnabledByAp(ap)
@@ -105,18 +110,6 @@ function M.isBandSteerEnabledByAp(ap)
       return true
   end
   return false
-end
-
-local function getAllSSID()
-  local data = conn:call("wireless.ssid", "get",  { })
-    if data == nil then
-      return {}
-    end
-  local entries = {}
-  for k in pairs(data) do
-    entries[#entries + 1] = k
-  end
-  return entries
 end
 
 --For 5G when bandsteer enabled, the ssid and authentication related option cannot be modified
@@ -143,7 +136,7 @@ function M.canEnableBandSteer(apKey, apData, iface)
     return false, "Band steering has already been enabled."
   end
 
-  if "wep" == getSecurityMode(apKey) then
+  if getWirelessUciValue(apKey, "security_mode") == "wep" then
     return false, "Band steering cannot be supported in wep mode."
   end
 
@@ -157,11 +150,11 @@ function M.canEnableBandSteer(apKey, apData, iface)
     return false, "Band steering switching node does not exist."
   end
 
-  if "1" ~= tostring(peerAPNode.admin_state) then
+  if tostring(peerAPNode.admin_state) ~= "1" then
     return false, "Please enable network for band steering switching node firstly."
   end
 
-  if "wep" == getSecurityMode(peerAP) then
+  if getWirelessUciValue(peerAP, "security_mode") == "wep" then
     return false, "Band steering cannot be supported in wep mode."
   end
 
@@ -183,7 +176,7 @@ function M.canDisableBandSteer(apKey, iface)
     return false, "Band steering switching node does not exist."
   end
 
-  local peerAP, peerAPNode = M.getBsAp(peerIface)
+  local peerAP = M.getBsAp(peerIface)
   if not peerAP then
     return false, "Band steering switching node does not exist."
   end
@@ -194,30 +187,103 @@ end
 function M.setBandSteerPeerIfaceSSIDByLocalIface(baseiface, needsetiface, oper)
   if "1" == oper then
     --to get the baseiface ssid
-    binding_wireless.sectionname = baseiface
-    binding_wireless.option = "ssid"
-    local baseifacessid = uci_helper.get_from_uci(binding_wireless)
+    local baseifacessid = getWirelessUciValue(baseiface, "ssid")
 
     if "" ~= baseifacessid then
-      binding_wireless.sectionname = needsetiface
-      binding_wireless.option = "ssid"
-      uci_helper.set_on_uci(binding_wireless, baseifacessid, commitapply)
+      setWirelessUciValue(baseifacessid, needsetiface, "ssid")
     end
   else
-    binding_wireless.sectionname = needsetiface
-    binding_wireless.option = "ssid"
-    uci_helper.set_on_uci(binding_wireless, uci_helper.get_from_uci(binding_wireless) .. "-5G", commitapply)
+    setWirelessUciValue(getWirelessUciValue(needsetiface, "ssid") .. "-5G", needsetiface, "ssid")
   end
-
-  return
 end
 
 function M.setBandSteerPeerIfaceSSIDValue(needsetiface, value)
-  binding_wireless.sectionname = needsetiface
-  binding_wireless.option = "ssid"
-  uci_helper.set_on_uci(binding_wireless, value, commitapply)
+  setWirelessUciValue(value, needsetiface, "ssid")
+end
 
-  return
+local function getBandSteerRelatedNode(apKey, apNode)
+  local peerIface, errmsg = M.getBandSteerPeerIface(apNode.ssid)
+  if not peerIface then
+    return nil, errmsg
+  end
+
+  local bspeerap = M.getBsAp(peerIface)
+  if not bspeerap then
+    return nil, "Band steering switching node does not exist"
+  end
+
+  if M.isBaseIface(apNode.ssid) then
+    return apKey, bspeerap, apNode.ssid, peerIface
+  else
+    return bspeerap, apKey, peerIface, apNode.ssid
+  end
+end
+
+--to set the authentication related content
+local function setBandSteerPeerApAuthentication(baseap, needsetap)
+  local value = getWirelessUciValue(baseap, "security_mode")
+  setWirelessUciValue(value, needsetap, "security_mode")
+  value = getWirelessUciValue(baseap, "wpa_psk_key")
+  setWirelessUciValue(value, needsetap, "wpa_psk_key")
+end
+
+local function setBandSteerID(ap, bspeerap, bsid)
+  setWirelessUciValue(bsid, ap, "bandsteer_id")
+  setWirelessUciValue(bsid, bspeerap, "bandsteer_id")
+end
+
+local function disableBandSteer(key)
+  local apData = network.getAccessPointInfo(key)
+  if not apData or not next(apData) then
+    return nil, "The related AP node cannot be found."
+  end
+
+  local ret, errmsg = M.canDisableBandSteer(key, apData.ssid)
+  if not ret then
+    return nil, errmsg
+  end
+
+  local baseap, needsetap, baseiface, needsetiface = getBandSteerRelatedNode(key, apData)
+  setBandSteerID(baseap, needsetap, "off")
+
+  --to reset the ssid
+  M.setBandSteerPeerIfaceSSIDByLocalIface(baseiface, needsetiface, "0")
+end
+
+--1\Only the admin_state enabled, then enable bandsteering
+--2\2.4G related ap will act as based node
+local function enableBandSteer(key)
+  local apNode = network.getAccessPointInfo(key)
+  if not apNode then
+    return nil, "AP node is invalid."
+  end
+
+  local ret, errmsg = M.canEnableBandSteer(key, apNode, apNode.ssid)
+  if not ret then
+    return nil, errmsg
+  end
+  --to set the bandsteer ids
+  local baseap, needsetap, baseiface, needsetiface = getBandSteerRelatedNode(key, apNode)
+  local bsid, errorMsg = M.getBandSteerId(apNode.ssid)
+  if not bsid then
+    return nil, errorMsg
+  end
+  setBandSteerID(baseap, needsetap, bsid)
+  M.setBandSteerPeerIfaceSSIDByLocalIface(baseiface, needsetiface, "1")
+  setBandSteerPeerApAuthentication(baseap, needsetap)
+end
+
+function M.setBandSteerValue(value, key)
+  local bandSteer, errMsg
+  if value == "1" then
+    bandSteer, errMsg = enableBandSteer(key)
+  else
+    bandSteer, errMsg = disableBandSteer(key)
+  end
+  if not bandSteer then
+    return nil, errMsg
+  end
+  return bandSteer
 end
 
 return M

@@ -49,7 +49,7 @@ local select_path = {
 local policy_intfs = {}
 
 -----------------------------------------------------------
--- select_tables {} 
+-- select_tables {}
 -- get valid route table from /etc/iproute2/rt_tables
 -- Route table id > 0 && id < 100
 -----------------------------------------------------------
@@ -85,7 +85,7 @@ end
 -- select_policy {}
 -- valid policy
 --
--- select_wan_intfs {} 
+-- select_wan_intfs {}
 -- available & wan & not used interfaces
 --
 -- select_src_intfs {}
@@ -103,7 +103,9 @@ for _, v in pairs (network_rpc_content) do
   local path = split(split(format("%s",v["path"]),"@")[2],".")
   if v["available"] == "1" then
     if v["type"] == "wan" and policy_intfs[path[1]] == nil then
-      select_wan_intfs[#select_wan_intfs+1] = { path[1], path[1] }
+      if path[1] ~= "wan" and  path[1] ~= "wan6" then
+        select_wan_intfs[#select_wan_intfs+1] = { path[1], path[1] }
+      end
     end
 --    if v["type"] == "lan" or v["type"] == "" and path[1] ~= "loopback" then
     if path[1] ~= "loopback" then
@@ -216,9 +218,11 @@ local host_columns = {
 
 local host_options = {
     tableid = "mwan_host",
-    basepath = "uci.mwan.host.",
+    basepath = "uci.mwan.host.@.",
     createMsg = T"Add new host rule",
     sorted = "policy",
+    objectName  = post_helper.getRandomKey(),
+    addNamedObject = true,
 }
 
 local function validateSelectedPath(value,data,key)
@@ -313,9 +317,11 @@ local rule_columns = {
 
 local rule_options = {
   tableid = "mwan_rule",
-  basepath = "uci.mwan.rule.",
+  basepath = "uci.mwan.rule.@.",
   createMsg = T"Add new rule",
   sorted = "policy",
+  objectName  = post_helper.getRandomKey(),
+  addNamedObject = true,
 }
 
 local fwrule_valid = {

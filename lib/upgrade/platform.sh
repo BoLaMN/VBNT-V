@@ -68,7 +68,6 @@ get_image() { # <source> [ <command> ]
 	echo "get_image $1" >/dev/console
 
 	local filetype="none"
-
 	case "$from" in
 		ftp://*) cmd="wget -O- -q -T 300";;
 		http://*) cmd="curl -f --connect-timeout 900 -m 1800 -S -s --anyauth";;
@@ -154,9 +153,11 @@ platform_check_bliheader() {
 	fi
 
 	# Variant ID must match exactly the RIP settings
-	if [ "`cat /proc/rip/8003`" != "`bli_field "$INFO" varid`" ]; then
+	if [ "`cat /proc/rip/8003`" != "`bli_field "$INFO" varid`"  ] && ! grep -q skip_variantid_check /proc/efu/allowed; then
 		show_error 8 "Incorrect Variant ID"
 		return 1
+	else
+		v "Ignoring variant ID check."
 	fi
 }
 
@@ -279,7 +280,7 @@ platform_check_image_imp() {
 	fi
 
 	if [ $SIGCHECK_RESULT -ne 0 ]; then
-		if [ ${IGNORE_SIGNATURE:-0} -eq 0 ]; then
+		if ! grep -q skip_signature_check /proc/efu/allowed; then
 			show_error 10 "Signature check failed"
 			return 1
 		else

@@ -67,28 +67,29 @@ local function validateUsername (value, postdata)
 
   return true
 end
-local firewall_value = {["uci.firewall.forwarding."..forwdnum..".src"] = "wan",
-                        ["uci.firewall.forwarding."..forwdnum..".dest"] = "lan",
-                        ["uci.firewall.forwarding."..forwdnum..".name"] = "for_w2l"}
+local firewall_value = {["uci.firewall.forwarding.@"..forwdnum..".src"] = "wan",
+                        ["uci.firewall.forwarding.@"..forwdnum..".dest"] = "lan",
+                        ["uci.firewall.forwarding.@"..forwdnum..".name"] = "for_w2l"}
 local function validateNat(value, object, key)
   local valid, msg = post_helper.validateBoolean(value, object, key)
   if valid and zonenum ~= "" and value ~= proxy.get("uci.firewall.zone."..zonenum..".masq")[1].value then
     proxy.set("uci.firewall.zone."..zonenum..".conntrack", "1")
+    local key = "forwarding"..post_helper.getRandomKey()
     if value == "1" then
       if forwdnum == "" then
-        forwdnum = proxy.add("uci.firewall.forwarding.")
+        forwdnum = proxy.add("uci.firewall.forwarding.", key)
         proxy.set(firewall_value)
-        proxy.set("uci.firewall.forwarding."..forwdnum..".enabled", "0")
+        proxy.set("uci.firewall.forwarding.@"..forwdnum..".enabled", "0")
       else
-        proxy.set("uci.firewall.forwarding."..forwdnum..".enabled", "0")
+        proxy.set("uci.firewall.forwarding.@"..forwdnum..".enabled", "0")
       end
     else
       if forwdnum == "" then
-        forwdnum = proxy.add("uci.firewall.forwarding.")
+        forwdnum = proxy.add("uci.firewall.forwarding.", key)
         proxy.set(firewall_value)
-        proxy.set("uci.firewall.forwarding."..forwdnum..".enabled", "1")
+        proxy.set("uci.firewall.forwarding.@"..forwdnum..".enabled", "1")
       else
-        proxy.set("uci.firewall.forwarding."..forwdnum..".enabled", "1")
+        proxy.set("uci.firewall.forwarding.@"..forwdnum..".enabled", "1")
       end
     end
     proxy.apply()
@@ -174,6 +175,10 @@ if content_uci_xtm.wan_atm_vci ~= content_uci_xtm.wan_vci then
 end
 if content_uci_xtm.wan_atm_ulp ~= "ppp" then
   params[wan_atm_uci_path.."ulp"] = "ppp"
+  setting = true
+end
+if content_uci_xtm.wan_atm_enc ~= "vcmux" then
+  params[wan_atm_uci_path.."enc"] = "vcmux"
   setting = true
 end
 

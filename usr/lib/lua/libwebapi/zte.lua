@@ -1,6 +1,7 @@
 local string, table, tonumber, pcall = string, table, tonumber, pcall
 
-local json = require ("dkjson")
+local helper = require("mobiled.scripthelpers")
+local json = require("dkjson")
 local cURL = require("cURL")
 
 local runtime
@@ -35,24 +36,33 @@ local function curl_post(url, headers, post_data)
 	return t
 end
 
-local function get_parameters(device, params)
+local function get_parameter(device, params)
 	if not device.web_info.ip then return nil end
-	local request = string.format("http://%s/goform/goform_get_cmd_process?isTest=false&cmd=%s&multi_data=1", device.web_info.ip, table.concat(params, "%2C"))
+	local paramStr = "isTest=false"
+	for k, v in pairs(params) do
+		paramStr = paramStr .. "&" .. k .. "=" .. v
+	end
+	local request = string.format("http://%s/goform/goform_get_cmd_process?%s", device.web_info.ip, paramStr)
 	local data = curl_get(request, device.web_info.default_headers)
 	if data then
-		return json.decode(table.concat(data))
+		return json.decode(table.concat(data)) or {}
 	end
 	return {}
 end
 
+local function get_parameters(device, params)
+	return get_parameter(device, {
+		cmd = table.concat(params, "%2C"),
+		multi_data = "1"
+	})
+end
+
 local function set_parameter(device, params, post)
-	local paramList = {
-		isTest = false
-	}
+	if not device.web_info.ip then return nil end
+	local paramStr = "isTest=false"
 	for k, v in pairs(params) do
-		table.insert(paramList, k .. "=" .. v)
+		paramStr = paramStr .. "&" .. k .. "=" .. v
 	end
-	local paramStr = table.concat(paramList, "&")
 	local data
 	if post then
 		local request = string.format("http://%s/goform/goform_set_cmd_process", device.web_info.ip)
@@ -62,9 +72,35 @@ local function set_parameter(device, params, post)
 		data = curl_get(request, device.web_info.default_headers)
 	end
 	if data then
-		return json.decode(table.concat(data))
+		return json.decode(table.concat(data)) or {}
 	end
 	return {}
+end
+
+local function add_device_profile(line, profiles, id, default_profile)
+	local name, apn, _, _, authentication, username, password, pdptype = string.match(line, "(.-)%($%)(.-)%($%)(.-)%($%)(.-)%($%)(.-)%($%)(.-)%($%)(.-)%($%)(.-)%($%)(.-)%($%)(.-)%($%)(.-)%($%)(.-)%($%)")
+	if #authentication == 0 then authentication = nil end
+	if #username == 0 then username = nil end
+	if #password == 0 then password = nil end
+	local profile = {
+		name = name,
+		apn = apn,
+		authentication = authentication,
+		username = username,
+		password = password,
+		id = id
+	}
+	if name == default_profile then
+		profile.default = true
+	end
+	if pdptype == "IP" then
+		profile.pdptype = "ipv4"
+	elseif pdptype == "IPv6" then
+		profile.pdptype = "ipv6"
+	else
+		profile.pdptype = "ipv4v6"
+	end
+	table.insert(profiles,  profile)
 end
 
 function Mapper:get_profile_info(device, info)
@@ -73,37 +109,20 @@ function Mapper:get_profile_info(device, info)
 	for i=0,max_profiles do
 		table.insert(request, "APN_config" .. i)
 	end
+	table.insert(request, "apn_auto_config")
 	table.insert(request, "m_profile_name")
 
 	local data = get_parameters(device, request)
 	local profiles = {}
 	for i=0,max_profiles do
 		local line = data["APN_config" .. i]
-		if line  and #line > 0 then
-			local name, apn, _, _, authentication, username, password, pdptype = string.match(line, "(.-)%($%)(.-)%($%)(.-)%($%)(.-)%($%)(.-)%($%)(.-)%($%)(.-)%($%)(.-)%($%)(.-)%($%)(.-)%($%)(.-)%($%)(.-)%($%)")
-			if #authentication == 0 then authentication = nil end
-			if #username == 0 then username = nil end
-			if #password == 0 then password = nil end
-			local profile = {
-				name = name,
-				apn = apn,
-				authentication = authentication,
-				username = username,
-				password = password,
-				id = i
-			}
-			if name == data.m_profile_name then
-				profile.default = true
-			end
-			if pdptype == "IP" then
-				profile.pdptype = "ipv4"
-			elseif pdptype == "IPv6" then
-				profile.pdptype = "ipv6"
-			else
-				profile.pdptype = "ipv4v6"
-			end
-			table.insert(profiles,  profile)
+		if line and #line > 0 then
+			add_device_profile(line, profiles, i, data.m_profile_name)
 		end
+	end
+	local line = data["apn_auto_config"]
+	if line and #line > 0 then
+		add_device_profile(line, profiles, device.auto_profile, data.m_profile_name)
 	end
 	info.profiles = profiles
 	return true
@@ -158,10 +177,14 @@ function Mapper:start_data_session(device, session_id, profile)
 		runtime.log:info("Adding new profile " .. profile.id)
 		delete_profile(device, device.modify_profile)
 		add_profile(device, device.modify_profile, profile)
-		index = device.modify_profile
+		index = tostring(device.modify_profile)
 	else
 		runtime.log:info("Reusing profile " .. profile.id)
 		index = dev_profile_id
+
+		if tonumber(index) == device.auto_profile then
+			index = "auto"
+		end
 	end
 
 	local pdptype
@@ -179,7 +202,7 @@ function Mapper:start_data_session(device, session_id, profile)
 		apn_action = "set_default",
 		set_default_flag = "1",
 		pdp_type = pdptype,
-		index = tostring(index)
+		index = index
 	}
 
 	set_parameter(device, params)
@@ -193,12 +216,12 @@ function Mapper:stop_data_session(device, session_id)
 end
 
 function Mapper:get_device_capabilities(device, info)
-	local request = {
+	local hardware_version_request = {
 		"hardware_version"
 	}
-	local data = get_parameters(device, request)
-	if data.hardware_version then
-		local model = string.match(data.hardware_version, "^(.-)-")
+	local hardware_version_data = get_parameters(device, hardware_version_request)
+	if hardware_version_data.hardware_version then
+		local model = string.match(hardware_version_data.hardware_version, "^(.-)-")
 		if model == "MF730M" then
 			info.radio_interfaces = {
 				{ radio_interface = "gsm" },
@@ -211,7 +234,23 @@ function Mapper:get_device_capabilities(device, info)
 				{ radio_interface = "umts" },
 				{ radio_interface = "auto" }
 			}
+		elseif model == "MF920VV1" then
+			info.radio_interfaces = {
+				{ radio_interface = "lte" },
+				{ radio_interface = "umts" },
+				{ radio_interface = "gsm" },
+				{ radio_interface = "auto" }
+			}
 		end
+	end
+
+	local sms_supported_request = {
+		"sms_unread_num"
+	}
+	local sms_supported_data = get_parameters(device, sms_supported_request)
+	if sms_supported_data.sms_unread_num ~= "" then
+		info.sms_reading = true
+		info.sms_sending = true
 	end
 
 	info.reuse_profiles = true
@@ -221,12 +260,14 @@ end
 function Mapper:get_device_info(device, info)
 	local request = {
 		"imei",
+		"modem_msn",
 		"hardware_version",
 		"wa_inner_version"
 	}
 	local data = get_parameters(device, request)
 	info.device_config_parameter = "imei"
 	info.imei = data.imei
+	info.serial = data.modem_msn
 	info.hardware_version = data.hardware_version
 	info.software_version = data.wa_inner_version
 	if data.hardware_version then
@@ -247,7 +288,7 @@ function Mapper:get_session_info(device, info, session_id)
 	local data = get_parameters(device, request)
 	if data.ppp_status == "ppp_connecting" then
 		info.session_state = "connecting"
-	elseif data.ppp_status == "ppp_connected" then
+	elseif data.ppp_status == "ppp_connected" or data.ppp_status == "ipv6_connected" or data.ppp_status == "ipv4_ipv6_connected" then
 		info.session_state = "connected"
 		info.packet_counters = {
 			tx_bytes = data.realtime_tx_bytes,
@@ -277,11 +318,11 @@ function Mapper:get_radio_signal_info(device, info)
 	}
 	local data = get_parameters(device, request)
 	if data.network_type then
-		if string.match(data.network_type, "HSPA") or data.network_type == "UMTS" then
+		if string.match(data.network_type, "HS[DU]?PA") or data.network_type == "UMTS" or data.network_type == "WCDMA" then
 			info.radio_interface = "umts"
 		elseif data.network_type == "LTE" then
 			info.radio_interface = "lte"
-		elseif data.network_type == "EDGE" then
+		elseif data.network_type == "GSM" or data.network_type == "GPRS" or data.network_type == "EDGE" then
 			info.radio_interface = "gsm"
 		elseif data.network_type == "NO_SERVICE" then
 			info.radio_interface = "no_service"
@@ -535,12 +576,222 @@ function Mapper:network_scan(device, start)
 	end
 end
 
+local function encode_sms_message(text)
+	local result = ""
+	for character in text:gmatch("(.)") do
+		result = result .. string.format("%04X", character:byte())
+	end
+	return result
+end
+
+local function encode_sms_date(date)
+	return os.date("%y;%m;%d;%H;%M;%S;%z", date)
+end
+
+function Mapper:send_sms(device, number, message)
+	local params = {
+		goformId = "SEND_SMS",
+		notCallback = "true",
+		Number = number,
+		sms_time = encode_sms_date(os.time()),
+		MessageBody = encode_sms_message(message),
+		ID = "-1",
+		encode_type = "UNICODE"
+	}
+
+	local result = set_parameter(device, params, true)
+	if result.result ~= "success" then
+		return nil, "sending SMS failed"
+	end
+
+	return true
+end
+
+function Mapper:delete_sms(device, message_id)
+	local params = {
+		goformId = "DELETE_SMS",
+		msg_id = message_id .. ";",
+		notCallback = "true"
+	}
+
+	local result = set_parameter(device, params)
+	if result.result ~= "success" then
+		return nil, "deleting SMS failed"
+	end
+
+	return true
+end
+
+function Mapper:set_sms_status(device, message_id, status)
+	local status_mapping = {
+		read = "0",
+		unread = "1"
+	}
+
+	local params = {
+		goformId = "SET_MSG_READ",
+		msg_id = message_id .. ";",
+		tag = status_mapping[status] or "0",
+		notCallback = "0"
+	}
+
+	local result = set_parameter(device, params, true)
+	if result.result ~= "success" then
+		return nil, "setting SMS status failed"
+	end
+
+	return true
+end
+
+function Mapper:get_sms_info(device)
+	-- This call fails when using the multi_data parameter.
+	local capacity_data = get_parameter(device, {
+		cmd = "sms_capacity_info"
+	})
+
+	-- These calls fail when not using the multi_data parameter.
+	local unread_data = get_parameters(device, {
+		"sms_received_flag",
+		"sts_received_flag",
+		"sms_unread_num"
+	})
+
+	local unread_messages = tonumber(unread_data.sms_unread_num) or 0
+	local messages_on_sim = tonumber(capacity_data.sms_sim_rev_total) or 0
+	local messages_on_device = tonumber(capacity_data.sms_nv_rev_total) or 0
+	local max_messages_on_sim = tonumber(capacity_data.sms_sim_total) or 0
+	local max_messages_on_device = tonumber(capacity_data.sms_nv_total) or 0
+
+	local info = {
+		read_messages = math.max(messages_on_sim + messages_on_device - unread_messages, 0),
+		unread_messages = unread_messages,
+		max_messages = max_messages_on_sim + max_messages_on_device
+	}
+
+	return info
+end
+
+local function decode_sms_message(encoded_text)
+	local result = ""
+	for digits in encoded_text:gmatch("(%x%x%x%x)") do
+		local value = tonumber(digits, 16)
+		if value < 256 then
+			result = result .. string.char(value)
+		end
+	end
+	return result
+end
+
+local function decode_sms_date(date_string)
+	local year, month, day, hour, minute, second = date_string:match("(%d+)[,;](%d+)[,;](%d+)[,;](%d+)[,;](%d+)[,;](%d+)[,;][+-]%d+")
+	local date = {
+		year = tonumber(year) + 2000,
+		month = tonumber(month),
+		day = tonumber(day),
+		hour = tonumber(hour),
+		min = tonumber(minute),
+		sec = tonumber(second)
+	}
+	return os.date("%Y-%m-%d %H:%M:%S", os.time(date))
+end
+
+function Mapper:get_sms_messages(device)
+	local messages = {}
+
+	-- Mem store 0 contains messages on the SIM, mem store 1 contains the messages on the device.
+	for mem_store = 0, 1 do
+		local data = get_parameter(device, {
+			cmd = "sms_data_total",
+			page = "0",
+			data_per_page = "500",
+			mem_store = tostring(mem_store),
+			tags = "10",
+			order_by = "order+by+id+desc"
+		})
+
+		if type(data.messages) == "table" then
+			for _, message in ipairs(data.messages) do
+				local status = "read"
+				if message.tag == "1" then
+					status = "unread"
+				end
+
+				table.insert(messages, {
+					id = tonumber(message.id),
+					number = message.number,
+					text = decode_sms_message(message.content),
+					date = decode_sms_date(message.date),
+					status = status,
+				})
+			end
+		end
+	end
+
+	return { messages = messages }
+end
+
+local function login(device, username, password)
+	-- Check whether login is required.
+	local loginfo_params = {
+		"loginfo"
+	}
+	local loginfo_data = get_parameters(device, loginfo_params)
+	if loginfo_data.loginfo == "ok" then
+		return true
+	end
+
+	-- Login on the device.
+	local login_params = {
+		goformId = "LOGIN",
+		password = helper.encode_base64(password)
+	}
+	local login_result = set_parameter(device, login_params)
+	return login_result.result == "0"
+end
+
+local function enable_dmz(device)
+	local params = {
+		goformId = "DMZ_SETTING",
+		DMZEnabled = "1",
+		DMZIPAddress = device.web_info.local_ip
+	}
+	set_parameter(device, params, true)
+end
+
+function Mapper:configure_device(device, config)
+	if config.device.password and not login(device, config.device.username, config.device.password) then
+		return false
+	end
+
+	enable_dmz(device)
+	return true
+end
+
 function Mapper:init_device(device)
 	if device.web_info.ip then
 		device.modify_profile = 5
-		device.web_info.default_headers = { "Referer: http://" .. device.web_info.ip .. "/index.html" }
+		device.auto_profile = 99
+		device.web_info.default_headers = {
+			"Referer: http://" .. device.web_info.ip .. "/index.html",
+			"User-Agent: libwebapi" -- Required to make some requests work
+		}
 		return true
 	end
+end
+
+local function disable_dmz(device)
+	local params = {
+		goformId = "DMZ_SETTING",
+		DMZEnabled = "0"
+	}
+	set_parameter(device, params, true)
+end
+
+function Mapper:destroy_device(device, force)
+	if not force then
+		disable_dmz(device)
+	end
+
 	return nil
 end
 
@@ -548,7 +799,14 @@ function M.create(rt, pid)
 	runtime = rt
 
 	local mapper = {
-		mappings = {}
+		mappings = {
+			destroy_device = "runfirst",
+			send_sms = "override",
+			delete_sms = "override",
+			set_sms_status = "override",
+			get_sms_info = "override",
+			get_sms_messages = "override"
+		}
 	}
 
 	setmetatable(mapper, Mapper)

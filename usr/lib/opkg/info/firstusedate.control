@@ -1,6 +1,6 @@
 Package: firstusedate
 Version: 1.2-1
-Depends: libc, libssp
+Depends: libc, libssp, librt, libpthread
 Source: feeds/technicolor/firstusedate
 Section: firstusedate
 Maintainer: Technicolor <linuxgw@technicolor.com>

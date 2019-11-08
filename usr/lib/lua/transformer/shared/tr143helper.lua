@@ -4,10 +4,10 @@ local pairs = pairs
 local uci = require 'transformer.mapper.ucihelper'
 local common = require 'transformer.mapper.nwcommon'
 local split_key = common.split_key
-local findLanWanInterfaces = common.findLanWanInterfaces
+local network = require("transformer.shared.common.network")
 local wanconn = require 'transformer.shared.wanconnection'
+local process = require 'tch.process'
 local transactions = {}
-local resolve, tokey
 local tr143binding = { config = "tr143" }
 local init_state = false
 
@@ -18,21 +18,22 @@ local paramMap = {
   X_0876FF_TestBytesSentUnderFullLoading = "TestBytesSentUnderFullLoading",
 }
 
-local function resolveInterface(user, value)
-    local path
-    local lanInterfaces = findLanWanInterfaces(false)
-    local isLan = false
-    for _,j in pairs(lanInterfaces) do
-        if (value == j) then
-            isLan = true
-            break
+local function isLanInterface(value)
+  local lanInterfaces = network.getLanInterfaces()
+  for intf in pairs(lanInterfaces) do
+        if value == intf then
+            return true
         end
-    end
+   end
+   return false
+end
 
+local function resolveInterface(user, value)
+    local path = ""
     if user == "device2" then
         path = resolve("Device.IP.Interface.{i}.", value)
     else
-        if (isLan) then
+        if isLanInterface(value) then
             path = resolve('InternetGatewayDevice.LANDevice.{i}.LANHostConfigManagement.IPInterface.{i}.', value)
         else
             local key, status = wanconn.get_connection_key(value)
@@ -64,15 +65,23 @@ local function setInterface(user, param, value)
       "InternetGatewayDevice.WANDevice.{i}.WANConnectionDevice.{i}.WANIPConnection.{i}.",
       "InternetGatewayDevice.WANDevice.{i}.WANConnectionDevice.{i}.WANPPPConnection.{i}.")
      if value and value:match("|") then
-      -- Interface name is the first part of the WANDevice.WANConnectionDevice.WANIP/WANPPP key
-       value = split_key(value)
+       -- Interface name can be first or second part of the WANDevice.WANConnectionDevice.WANIP/WANPPP key.
+       -- If wansensing is in use and activedevice section is configured in wanconfig, then the first part
+       -- of WANDevice.WANConnectionDevice.WANIP/WANPPP key is "ACTIVE" and the second part is the Interface name.
+       -- In all other cases, Interface name is the first part of the WANDevice.WANConnectionDevice.WANIP/WANPPP key.
+       local intfName, devName = split_key(value)
+       if intfName == "ACTIVE" then
+         value = devName
+       else
+         value = intfName
+       end
      end
    end
    return value
 end
 
 function M.tr143_get(config, user, pname)
-  local value
+  local value = ""
 
   if pname == "UploadTransports" or pname == "DownloadTransports" then
     return "HTTP,FTP"
@@ -102,9 +111,17 @@ function M.tr143_get(config, user, pname)
     return "0"
   end
 
+  if pname == "DiagnosticsState" then
+    tr143binding.option = pname
+    local state = uci.get_from_uci(tr143binding)
+    if user == "igd" and state == "Error_Other" then
+      return "Error_InitConnectionFailed"
+    end
+    return state
+  end
+
   tr143binding.option = paramMap[pname] or pname
   value = uci.get_from_uci(tr143binding)
-
   if pname == "Interface" and value ~= "" then
     value = resolveInterface(user, value)
   end
@@ -171,7 +188,7 @@ function M.startup(_resolve, _tokey)
   resolve, tokey = _resolve, _tokey
   if init_state == false then
       --initialize the tr143 default configuration
-      os.execute("cp /etc/tr143.default /etc/config/tr143")
+      process.execute("cp", {"/etc/tr143.default", "/etc/config/tr143"})
       init_state = true
   end
 end

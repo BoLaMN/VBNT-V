@@ -436,9 +436,7 @@ end
 function M.propagate_session_state(device, session_state, pdp_type, sessions)
 	if type(sessions) ~= "table" then return end
 	for _, session in pairs(sessions) do
-		if not session.internal then
-			runtime.events.send_event("mobiled", { dev_idx = device.sm.dev_idx, dev_desc = device.desc, event = "session_state_changed", session_state = session_state, session_id = session.session_id, pdp_type = pdp_type })
-		end
+		runtime.events.send_event("mobiled", { dev_idx = device.sm.dev_idx, dev_desc = device.desc, event = "session_state_changed", session_state = session_state, session_id = session.session_id, pdp_type = pdp_type })
 	end
 end
 

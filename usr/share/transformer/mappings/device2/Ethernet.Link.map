@@ -57,13 +57,20 @@ local Device_Ethernet_Link_i_ = {
         activeNotify = "canDeny",
         type = "unsignedInt",
       },
---[[ TODO:
       PriorityTagging = {
-        access = "readWrite",
+        access = "readOnly",  -- readwrite currently not supported since lowerlayer support is not available
         type = "boolean",
         default = "false",
       },
---]]
+      X_ShapingRate = {
+        access = "readWrite",
+        type = "int",
+        range = {
+          {
+            min = "-1",
+          },
+        },
+      },
     }
   },
   aliasDefault = "Name"
@@ -78,6 +85,9 @@ local model
 local nwCommon = mapper("nwcommon")
 local getIntfInfo = nwCommon.getIntfInfo
 local lastStateChangeTime = {}
+local ethBinding = { config = "ethernet", sectionname = "", option = "", default = "" }
+local ucihelper = mapper("ucihelper")
+local transactions = {}
 
 Device_Ethernet_Link_i_.entries = function(mapping)
   model = nwmodel.load()
@@ -138,6 +148,11 @@ Device_Ethernet_Link_i_.get = {
   LastChange = function(mapping, param, key)
     return getLastChange(key)
   end,
+  PriorityTagging = "0",
+  X_ShapingRate = function(mapping, param, key)
+    local devName = model:getName(key)
+    return nwmodel.getShapingRate(devName, key)
+  end,
 }
 
 Device_Ethernet_Link_i_.getall = function(mapping, key)
@@ -149,8 +164,34 @@ Device_Ethernet_Link_i_.getall = function(mapping, key)
     MACAddress = getIntfInfo(model:getDevice(key), "address", ""),
     LowerLayers = getEthLowerLayer(key),
     LastChange = getLastChange(key, interface),
+    X_ShapingRate = nwmodel.getShapingRate(interface, key),
   }
   return allValues
+end
+
+Device_Ethernet_Link_i_.set = {
+  X_ShapingRate = function(mapping, param, value, key)
+    local devName = model:getName(key)
+    local shapingRate, errMsg = nwmodel.setShapingRate(value, key, devName)
+    if not shapingRate then
+      return nil, errMsg
+    end
+    transactions[ethBinding] = true
+  end,
+}
+
+Device_Ethernet_Link_i_.commit = function()
+  for binding in pairs(transactions) do
+    ucihelper.commit(binding)
+  end
+  transactions = {}
+end
+
+Device_Ethernet_Link_i_.revert = function()
+  for binding in pairs(transactions) do
+    ucihelper.revert(binding)
+  end
+  transactions = {}
 end
 
 local function ubusEventTriggered(mapping, action, data)

@@ -121,7 +121,9 @@ function M.call_info(device, call_id)
 					release_reason = device.calls[id].release_reason
 				}
 				table.insert(call_list, info)
-				call_map[info.mmpbx_call_id] = info
+				if info.mmpbx_call_id then
+					call_map[info.mmpbx_call_id] = info
+				end
 			end
 		end
 	end

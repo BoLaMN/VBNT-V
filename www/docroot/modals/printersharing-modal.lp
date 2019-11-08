@@ -10,13 +10,14 @@ local content_helper = require("web.content_helper")
 local attributes = { span = { class = "span4" } }
 local message_helper = require("web.uimessage_helper")
 local format = string.format
+local ngx = ngx
 
 local mapParams = {
   printersharing_enabled = "uci.printersharing.config.enabled",
 }
 
 local mapValid = {
-  printersharing_enabled = post_helper.getValidateCheckboxSwitch(),
+  printersharing_enabled = post_helper.validateBoolean,
 }
 
 local content, helpmsg = post_helper.handleQuery(mapParams, mapValid)
@@ -96,18 +97,22 @@ end
 
 createUsbPartitionTable()
 
-local uri = ngx.var.uri
-local help_link = { href="/help/index.html?anchor=" .. format("%s", uri:match("/([^/]+)%.lp")) }
+if ngx.req.get_method() == "POST" then
+  local postArgs = ngx.req.get_post_args()
+  proxy.set("uci.samba.sambashare.@printers.enabled", postArgs.printersharing_enabled)
+  proxy.apply()
+end
+
   ngx.print('\
 \
-');  ngx.print( ui_helper.createHeader(T"Printer Sharing", false, false, nil, help_link)); ngx.print('\
+');  ngx.print( ui_helper.createHeader(T"Printer Sharing", false, true, nil)); ngx.print('\
 <div class="modal-body update">\
   <form class="form-horizontal" method="post" action="modals/printersharing-modal.lp">\
     ');  ngx.print(ui_helper.createMessages(message_helper.popMessages())); ngx.print('\
     ');  
       html = {}
       html[#html+1] = "<fieldset><legend>" .. T"General Status" .. "</legend>"
-      html[#html+1] = ui_helper.createCheckboxSwitch("Enabled", "printersharing_enabled", content["printersharing_enabled"], attributes)
+      html[#html+1] = ui_helper.createSwitch(T"Enabled", "printersharing_enabled", content["printersharing_enabled"], attributes)
       html[#html+1] = "<fieldset><legend>" .. T"Printer Information" .. "</legend>"
       if content.printersharing_enabled == '1' then
         if content_samba.samba_enabled == '1' then

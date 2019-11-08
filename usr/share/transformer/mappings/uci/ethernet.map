@@ -16,7 +16,7 @@ uci_1to1.registerNamedMultiMap(ethernet_ethernet)
 local ethernet_trafficdesc = {
   config = config_ethernet,
   type = "trafficdesc",
-  options = { "enable", "mbr", "mbs", "rate", "ratio"}
+  options = { "enable", "max_bit_rate", "max_burst_size", "rate", "ratio"}
 }
 uci_1to1.registerNamedMultiMap(ethernet_trafficdesc)
 

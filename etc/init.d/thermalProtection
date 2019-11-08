@@ -12,8 +12,9 @@ start() {
     [ -z ${recurrence} ] && {recurrence=5}
 
     if !(grep -q "thermalProtection" $CRONRULE 2>/dev/null); then
+        temp1_dirs=$(find /sys/devices/i2c-*/ -name temp1_input | xargs echo)
         mkdir -p $CRONTABS
-        echo "*/${recurrence} * * * * /usr/bin/thermalProtection" >> $CRONRULE
+        echo "*/${recurrence} * * * * /usr/bin/thermalProtection ${temp1_dirs}" >> $CRONRULE
         if ! service_check $CROND; then
 		/etc/init.d/cron start
         fi

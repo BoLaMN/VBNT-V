@@ -112,10 +112,11 @@ local Device_IP_Interface_i_IPv6Prefix_i_ = {
   }
 }
 
-local next, os = next, os
+local next, os, ipairs = next, os, ipairs
 
 local dmordering = require 'transformer.shared.models.dmordering'
 local ipaddr = require 'transformer.shared.models.device2.ipaddr'
+local network = require 'transformer.shared.common.network'
 
 local function makeLifetimeAbsolute(now, lifetime)
   lifetime = tonumber(lifetime)
@@ -170,39 +171,26 @@ local function getPrefix(prefix)
   return ""
 end
 
-local function formatLifetime(time)
-  if time then
-   return os.date("!%Y-%m-%dT%H:%M:%SZ", time)
-  end
-  return "9999-12-31T23:59:59Z"
-end
-
-local function getPreferred(prefix)
-  return formatLifetime(prefix.preferred)
-end
-
-local function getValid(prefix)
-  return formatLifetime(prefix.valid)
-end
-
 Device_IP_Interface_i_IPv6Prefix_i_.get = {
   Prefix = function(_, _, key, parent)
     return getPrefix(getCachedPrefix(key, parent))
   end,
   PreferredLifetime = function(_, _, key, parent)
-    return getPreferred(getCachedPrefix(key, parent))
+    local prefix = getCachedPrefix(key, parent)
+    return network.convertEpochToISO(prefix.preferred)
   end,
   ValidLifetime = function(_, _, key, parent)
-    return getValid(getCachedPrefix(key, parent))
+    local prefix = getCachedPrefix(key, parent)
+    return network.convertEpochToISO(prefix.valid)
   end,
-} 
+}
 
 Device_IP_Interface_i_IPv6Prefix_i_.getall = function(_, key, parent)
   local prefix = getCachedPrefix(key, parent)
   return {
     Prefix = getPrefix(prefix),
-    PreferredLifetime = getPreferred(prefix),
-    ValidLifetime = getValid(prefix),
+    PreferredLifetime = network.convertEpochToISO(prefix.preferred),
+    ValidLifetime = network.convertEpochToISO(prefix.valid),
   }
 end
 

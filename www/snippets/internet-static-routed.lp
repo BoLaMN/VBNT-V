@@ -39,28 +39,29 @@ for _, v in ipairs(firewall_forwarding_path) do
     break
   end
 end
-local firewall_value = {["uci.firewall.forwarding."..forwdnum..".src"] = "wan",
-                        ["uci.firewall.forwarding."..forwdnum..".dest"] = "lan",
-                        ["uci.firewall.forwarding."..forwdnum..".name"] = "for_w2l"}
+local firewall_value = {["uci.firewall.forwarding.@"..forwdnum..".src"] = "wan",
+                        ["uci.firewall.forwarding.@"..forwdnum..".dest"] = "lan",
+                        ["uci.firewall.forwarding.@"..forwdnum..".name"] = "for_w2l"}
 local function validateNat(value, object, key)
   local valid, msg = post_helper.validateBoolean(value, object, key)
   if valid and zonenum ~= "" and value ~= proxy.get("uci.firewall.zone."..zonenum..".masq")[1].value then
     proxy.set("uci.firewall.zone."..zonenum..".conntrack", "1")
+    local key = "forwarding"..post_helper.getRandomKey()
     if value == "1" then
       if forwdnum == "" then
-        forwdnum = proxy.add("uci.firewall.forwarding.")
+        forwdnum = proxy.add("uci.firewall.forwarding.", key)
         proxy.set(firewall_value)
-        proxy.set("uci.firewall.forwarding."..forwdnum..".enabled", "0")
+        proxy.set("uci.firewall.forwarding.@"..forwdnum..".enabled", "0")
       else
-        proxy.set("uci.firewall.forwarding."..forwdnum..".enabled", "0")
+        proxy.set("uci.firewall.forwarding.@"..forwdnum..".enabled", "0")
       end
     else
       if forwdnum == "" then
-        forwdnum = proxy.add("uci.firewall.forwarding.")
+        forwdnum = proxy.add("uci.firewall.forwarding.", key)
         proxy.set(firewall_value)
-        proxy.set("uci.firewall.forwarding."..forwdnum..".enabled", "1")
+        proxy.set("uci.firewall.forwarding.@"..forwdnum..".enabled", "1")
       else
-        proxy.set("uci.firewall.forwarding."..forwdnum..".enabled", "1")
+        proxy.set("uci.firewall.forwarding.@"..forwdnum..".enabled", "1")
       end
     end
     proxy.apply()
@@ -92,11 +93,12 @@ local mapParams = {
 ---
 --- FIELD VALUE INTEGRITY FUNCTIONS
 ---
+local gAV = post_helper.getAndValidation
 local nEIPV = post_helper.getAndValidation(post_helper.validateNonEmptyString,post_helper.advancedIPValidation)
 local mapValid = {
-    wanIpAddrParam    = nEIPV,
+    wanIpAddrParam    = gAV(nEIPV, post_helper.reservedIPValidation),
     wanNetmaskParam   = post_helper.validateIPv4Netmask,
-    wanGatewayParam   = nEIPV,
+    wanGatewayParam   = gAV(nEIPV, post_helper.reservedIPValidation),
     uci_wan_masq      = validateNat,
 }
 

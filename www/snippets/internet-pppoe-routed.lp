@@ -9,6 +9,7 @@ local message_helper = require("web.uimessage_helper")
 local proxy = require("datamodel")
 -- Process POST query
 local post_helper = require("web.post_helper")
+local match = string.match
 
 local mapParams = {
     uci_wan_username = "uci.network.interface.@wan.username",
@@ -69,7 +70,26 @@ local content_rpc = {
     nexthop = "rpc.network.interface.@wan.nexthop",
     ip6addr = "rpc.network.interface.@wan6.ip6addr",
     dns = "rpc.network.interface.@wan.dnsservers",
+    dnsv6 = "rpc.network.interface.@wan6.dnsservers",
+    ip6prefix = "rpc.network.interface.@wan6.ip6prefix",
 }
+
+for key, value in ipairs(proxy.getPN("rpc.network.interface.", true)) do
+  local intf = match(value.path, "rpc%.network%.interface%.@([^%.]+)%.")
+  if intf then
+   if intf == "6rd" then
+      content_rpc.ip6addr = "rpc.network.interface.@6rd.ip6addr"
+      content_rpc.ip6prefix = "rpc.network.interface.@6rd.ip6prefix"
+      content_rpc.dnsv6 = "rpc.network.interface.@6rd.dnsservers"
+    elseif intf == "wan6" then
+      content_rpc.ip6addr = "rpc.network.interface.@wan6.ip6addr"
+      content_rpc.ip6prefix = "rpc.network.interface.@wan6.ip6prefix"
+      content_rpc.dnsv6 = "rpc.network.interface.@wan6.dnsservers"
+      break
+    end
+  end
+end
+
 content_helper.getExactContent(content_rpc)
 
 local wan_atm_uci_path = string.format("uci.xtm.atmdevice.@%s.", content_rpc["wan_ppp_ll_intf"])
@@ -150,7 +170,7 @@ ngx.print(ui_helper.createMessages(message_helper.popMessages()))
     html[#html + 1] = ui_helper.createLight(T"Status", nil, ppp_state_map[ppp_status], { light = { class = ppp_light_map[ppp_status] } })
     -- Switch PPP on/off
     --html[#html + 1] = ui_helper.createSwitch(T"Enabled", "uci_wan_auto", content.uci_wan_auto)
-   
+
     -- PPP username
     local class_username = {
       input = {
@@ -170,10 +190,18 @@ ngx.print(ui_helper.createMessages(message_helper.popMessages()))
     html[#html + 1] = ui_helper.createInputPassword(T"Password", "uci_wan_password", content["uci_wan_password"], class_username, helpmsg["uci_wan_password"])
 
     html[#html+1] = ui_helper.createLabel(T"IP address", content_rpc["ipaddr"])
-    html[#html+1] = ui_helper.createLabel(T"IPv6 address", content_rpc["ip6addr"])
     html[#html+1] = ui_helper.createLabel(T"Gateway", content_rpc["nexthop"])
     html[#html+1] = ui_helper.createLabel(T"DNS servers", content_rpc["dns"])
 
+    if content_rpc["ip6addr"] and content_rpc["ip6addr"]:len() > 0 then
+        html[#html+1] = ui_helper.createLabel(T"IPv6 Address", content_rpc["ip6addr"])
+    end
+    if content_rpc["ip6prefix"] and content_rpc["ip6prefix"]:len() > 0 then
+        html[#html+1] = ui_helper.createLabel(T"IPv6 Prefix", content_rpc["ip6prefix"])
+    end
+    if content_rpc["dnsv6"] and content_rpc["dnsv6"]:len() > 0 then
+        html[#html+1] = ui_helper.createLabel(T"IPv6 DNS", content_rpc["dnsv6"])
+    end
 
     -- ATM VP/VC
     if wan_ppp_over_atm then

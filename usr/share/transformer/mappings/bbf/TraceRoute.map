@@ -94,6 +94,15 @@ local Multi_TraceRouteDiagnostics_ = {
         activeNotify = "canDeny",
         type = "unsignedInt",
       },
+      ProtocolVersion = {
+        access = "readWrite",
+        type = "string",
+        enumeration = {
+          -- "Any", currently not supported
+          "IPv4",
+          "IPv6",
+        },
+      },
     -- RouteHopsNumberOfEntries
     -- automatically created when InternetGatewayDevice.TraceRouteDiagnostics.RouteHops.{i}. is loaded
     }
@@ -171,6 +180,7 @@ local splitKey = nwCommon.split_key
 local findLanWanInterfaces = nwCommon.findLanWanInterfaces
 local wanconn = require("transformer.shared.wanconnection")
 local traceRouteHelper = require("transformer.shared.traceroutehelper")
+local network = require("transformer.shared.common.network")
 local clearTraceRouteResults = traceRouteHelper.clear_traceroute_results
 local readTraceRouteResults = traceRouteHelper.read_traceroute_results
 
@@ -181,14 +191,6 @@ local userParamIndexMap =
     device2 = { Host = 1, HostAddress = 2, RTTimes = 3, ErrorCode = 4 },
     igd = { HopHost = 1, HopHostAddress = 2, HopRTTimes = 3, HopErrorCode = 4 }
   }
-
-local function getSectionName(mapping)
-  if mapping.objectType.name:match("^InternetGatewayDevice.") then
-    return "igd"
-  else
-    return "device2"
-  end
-end
 
 Multi_TraceRouteDiagnostics_.get = function(mapping, pname)
   local value
@@ -306,7 +308,7 @@ Multi_TraceRouteDiagnostics_.revert = traceRouteHelper.uci_traceroute_revert
 local duplicator = mapper("multiroot").duplicate
 local duplicates = duplicator(Multi_TraceRouteDiagnostics_, "#ROOT", {"InternetGatewayDevice.TraceRouteDiagnostics", "Device.IP.Diagnostics.TraceRoute"})
 for _, dupli in ipairs(duplicates) do
-  dupli._section = getSectionName(dupli)
+  dupli._section = network.getMappingType(dupli)
   dupli._uciBinding = {
     DiagnosticsState = { config = config, sectionname = dupli._section, option = "state" },
     Interface = { config = config, sectionname = dupli._section, option = "interface" },
@@ -316,6 +318,7 @@ for _, dupli in ipairs(duplicates) do
     DataBlockSize = { config = config, sectionname = dupli._section, option = "size" },
     DSCP = { config = config, sectionname = dupli._section, option = "dscp" },
     MaxHopCount = { config = config, sectionname = dupli._section, option = "hopcount" },
+    ProtocolVersion = { config = config, sectionname = dupli._section, option = "type" },
   }
   if dupli._section == 'igd' then
     dupli.objectType.parameters["IPAddressUsed"] = nil
@@ -326,7 +329,7 @@ end
 
 duplicates = duplicator(Multi_TraceRouteDiagnostics_RouteHops_i_, "#ROOT", {"InternetGatewayDevice.TraceRouteDiagnostics.RouteHops", "Device.IP.Diagnostics.TraceRoute.RouteHops"})
 for _, dupli in ipairs(duplicates) do
-  dupli._section = getSectionName(dupli)
+  dupli._section = network.getMappingType(dupli)
   if dupli._section == 'igd' then
     -- Remove device2-specific parameters from igd
     dupli.objectType.parameters["Host"] = nil

@@ -1,5 +1,7 @@
 local M = {}
+local xdslctl = require('transformer.shared.xdslctl')
 local failoverhelper = require('wansensingfw.failoverhelper')
+local match = string.match
 
 M.SenseEventSet = {
     'xdsl_0',
@@ -37,26 +39,48 @@ function M.check(runtime, l2type, event)
         end
     else
         if l2type == 'ETH' then
-			if not scripthelpers.l2HasCarrier("eth4") then
-				return "L2Sense"
-			end
-		elseif scripthelpers.checkIfCurrentL2WentDown(l2type, event, 'eth4') then
-			return "L2Sense"
-		end
+            if not scripthelpers.l2HasCarrier("eth4") then
+                return "L2Sense"
+            end
+        elseif scripthelpers.checkIfCurrentL2WentDown(l2type, event, 'eth4') then
+            return "L2Sense"
+        end
     end
 
     local x = uci.cursor()
     local autofailover = x:get("wansensing", "global", "autofailover")
-    if autofailover == "1" then
-        -- we need to delay bringing up the mobile interface
-        -- to make sure the synchonization of l3 is completed
-        runtime.ltebackup_delay_counter = runtime.ltebackup_delay_counter or 0
-        if runtime.ltebackup_delay_counter > 11 then
+
+    runtime.ltebackup_delay_counter = runtime.ltebackup_delay_counter or 0
+    logger:notice("LTE counter " .. tostring(runtime.ltebackup_delay_counter))
+
+    if runtime.ltebackup_delay_counter > 11 then
+        if l2type == 'ETH' then
+            -- if ETH still cannot get an IP address, check if DSL is up
+            local mode = xdslctl.infoValue("tpstc")
+            logger:notice("mode " .. tostring(mode))
+            if mode then
+                if match(mode, "ATM") or match(mode, "PTM") then
+                    return "L2Sense"
+                end
+            end
+            if runtime.ltebackup_delay_counter > 19 then
+                if autofailover == "1" then
+                    -- we need to delay bringing up the mobile interface
+                    -- to make sure the synchonization of l3 is completed
+                    -- enable 3G/4G
+                    failoverhelper.mobiled_enable(runtime, "1", "wwan")
+                end
+            else
+                runtime.ltebackup_delay_counter = runtime.ltebackup_delay_counter + 1
+            end
+        elseif autofailover == "1" then
+            -- we need to delay bringing up the mobile interface
+            -- to make sure the synchonization of l3 is completed
             -- enable 3G/4G
             failoverhelper.mobiled_enable(runtime, "1", "wwan")
-        else
-            runtime.ltebackup_delay_counter = runtime.ltebackup_delay_counter + 1
         end
+    else
+        runtime.ltebackup_delay_counter = runtime.ltebackup_delay_counter + 1
     end
 
     return "L3Sense"

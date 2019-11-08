@@ -139,7 +139,6 @@ function M.parseDNSServersFromDatamodel(value, key)
   return dhcpTable
 end
 
-
 -- function to calculate StartIPRange, EndIPRange, MinIPAddress and MaxIPAddress for DHCP interface
 -- @param #string dhcp interface name
 -- @param #string network interface name
@@ -165,23 +164,22 @@ function M.parseDHCPData(dhcpIntfName, nwIntfName)
   dhcpBinding.sectionname = dhcpIntfName
   local dhcpConfig = getAllFromUci(dhcpBinding)
 
-  local netMask = nwCommon.ipv4ToNum(networkConfig["netmask"])
-  local baseIp = nwCommon.ipv4ToNum(networkConfig["ipaddr"])
+  local netMask = networkConfig.netmask and nwCommon.ipv4ToNum(networkConfig.netmask)
+  local baseIp = networkConfig.ipaddr and nwCommon.ipv4ToNum(networkConfig.ipaddr)
   local start = tonumber(dhcpConfig["start"] or "100")
   local numIps = tonumber(dhcpConfig["limit"] or "150")
 
-  if baseIp == "" then
+  if not baseIp then
     baseIp = 0
   end
-  if netMask == "" then
+  if not netMask then
     netMask = 0
   end
 
-  local network = bit.band(baseIp, netMask)
+  local network = nwCommon.extractNetworkAddress(baseIp, netMask)
   local ipMin = network + 1
-  local ipMax = bit.bor(network, bit.bnot(netMask)) - 1
-  local startIp = network + start
-  local ipStart = bit.bor(network, bit.band(startIp, bit.bnot(netMask)))
+  local ipMax = nwCommon.extractBroadcastAddress(network, netMask) - 1
+  local ipStart = nwCommon.getStartAddress(network + start, network, netMask)
   local ipEnd = min(ipStart + numIps - 1, ipMax)
 
   return {
@@ -190,6 +188,7 @@ function M.parseDHCPData(dhcpIntfName, nwIntfName)
     network = network,
     ipMin = ipMin,
     ipMax = ipMax,
+    name = dhcpConfig[".name"] or ""
   }
 end
 

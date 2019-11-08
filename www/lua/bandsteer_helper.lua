@@ -1,5 +1,6 @@
 local require, ipairs = require, ipairs
 local proxy = require("datamodel")
+local content_helper = require("web.content_helper")
 local strmatch = string.match
 
 local M = {}
@@ -54,20 +55,55 @@ function M.getBandSteerId(wl)
     end
 end
 
-function M.disableBandSteer(object)
-    if "" == object.bsid or "off" == object.bsid then
+function M.disableBandSteer(object, multiap_enabled, isguest)
+    if object.bsid == "" or ((not multiap_enabled or isguest == '1') and object.bsid == "off") or (multiap_enabled and object.multiap_cred_secondary_state == "1") then
         return true
     else
         object.bsid = "off"
         object.bspeerid = "off"
 
+        local ssid = object.ssid
+
         if object.bspifacessid then
-            object.bspifacessid = object.ssid .. "-5G"
+            object.bspifacessid = ssid .. "-5G"
         else
-            object.ssid = object.ssid .. "-5G"
+            object.ssid = ssid .. "-5G"
+        end
+
+        if object.multiap_cred_primary_bands then
+            object.multiap_cred_primary_bands = "radio_2G"
+            object.multiap_cred_secondary_state = "1"
+        end
+
+        if object.multiap_bspifacessid then
+            object.multiap_bspifacessid = ssid .. "-5G"
         end
     end
     return true
+end
+
+function M.getBandSteerState(bspeerap, ap, multiap_cred_secondary_path)
+    local band_steer_supported, band_steer_enabled
+    if bspeerap then
+        local content_band_steer = {}
+        if multiap_cred_secondary_path then
+            content_band_steer.multiap_cred_secondary_state =  multiap_cred_secondary_path .. ".state"
+        else
+            content_band_steer.band_steer_id = "uci.wireless.wifi-ap.@" .. ap .. ".bandsteer_id"
+        end
+        content_helper.getExactContent(content_band_steer)
+
+        --To get the content_band_steer value
+        if content_band_steer.band_steer_id ~= "" then
+            band_steer_supported = true
+            if not multiap_cred_secondary_path and content_band_steer.band_steer_id ~= "off" then
+                band_steer_enabled = true
+            elseif multiap_cred_secondary_path and content_band_steer.multiap_cred_secondary_state == "0" then
+                band_steer_enabled = true
+            end
+        end
+    end
+    return band_steer_supported, band_steer_enabled
 end
 
 return M

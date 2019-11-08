@@ -22,16 +22,7 @@ start_service() {
         # Add route entry
         ip route add ${dest_ip}/32 dev $dev
         # Add a static ARP spoofing entry
-        local count="0"
-        while [ $count -lt 20 ]
-        do
-            if [ -z $(ip neigh show to $dest_ip dev $dev | grep 'FAILED') ] ; then
-              break
-            fi
-            sleep 1
-            count=$(( $count + 1 ))
-        done
-        ip neigh add $dest_ip lladdr ff:ff:ff:ff:ff:ff nud permanent dev $dev
+        ip neigh replace $dest_ip lladdr ff:ff:ff:ff:ff:ff nud permanent dev $dev
     fi
 
     fw3 -q reload

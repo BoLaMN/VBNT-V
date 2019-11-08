@@ -1,4 +1,4 @@
-local mapper, string, huge = mapper, string, math.huge
+local mapper, huge = mapper, math.huge
 -- Automatically generated from Device:2.10
 -- using generator version 2.3
 local Multi_ = {
@@ -47,16 +47,13 @@ local uciHelper = mapper("ucihelper")
 local getFromUci = uciHelper.get_from_uci
 local setOnUci = uciHelper.set_on_uci
 local nwCommon = mapper("nwcommon")
+local network = require("transformer.shared.common.network")
+local process = require("tch.process")
 local dhcpBinding = { config = "dhcp"}
 local isConfigChanged = false
 local commitApply = commitapply
+local ipairs = ipairs
 local tagAndValue = {}
-
-local function toHex(str)
-  return (str:gsub('.', function (c)
-    return string.format('%02X', string.byte(c))
-  end))
-end
 
 -- Function that fetches the DHCP options from the UCI
 -- It splits the input key to get the value from uci.
@@ -74,7 +71,7 @@ end
 -- supported options for the gateway is obtained from the command: "dnsmasq --help dhcp"
 local function loadOptionNameTagMap()
   local optNameTagMap = {}
-  local fd = io.popen("dnsmasq --help dhcp")
+  local fd = process.popen("dnsmasq", {"--help", "dhcp"})
   if fd then
     for line in fd:lines() do
       local optNum, optName = line:match("^%s*(%d+)%s+(.*)")
@@ -157,7 +154,7 @@ local function getTagAndValueWithPattern(tagVal)
       dhcpValue = value
     end
   end
-  return dhcpTag or "" , toHex(dhcpValue or ""), matchingPattern
+  return dhcpTag or "" , network.stringToHex(dhcpValue or ""), matchingPattern
 end
 
 -- Function to update an existing DHCP option string with new Tag, preserving the pattern.

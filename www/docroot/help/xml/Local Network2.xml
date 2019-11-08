@@ -5,7 +5,7 @@
   <li1>
     <b>DHCP Server</b>
     <br>
-    </br>Select the check box to enable the DHCP server.</li1>
+    </br>Allows you to enable or disable the DHCP server.</li1>
   <li1>
     <b>Network address</b>
     <br>
@@ -18,14 +18,6 @@
     <b>DHCP End address</b>
     <br>
     </br>The last address that can be assigned by the DHCP server.</li1>
-  <li1>
-    <b>New start</b>
-    <br>
-    </br>The value used for the last byte in the <b>DHCP Start address</b>.</li1>
-  <li1>
-    <b>New limit</b>
-    <br>
-    </br>The value used for the last byte in the <b>DHCP End address</b>.</li1>
   <li1>
     <b>Lease time</b>
     <br>

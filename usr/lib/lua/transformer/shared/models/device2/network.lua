@@ -25,6 +25,12 @@ local uciconfig = require("transformer.shared.models.uciconfig").Loader()
 local dmordering = require "transformer.shared.models.dmordering"
 local xdsl = require("transformer.shared.models.xdsl")
 
+local ucihelper = require("transformer.mapper.ucihelper")
+local get_from_uci = ucihelper.get_from_uci
+local set_on_uci = ucihelper.set_on_uci
+local delete_on_uci = ucihelper.delete_on_uci
+local ethBinding = { config = "ethernet", sectionname = "", option = "", default = "" }
+
 local M = {}
 
 local function errorf(fmt, ...)
@@ -162,7 +168,7 @@ function Model:add(objType, name, position)
 	list[name] = obj
 	all[#all+1] = obj
 	all[name] = obj
-	
+
 	return obj
 end
 
@@ -1092,7 +1098,7 @@ end
 
 local function loadNetwork(model)
 	local cfg = uciconfig:load("network")
-	
+
 	for _, dev in ipairs(cfg.device or {}) do
 		create_device(model, dev)
 	end
@@ -1213,13 +1219,13 @@ local function loadOrdering(model)
 	end
 	model.key_aliases = aliases
 	model.key_ignore = ignore
-	
+
 	local bridgeports = {}
 	for _, bridge in ipairs(cfg.bridgeports or {}) do
 		local name = bridge.name or bridge['.name']
 		bridgeports[name] = bridge.port
 	end
-	
+
 	return bridgeports
 end
 
@@ -1311,6 +1317,85 @@ load_model = function()
 		current_model = model
 	end
 	return current_model
+end
+
+-- Function to get the ShapingRate value from the ethernet config
+local function getEthUciValue(devName, option, default)
+  ethBinding.sectionname = devName
+  ethBinding.option = option
+  ethBinding.default = default
+  return get_from_uci(ethBinding) or ""
+end
+
+-- Function to set the ShapingRate value in the ethernet config
+local function setEthUciValue(value, sectionName, option)
+  ethBinding.sectionname = sectionName
+  ethBinding.option = option
+  set_on_uci(ethBinding, value, commitapply)
+end
+
+function M.getShapingRate(devName, key)
+  local trafficDesc = getEthUciValue(devName, "td", "")
+  if trafficDesc ~= "" then
+    local value = getEthUciValue(trafficDesc, "max_bit_rate", "")
+    return value ~= "" and tostring(tonumber(value) * 1000) or "-1"
+  end
+  return "-1"
+end
+
+local function remove_trafficdesc_section(devName, td_name)
+  ethBinding.sectionname = td_name
+  ethBinding.option = nil
+  delete_on_uci(ethBinding, commitapply)
+  setEthUciValue("", devName, "td")
+  return true
+end
+
+-- Function to set the ShapingRate value
+local function shaping_set(devName, shapingValue)
+  setEthUciValue(shapingValue.max_bit_rate, devName, "max_bit_rate")
+  setEthUciValue(shapingValue.max_burst_size, devName, "max_burst_size")
+  setEthUciValue(shapingValue.rate, devName, "rate")
+  setEthUciValue(shapingValue.ratio, devName, "ratio")
+  return true
+end
+
+function M.setShapingRate(value, key, devName)
+  value = tonumber(value)
+  local max_burst_size = "2000"
+  if value then
+    local trafficdesc = getEthUciValue(devName, "td", "")
+    local new_td_name = "td" .. devName
+    if trafficdesc ~= "" then
+      max_burst_size = getEthUciValue(trafficdesc, "max_burst_size", "2000")
+    end
+    if trafficdesc == "" and value == -1 then
+      return true
+    elseif value == 0 then
+      return nil, "Not supported"
+    elseif trafficdesc == "" and (value > -1) and (value <= 100) then
+      set_on_uci(ethBinding, new_td_name, commitapply)
+      setEthUciValue("trafficdesc", new_td_name)
+      return shaping_set(new_td_name, { max_bit_rate = value, max_burst_size = max_burst_size, rate = "", ratio = "enabled", })
+    elseif trafficdesc == "" and (value > 100) then
+      if value < 1000 then
+        return nil, "Absolute value should be at least 1000 bps"
+      end
+      set_on_uci(ethBinding, new_td_name, commitapply)
+      setEthUciValue("trafficdesc", new_td_name)
+      return shaping_set(new_td_name, { max_bit_rate = value/1000, max_burst_size = max_burst_size, rate = "enabled", ratio = "" })
+    elseif trafficdesc ~= "" and value == -1 then
+      return remove_trafficdesc_section(devName, trafficdesc)
+    elseif trafficdesc ~= "" and (value > -1) and (value <= 100) then
+      return shaping_set(new_td_name, { max_bit_rate = value, max_burst_size = max_burst_size, rate = "", ratio = "" })
+    elseif trafficdesc ~= "" and (value > 100) then
+      if value < 1000 then
+        return nil, "Absolute value should be at least 1000 bps"
+      end
+      return shaping_set(new_td_name, { max_bit_rate = value/1000, max_burst_size = max_burst_size, rate = "enabled", ratio = "" })
+    end
+  end
+  return nil,"Not supported"
 end
 
 return M

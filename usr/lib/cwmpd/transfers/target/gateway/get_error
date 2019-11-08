@@ -1,9 +1,10 @@
 #!/bin/sh
 
-local error_message="$1"
+error_message="$1"
+uci_section="$3"
 
 if grep -Fq '"bank_2"' /proc/mtd && [ -f /proc/banktable/active ]; then
-	local expected="$(uci get "$CONFIG.$id.bank")"
+	local expected="$(uci get "${uci_section}.bank")"
 	local active="$(cat /proc/banktable/active)"
 	local booted="$(cat /proc/banktable/booted)"
 	if [ -z "$expected" ]; then

@@ -196,7 +196,7 @@ local pfw_filter = nil
 
 local pfw_options = {
     tableid = "portforwarding",
-    basepath = "uci.firewall.userredirect.",
+    basepath = "rpc.network.firewall.portforward.",
     createMsg = T"Add new port mapping",
     newList = knownapps,
     valid = globalValid,

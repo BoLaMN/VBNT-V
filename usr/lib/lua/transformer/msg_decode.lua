@@ -175,6 +175,13 @@ function Decoder:SUBSCRIBE_RESP()
   nonevented = {}
   while (self.index < self.msglength) do
     nonevented[#nonevented+1] = decode_string(self)
+    if (self.index < self.msglength) then
+      local second_id = decode_number(self)
+      if (id ~= second_id) then
+        -- Something is wrong, we shouldn't change subscription ID inside a message.
+        break
+      end
+    end
   end
   return { id = id, nonevented = nonevented }
 end

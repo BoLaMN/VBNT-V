@@ -167,6 +167,7 @@ local Multi_DeviceInfo_ = {
 
 local floor = math.floor
 local open = io.open
+local process = require 'tch.process'
 local tostring = tostring
 local uci = mapper("ucihelper")
 local banktable = require "transformer.shared.banktable"
@@ -367,7 +368,7 @@ Multi_DeviceInfo_.get = {
     return value
   end,
   DeviceLog = function()
-    local log = io.popen("/sbin/logread")
+    local log = process.popen("/sbin/logread")
     if log == nil then
       return ""
     end
@@ -441,7 +442,7 @@ Multi_DeviceInfo_.set = {
     isConfigChanged = true
   end,
   X_000E50_DeviceLogFilter = function(mapping,param,value)
-    uci.set_on_uci(logfilter_binding, pvalue, commitapply)
+    uci.set_on_uci(logfilter_binding, value, commitapply)
   end,
   X_000E50_SwitchtoPassiveBank = function(mapping,param,value)
     if banktable.isOtherBankValid() then
@@ -500,6 +501,7 @@ for _, dupli in ipairs(duplicates) do
     dupli.objectType.parameters["ModemFirmwareVersion"] = nil
     dupli.objectType.parameters["EnabledOptions"] = nil
     dupli.objectType.parameters["DeviceLog"] = nil
+    dupli.objectType.parameters["X_000E50_DeviceLogFilter"] = nil
     dupli.objectType.parameters["X_000E50_ReturnToFactoryDefaultsSoft"] = nil
     dupli.objectType.parameters["X_000E50_SoftwareVersionPassiveBank"] = nil
     dupli.objectType.parameters["SpecVersion"] = nil

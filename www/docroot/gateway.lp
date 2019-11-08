@@ -5,10 +5,15 @@ gettext.textdomain('webui-core')
 local ui_helper = require("web.ui_helper")
 local content_helper = require("web.content_helper")
 local web = require("web.web")
+local telstra_helper = require("telstra_helper")
+local symbolv1 = telstra_helper.symbolnamev1
 
 local bridged = require("bridgedmode_helper")
 local session = ngx.ctx.session
 local storage_helper = require("storage_helper")
+
+local assistance = require("web.assistance")
+local assistant = assistance.getAssistant("remote")
 
 -- this is to assist opening modal directly from the basic view
 -- the path of modal to be opened will be stored in session and will be retrieved back by gateway.lp later
@@ -53,7 +58,7 @@ end
     <!--[if IE 7]><link rel="stylesheet" href="/css/font-awesome-ie7.css"><![endif]-->\
     <script src="/js/main-min.js" ></script>\
     <!--[if lt IE 9]> <script src="/js/media-min.js"></script> <![endif]-->\
-    <title>');  ngx.print( T"Gateway" ); ngx.print('</title>\
+    <title>');  ngx.print( T(symbolv1) ); ngx.print('</title>\
   </head>\
 \
 <body>\
@@ -88,10 +93,13 @@ end
                     <button class="btn dropdown-toggle" data-toggle="dropdown">
                       <span class="caret"></span>
                     </button>
-                    <ul class="dropdown-menu pull-right">
-                      <li><a tabindex="-1" href="/password.lp" id="changepass">]]
-            html[#html + 1] = T"Change my password"
-            html[#html + 1] = [[ </a></li><li class="divider"></li><li><a tabindex="-1" href="/" id="signout"> ]]
+                    <ul class="dropdown-menu pull-right">]]
+            if session:getusername() ~= assistant:username() then
+                html[#html + 1] = [[ <li><a tabindex="-1" href="/password.lp" id="changepass">]]
+                html[#html + 1] = T"Change my password"
+                html[#html + 1] = [[ </a></li><li class="divider"></li> ]]
+            end
+            html[#html + 1] = [[ <li><a tabindex="-1" href="/" id="signout"> ]]
             html[#html + 1] = T"Sign out"
             html[#html + 1] = [[</a></li></ul></div>]]
         end
@@ -129,5 +137,7 @@ if modalname then
       $("div[class*=\'header-title\'][data-remote$=\'');  ngx.print(modalname); ngx.print('\'][data-toggle=\'modal\']").click();\
     });\
 </script>\
+\
 ');  end   ngx.print('\
+\
 '); 

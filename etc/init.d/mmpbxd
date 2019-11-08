@@ -87,12 +87,12 @@ usb_interrupts_smp_affinity() {
 
 mmpbxd_start() {
   config_load "mmswitch"
-  config_get mmswitchRtPriority global rt_priority 75
+  config_get mmswitchRtPriority global rt_priority 76
   config_get mmswitchAvailable global ms_available 1
   config_get mmswitchWaitForThreads global wait_for_threads 1
 
   config_load "mmtonegen"
-  config_get mmtonegenRtPriority global rt_priority 75
+  config_get mmtonegenRtPriority global rt_priority 76
   config_get mmtonegenAvailable global tg_available 1
   config_get mmtonegenWaitForThreads global wait_for_threads 1
 
@@ -117,6 +117,10 @@ mmpbxd_start() {
   logger -p $sysLogPriority "Mmpbx starting mmpbx.state=STARTING"
   local args="-q"
   local radvisionTraceLevel
+  local brcmTraceLevel
+
+  # check if dect emission is enabled / disabled and take appropriate action of back-up or restore if needed
+  $IPKG_INSTROOT/usr/lib/parameter_conversion/mmpbx_dectemission.sh
 
   remove_modules_without_config
 
@@ -144,6 +148,8 @@ mmpbxd_start() {
   service_start /usr/bin/mmdbd $mmdbd_args
 
   check_insert_module endpointdd.ko endpointdd
+  check_insert_module dsphal.ko dsphal
+  check_insert_module slicslac.ko slicslac
   if [ $mmswitchAvailable -eq 1 ]
   then
     check_insert_module modmmswitch.ko modmmswitch
@@ -205,12 +211,18 @@ mmpbxd_start() {
 
   rm /tmp/mmpbx*.log 2>/dev/null
 
+  config_load "mmpbxbrcmfxsdev"
+  config_get brcmTraceLevel global trace_level 0
   config_load "mmpbxrvsipnet"
   config_get radvisionTraceLevel global radvision_trace_level 0
+
   if [ $radvisionTraceLevel -gt 0 ];
   then
     export MMSIP_SIPLOGPATH=/tmp/mmpbx_sip.log
     export MMSIP_MTFLOGPATH=/tmp/mmpbx_mtf.log;
+  fi
+  if [ $brcmTraceLevel -gt 2 ];
+  then
     [ -f /proc/bcmlog ] && echo "l ept 3" > /proc/bcmlog
   else
     [ -f /proc/bcmlog ] && echo "l ept 0" > /proc/bcmlog
@@ -240,6 +252,8 @@ mmpbxd_start() {
     logger -p $sysLogPriority "the 2 values of max contact do not exist!"
   fi
 
+  # temporary workaround to avoid the GW crash due to OoM, by limiting stack size
+  ulimit -S -s 1024
   service_start /usr/bin/mmpbxd $args
 
   # for now prevent multiple instance by checking PID file
@@ -351,6 +365,36 @@ mmpbxd_start() {
     fi
   fi
 
+  #Check if dsphal driver exists (applicable to BRCM 5.02L0x delivery):
+  ls /lib/modules/*/dsphal.ko > /dev/null 2>&1
+  if [ $? -eq "0" ] ; then
+    #Check if endpoint driver is loaded:
+    lsmod |grep -w dsphal > /dev/null 2>&1
+    if [ $? -eq "0" ] ; then
+       cpu_type=`uname -m`
+       if [ "$cpu_type" = "armv7l" ] || [ "$cpu_type" = "aarch64" ]; then
+         dsp_mask=1
+         #setting all mmpbx threads affinity as dsp_mask affinity
+         mmpbx_pid=$(ps | grep -e "[/]usr/bin/mmpbxd" | awk '{ print $1}')
+         mmpbx_pids=$(ls /proc/${mmpbx_pid}/task)
+         for pid in $mmpbx_pids
+         do
+           taskset -p $dsp_mask "$pid"
+         done
+       else
+         dsp_mask=2
+       fi
+       setcpumask mmswitchsock_w $dsp_mask
+       setcpumask mmswitchsock_r $dsp_mask
+       setcpumask mmswitch_wq $dsp_mask
+       setcpumask mmtonegen $dsp_mask
+       #USB interrupts affect voice related interrupt process on same core, so set USB interrupts to other core.
+       usb_interrupts_smp_affinity $((${dsp_mask}^3))
+    else
+       logger -p $sysLogPriority "dsphal.ko is not loaded, Failed to set mmpbx processes affinities"
+    fi
+  fi
+
   uci set mmpbx.voipdiagnostics.action=idle
   uci commit
   is_diagnostics_enabled=`uci get mmpbx.voipdiagnostics.enabled`
@@ -433,6 +477,8 @@ mmpbxd_stop() {
     #Wait for the MMPBX and Endpoint Driver resources to be cleaned up properly.
     check_remove_module modmmconnkernelbrcm
     check_remove_module endpointdd
+#   check_remove_module dsphal
+    check_remove_module slicslac
     check_remove_module dect
     if [ $mmtonegenAvailable -eq 1 ];
     then
@@ -553,7 +599,7 @@ check_insert_module(){
   ls /lib/modules/*/$ko > /dev/null 2>&1
   ret=$(echo $?)
   if [ $ret -eq "0" ]; then
-    insmod $mod
+    modprobe $mod
   fi
 }
 

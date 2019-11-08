@@ -1,9 +1,9 @@
 config defaults
 	option syn_flood	 '1'
-	option input		 'ACCEPT'
+	option input		 'DROP'
 	option output		 'ACCEPT'
 	option forward		 'DROP'
-	option drop_invalid	 '1'
+	option drop_invalid	 '0'
 
 config zone
 	option name		 'lan'
@@ -45,6 +45,7 @@ config zone
 	list   network		 'wan6'
 	list   network		 'wwan_4'
 	list   network		 'wwan_6'
+	option masq_allow_invalid '1'
 
 config forwarding
 	option src		 'lan'
@@ -475,47 +476,47 @@ config include 'miniupnpd'
 	option family		 'IPv4'
 	option reload		 '1'
 
-config helper
-	option helper		 ftp
-	option dest_port	 21
-	option proto		 tcp
+config helper 'ftphelper'
+	option helper		 'ftp'
+	option dest_port	 '21'
+	option proto		 'tcp'
 
-config helper
-	option helper		 tftp
-	option dest_port	 69
-	option proto		 udp
+config helper 'tftphelper'
+	option helper		 'tftp'
+	option dest_port	 '69'
+	option proto		 'udp'
 
-config helper
-	option helper		 snmp
-	option family		 ipv4
-	option dest_port	 161
-	option proto		 udp
+config helper 'snmphelper'
+	option helper		 'snmp'
+	option family		 'ipv4'
+	option dest_port	 '161'
+	option proto		 'udp'
 
-config helper
-	option helper		 pptp
-	option family		 ipv4
-	option dest_port	 1723
-	option proto		 tcp
+config helper 'pptphelper'
+	option helper		 'pptp'
+	option family		 'ipv4'
+	option dest_port	 '1723'
+	option proto		 'tcp'
 
-config helper
-	option helper		 sip
-	option dest_port	 5060
-	option proto		 udp
+config helper 'siphelper'
+	option helper		 'sip'
+	option dest_port	 '5060'
+	option proto		 'udp'
 
-config helper
-	option helper		 irc
-	option family		 ipv4
-	option dest_port	 6667
-	option proto		 tcp
+config helper 'irchelper'
+	option helper		 'irc'
+	option family		 'ipv4'
+	option dest_port	 '6667'
+	option proto		 'tcp'
 
-config helper
-	option helper		 amanda
-	option dest_port	 10080
-	option proto		 udp
+config helper 'amandahelper'
+	option helper		 'amanda'
+	option dest_port	 '10080'
+	option proto		 'udp'
 
-config helper
-	option helper		 rtsp
-	option dest_port	 554
-	option family		 ipv4
-	option proto		 tcp
+config helper 'rtsphelper'
+	option helper		 'rtsp'
+	option dest_port	 '554'
+	option family		 'ipv4'
+	option proto		 'tcp'
 

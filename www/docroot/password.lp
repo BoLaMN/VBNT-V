@@ -5,6 +5,8 @@ gettext.textdomain('webui-core')
 
 local triesbeforemsg = 3
 local content_helper = require("web.content_helper")
+local telstra_helper = require("telstra_helper")
+local symbolv1 = telstra_helper.symbolnamev1
 
 local cui = {
   defaultuser = "uci.web.uiconfig.@uidefault.defaultuser",
@@ -85,7 +87,7 @@ end
             </div>\
             <!-- HIDE WARNING - NOT USED IN DEFAULT CUSTO\
             <div id="defaultpassword" class="alert alert-info hide">\
-                ');  ngx.print( T"If you haven't changed it, the default password can be found on the sticker under your gateway (it's called <strong>\"access code\"</strong>)" ); ngx.print('\
+                ');  ngx.print( T("If you haven't changed it, the default password can be found on the sticker under your" .. symbolv1 .. " (it's called <strong>\"access code\"</strong>)") ); ngx.print('\
             </div>\
             -->\
             ');  ngx.print( createPwdLabel(T"Your new password") ); ngx.print('\

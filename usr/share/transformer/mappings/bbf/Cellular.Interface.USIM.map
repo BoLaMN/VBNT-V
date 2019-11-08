@@ -87,6 +87,17 @@ end
 obj.getall = getall
 obj.get = get
 
+local function mobiled_event(mapping, event, msg)
+	if msg["event"] and msg["event"] == "sim_initialized" and msg["dev_idx"] then
+		return {{ key = "cellular_interface_1", paramname = "IMSI" }}
+	end
+end
+
+obj.add_watchers = function(mapping)
+	local ubus_evsrc = eventsource("ubus")
+	ubus_evsrc.watch_event(mapping, mobiled_event, "mobiled")
+end
+
 local duplicator = mapper("multiroot").duplicate
 local duplicates = duplicator(obj, "#ROOT", {"InternetGatewayDevice.X_000E50_Cellular.Interface", "Device.Cellular.Interface"})
 for _, dupli in ipairs(duplicates) do

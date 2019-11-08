@@ -98,10 +98,8 @@ function Mapper:start_data_session(device, session_id, profile)
 			end
 		end
 		device.runtime.log:notice("Not ready to start data session yet")
-	else
-		if session.name == "internal_ims_pdn" then
-			return device:send_singleline_command("AT+QIMSACT=1", "+QIMSACT:")
-		end
+	elseif session.name == "internal_ims_pdn" then
+		return device:send_singleline_command("AT+QIMSACT=1", "+QIMSACT:")
 	end
 end
 
@@ -119,10 +117,8 @@ function Mapper:stop_data_session(device, session_id)
 			return device:send_command(string.format("AT$QCRMCALL=0,%d,%s", cid, session.pdp_type), 30000)
 		end
 		return device:send_command(string.format("AT$QCRMCALL=0,%d,%s", cid, "3"), 30000)
-	else
-		if session.name == "internal_ims_pdn" then
-			return device:send_singleline_command("AT+QIMSACT=0", "+QIMSACT:")
-		end
+	elseif session.name == "internal_ims_pdn" then
+		return device:send_singleline_command("AT+QIMSACT=0", "+QIMSACT:")
 	end
 end
 
@@ -200,6 +196,15 @@ function Mapper:get_session_info(device, info, session_id)
 				end
 			end
 		end
+	elseif session.name == "internal_ims_pdn" then
+		info.session_state = "disconnected"
+		ret = device:send_singleline_command("AT+QIMSACT?", "+QIMSACT:")
+		if ret then
+			local state = ret:match("+QIMSACT:%s?%d,(%d)")
+			if state == "1" then
+				info.session_state = "connected"
+			end
+		end
 	end
 end
 
@@ -255,7 +260,7 @@ function Mapper:get_network_info(device, info)
 		for _, line in pairs(ret) do
 			local act = line:match('%+QENG:%s?"neighbourcell.-","(.-)"')
 			if act == 'LTE' then
-				local band_type, earfcn, phy_cell_id, rsrq, rsrp, rssi, sinr = line:match('%+QENG:%s?"neighbourcell(.-)","LTE",(%d+),(%d+),([%d-]+),([%d-]+),([%d-]+),([%d-]+)')
+				local band_type, earfcn, phy_cell_id, rsrq, rsrp, rssi = line:match('%+QENG:%s?"neighbourcell(.-)","LTE",(%d+),(%d+),([%d-]+),([%d-]+),([%d-]+),[%d-]+')
 				if band_type then
 					local cell = {
 						dl_earfcn = tonumber(earfcn),
@@ -264,10 +269,6 @@ function Mapper:get_network_info(device, info)
 						rsrp = tonumber(rsrp),
 						rsrq = tonumber(rsrq)
 					}
-					sinr = tonumber(sinr)
-					if sinr then
-						cell.sinr = ((sinr/5)-20)
-					end
 					if band_type ~= "" then
 						cell.band_type = band_type:gsub("^ *", "")
 					end
@@ -336,7 +337,13 @@ local bandwidth_map = {
 	['2'] = 5,
 	['3'] = 10,
 	['4'] = 15,
-	['5'] = 20
+	['5'] = 20,
+	['6'] = 1.4,
+	['15'] = 3,
+	['25'] = 5,
+	['50'] = 10,
+	['75'] = 15,
+	['100'] = 20
 }
 
 function Mapper:get_radio_signal_info(device, info)
@@ -360,7 +367,7 @@ function Mapper:get_radio_signal_info(device, info)
 			info.rssi = tonumber(rssi)
 			sinr = tonumber(sinr)
 			if sinr then
-				info.sinr = ((sinr/5)-20)
+				info.sinr = sinr * 2 - 20
 			end
 			tx_power = tonumber(tx_power)
 			if tx_power and tx_power ~= -32768 then
@@ -469,19 +476,31 @@ local config_defaults = {
 	audio_digital_tx_gain = { default = 8192, type = "number" },
 	audio_codec_tx_gain = { default = 8192, type = "number" },
 	audio_digital_rx_gain = { default = 8192, type = "number" },
-	audio_mode = { default = -1, type = "number" },
+	audio_volume_level = { default = -1, type = "number" },
+	audio_side_tone_gain = { default = 0, type = "number" },
+	audio_mode = { default = 0, type = "number" },
+	data_audio_digital_tx_gain = { default = 4096, type = "number" },
+	data_audio_codec_tx_gain = { default = 5000, type = "number" },
+	data_audio_digital_rx_gain = { default = 36000, type = "number" },
+	data_audio_volume_level = { default = -1, type = "number" },
+	data_audio_side_tone_gain = { default = 0, type = "number" },
+	data_audio_mode = { default = 3, type = "number" },
 	audio_codecs = { default = "AMR_WB;AMR;PCMA;PCMU", type = "string" },
 	sip_user_agent = { default = 'Quectel <model> <software_version>', type = "string" },
 	mbn_selection = { default = "none", type = "string" },
 	data_call_codec = { default = "PCMU", type = "string" },
 	ringing_timer = { default = 90000, type = "number" },
-	enable_lapi = { default = "0", type = "string" }
+	enable_256qam = { default = "0", type = "string" },
+	enable_lapi = { default = "0", type = "string" },
+	early_media_rtp_polling_timer = { default = 1000, type = "number" },
+	ue_usage_setting = { default = "keep", type = "string" },
+	voice_domain_preference = { default = "keep", type = "string" }
 }
 
-local function set_config(device, config, facility, value)
+local function set_config(device, config, facility, value, set_if_read_fails)
 	-- Some commands fail to read before they are explicitly set
 	local ret = device:send_singleline_command(string.format('AT+%s="%s"', config, facility), string.format("+%s:", config))
-	if not ret or ret:match('^+.-:%s?".-",([^,]+)') ~= value:gsub('"', '') then
+	if (not ret and set_if_read_fails) or (ret and ret:match('^+.-:%s?".-",([^,]+)') ~= value:gsub('"', '')) then
 		ret = device:send_command(string.format('AT+%s="%s",%s', config, facility, value))
 		if ret then
 			return true
@@ -490,6 +509,13 @@ local function set_config(device, config, facility, value)
 end
 
 function Mapper:configure_device(device, config)
+	local log = device.runtime.log
+
+	if device.cops_pending then
+		log:info("Not ready to continue configuration")
+		return nil, "Not ready"
+	end
+
 	for k, v in pairs(config_defaults) do
 		if v.type == "number" then
 			config.device[k] = tonumber(config.device[k])
@@ -500,7 +526,28 @@ function Mapper:configure_device(device, config)
 	end
 
 	local reset_required = false
-	local log = device.runtime.log
+
+	-- Select the MBN file before setting any NV items (either directly or
+	-- indirectly) as otherwise their value will be overwritten when the MBN file
+	-- is selected.
+	if config.device.mbn_selection ~= "none" then
+		if config.device.mbn_selection == "auto" then
+			if set_config(device, "QMBNCFG", "AutoSel", "1", true) then
+				device.runtime.log:notice("Enabled MBN auto-selection")
+				reset_required = true
+			end
+		else
+			local mbn_name = config.device.mbn_selection:gsub('^manual:', '') -- Strip the (optional) prefix.
+			if set_config(device, "QMBNCFG", "AutoSel", "0", true) then
+				log:notice("Disabled MBN auto-selection")
+				reset_required = true
+			end
+			if set_config(device, "QMBNCFG", "Select", string.format('"%s"', mbn_name), true) then
+				log:notice("Selected MBN '%s'", mbn_name)
+				reset_required = true
+			end
+		end
+	end
 
 	local parsed_user_agent = config.device.sip_user_agent:gsub("<(.-)>+", function(key)
 		if key:match("gateway_") then
@@ -516,16 +563,26 @@ function Mapper:configure_device(device, config)
 	log:info('Using SIP user agent "%s"', parsed_user_agent)
 	device:send_command(string.format('AT+QIMSCFG="user_agent","%s"', parsed_user_agent))
 
-	-- Set the audio mode before setting the gains as setting the audio mode will overwrite the gains.
-	if config.device.audio_mode >= 0 then
-		device:send_command(string.format('AT+QAUDMOD=%d', config.device.audio_mode))
-	end
-	if config.device.audio_codec_tx_gain >= 0 and config.device.audio_digital_tx_gain >= 0 then
-		device:send_command(string.format('AT+QMIC=%d,%d', config.device.audio_codec_tx_gain, config.device.audio_digital_tx_gain))
-	end
-	if config.device.audio_digital_rx_gain >= 0 then
-		device:send_command(string.format('AT+QRXGAIN=%d', config.device.audio_digital_rx_gain))
-	end
+	-- Store the audio settings in the device so they can be accessed when a call
+	-- is set up or when a call is converted from a voice call to a data call.
+	device.audio_settings = {
+		voice = {
+			audio_digital_tx_gain = config.device.audio_digital_tx_gain,
+			audio_codec_tx_gain = config.device.audio_codec_tx_gain,
+			audio_digital_rx_gain = config.device.audio_digital_rx_gain,
+			audio_volume_level = config.device.audio_volume_level,
+			audio_side_tone_gain = config.device.audio_side_tone_gain,
+			audio_mode = config.device.audio_mode
+		},
+		data = {
+			audio_digital_tx_gain = config.device.data_audio_digital_tx_gain,
+			audio_codec_tx_gain = config.device.data_audio_codec_tx_gain,
+			audio_digital_rx_gain = config.device.data_audio_digital_rx_gain,
+			audio_volume_level = config.device.data_audio_volume_level,
+			audio_side_tone_gain = config.device.data_audio_side_tone_gain,
+			audio_mode = config.device.data_audio_mode
+		}
+	}
 
 	local padded_codecs = config.device.audio_codecs .. string.rep("\0", 128 - string.len(config.device.audio_codecs))
 	local encoded_codecs = string.gsub(padded_codecs, ".", function(character)
@@ -547,25 +604,6 @@ function Mapper:configure_device(device, config)
 		if device:send_command('AT+QNVFW="/nv/item_files/ims/qipcall_ringing_timer",' .. ringing_timer) then
 			log:info("Configured ringing timer")
 			reset_required = true
-		end
-	end
-
-	if config.device.mbn_selection ~= "none" then
-		if config.device.mbn_selection == "auto" then
-			if set_config(device, "QMBNCFG", "AutoSel", "1") then
-				device.runtime.log:notice("Enabled MBN auto-selection")
-				reset_required = true
-			end
-		else
-			local mbn_name = config.device.mbn_selection:gsub('^manual:', '') -- Strip the (optional) prefix.
-			if set_config(device, "QMBNCFG", "AutoSel", "0") then
-				log:notice("Disabled MBN auto-selection")
-				reset_required = true
-			end
-			if set_config(device, "QMBNCFG", "Select", string.format('"%s"', mbn_name)) then
-				log:notice("Selected MBN '%s'", mbn_name)
-				reset_required = true
-			end
 		end
 	end
 
@@ -594,22 +632,23 @@ function Mapper:configure_device(device, config)
 	ret = device:send_singleline_command('AT+QAUDCFG="toneswitch"', '+QCFG:')
 	if ret and ret ~= '+QCFG: "toneswitch",1' then
 		device:send_command('AT+QAUDCFG="toneswitch",1')
+		log:info("Disabled waiting tone")
 		reset_required = true
 	end
 
 	-- Deprecated parameter but enable it in order to make sure VoLTE keeps working
-	if set_config(device, 'QCFG', 'volte_disable', '0') then
+	if set_config(device, 'QCFG', 'volte_disable', '0', true) then
 		log:info("Enabled VoLTE")
 		reset_required = true
 	end
 
 	if config.device.volte_enabled then
-		if set_config(device, 'QCFG', 'ims', '1')  then
+		if set_config(device, 'QCFG', 'ims', '1', true)  then
 			log:info("Enabled IMS PDN")
 			reset_required = true
 		end
 	else
-		if set_config(device, 'QCFG', 'ims', '2')  then
+		if set_config(device, 'QCFG', 'ims', '2', true)  then
 			log:info("Disabled IMS PDN")
 			reset_required = true
 		end
@@ -619,6 +658,13 @@ function Mapper:configure_device(device, config)
 		device:send_command('AT+QIMSACT=0')
 	else
 		device:send_command('AT+QIMSACT=1')
+	end
+
+	local rtp_polling_timer_value = config.device.early_media_rtp_polling_timer
+	if set_config(device, 'QIMSCFG', 'rtpdi_timer', string.format('%s', rtp_polling_timer_value))  then
+		 log:info("Changed the value of early_media_rtp_polling_timer to: %s",  string.format('%s', rtp_polling_timer_value))
+	else
+		log:info("early_media_rtp_polling_timer value not changed")
 	end
 
 	local sim_hotswap_enabled = false
@@ -660,7 +706,19 @@ function Mapper:configure_device(device, config)
 	end
 
 	-- Disable controlling the radio state using the GPIO.
-	set_config(device, 'QCFG', 'airplanecontrol', '0')
+	set_config(device, 'QCFG', 'airplanecontrol', '0', true)
+
+	if config.device.enable_256qam == "1" then
+		if set_config(device, 'QCFG', 'dl_256qam', '1', false)  then
+			log:info("Enabled 256QAM support")
+			reset_required = true
+		end
+	else
+		if set_config(device, 'QCFG', 'dl_256qam', '0', false)  then
+			log:info("Disabled 256QAM support")
+			reset_required = true
+		end
+	end
 
 	if config.device.enable_lapi == "1" then
 		if set_config(device, 'QNWCFG', 'lapi', '1', false)  then
@@ -671,6 +729,54 @@ function Mapper:configure_device(device, config)
 		if set_config(device, 'QNWCFG', 'lapi', '0', false)  then
 			log:info("Disabled LAPI support")
 			reset_required = true
+		end
+	end
+
+	if config.device.ue_usage_setting == "delete" then
+		if device:send_singleline_command('AT+QNVFR="/nv/item_files/modem/mmode/ue_usage_setting"', '+QNVFR:') and device:send_command('AT+QNVFD="/nv/item_files/modem/mmode/ue_usage_setting"') then
+			log:info("Deleted UE usage setting")
+			reset_required = true
+		end
+	elseif config.device.ue_usage_setting ~= "keep" then
+		local ue_usage_setting
+		if config.device.ue_usage_setting == "voice_centric" then
+			ue_usage_setting = 0
+		elseif config.device.ue_usage_setting == "data_centric" then
+			ue_usage_setting = 1
+		else
+			return nil, "Invalid UE usage setting"
+		end
+		if device:send_singleline_command('AT+QNVFR="/nv/item_files/modem/mmode/ue_usage_setting"', '+QNVFR:') ~= string.format('+QNVFR: %02d', ue_usage_setting) then
+			if device:send_command(string.format('AT+QNVFW="/nv/item_files/modem/mmode/ue_usage_setting",%02d', ue_usage_setting)) then
+				log:info("Configured UE usage setting")
+				reset_required = true
+			end
+		end
+	end
+
+	if config.device.voice_domain_preference == "delete" then
+		if device:send_singleline_command('AT+QNVFR="/nv/item_files/modem/mmode/voice_domain_pref"', '+QNVFR:') and device:send_command('AT+QNVFD="/nv/item_files/modem/mmode/voice_domain_pref"') then
+			log:info("Deleted voice domain preference")
+			reset_required = true
+		end
+	elseif config.device.voice_domain_preference ~= "keep" then
+		local voice_domain_preference
+		if config.device.voice_domain_preference == "cs_voice_only" then
+			voice_domain_preference = 0
+		elseif config.device.voice_domain_preference == "ims_ps_voice_only" then
+			voice_domain_preference = 1
+		elseif config.device.voice_domain_preference == "cs_voice_preferred" then
+			voice_domain_preference = 2
+		elseif config.device.voice_domain_preference == "ims_ps_voice_preferred" then
+			voice_domain_preference = 3
+		else
+			return nil, "Invalid voice domain preference"
+		end
+		if device:send_singleline_command('AT+QNVFR="/nv/item_files/modem/mmode/voice_domain_pref"', '+QNVFR:') ~= string.format('+QNVFR: %02d', voice_domain_preference) then
+			if device:send_command(string.format('AT+QNVFW="/nv/item_files/modem/mmode/voice_domain_pref",%02d', voice_domain_preference)) then
+				log:info("Configured voice domain preference")
+				reset_required = true
+			end
 		end
 	end
 
@@ -730,6 +836,26 @@ function Mapper:configure_device(device, config)
 		device:send_command("AT+CGREG=1")
 	end
 
+	if reset_required then
+		log:warning("Resetting LTE module")
+		-- Reset the device to apply the change
+		device:send_command("AT+QPOWD=1")
+		return nil, "Module reset required"
+	end
+
+	local roaming = 2
+	if config.network.roaming == "none" then
+		roaming = 1
+	end
+	ret = device:send_command(string.format('AT+QCFG="roamservice",%d,1', roaming))
+	if not ret then
+		return nil, "Failed to configure roaming"
+	end
+
+	-- Store the data call codec in device so it can be accessed when a voice call
+	-- is converted to a data call.
+	device.data_call_codec = config.device.data_call_codec
+
 	-- Construct the COPS command but do not execute it yet. Executing the COPS
 	-- command on Quectel modules before the SIM is unlocked will return OK but
 	-- afterwards the CGATT command will fail until COPS=2 and COPS=0 are called
@@ -751,29 +877,13 @@ function Mapper:configure_device(device, config)
 			cops_command = cops_command .. ',0'
 		end
 
-		device.cops_command = cops_command
-		device:send_command(cops_command, 60000)
+		if device.cops_command ~= cops_command then
+			device.cops_command = cops_command
+			device.cops_pending = true
+			device:start_command(device.cops_command, 60000)
+			return nil, "Not ready"
+		end
 	end
-
-	local roaming = 2
-	if config.network.roaming == "none" then
-		roaming = 1
-	end
-	ret = device:send_command(string.format('AT+QCFG="roamservice",%d,1', roaming))
-	if not ret then
-		return nil, "Failed to configure roaming"
-	end
-
-	if reset_required then
-		log:warning("Resetting LTE module")
-		-- Reset the device to apply the change
-		device:send_command("AT+QPOWD=1")
-		return nil, "Module reset required"
-	end
-
-	-- Store the data call codec in device so it can be accessed when a voice call
-	-- is converted to a data call.
-	device.data_call_codec = config.device.data_call_codec
 
 	return true
 end
@@ -1218,6 +1328,12 @@ local dsci_call_states = {
 	}
 }
 
+local dsci_call_type = {
+	["0"] = "voice",
+	["1"] = "data",
+	["9"] = "emergency"
+}
+
 local release_reason_interval = 500
 
 local function get_registration_state(device)
@@ -1237,6 +1353,29 @@ local codec_ids = {
 	["PCMA"]   = 13,
 }
 
+local function configure_audio(device, settings)
+	-- Set the audio mode before setting the gains as setting the audio mode will overwrite the gains.
+	if settings.audio_mode >= 0 then
+		device:send_command(string.format('AT+QAUDMOD=%d', settings.audio_mode))
+	end
+	if settings.audio_codec_tx_gain >= 0 and settings.audio_digital_tx_gain >= 0 then
+		device:send_command(string.format('AT+QMIC=%d,%d', settings.audio_codec_tx_gain, settings.audio_digital_tx_gain))
+	end
+	if settings.audio_digital_rx_gain >= 0 then
+		device:send_command(string.format('AT+QRXGAIN=%d', settings.audio_digital_rx_gain))
+	end
+	if settings.audio_side_tone_gain >=0 then
+		device:send_command(string.format('AT+QSIDET=%d', settings.audio_side_tone_gain))
+	end
+	if settings.audio_volume_level >= 0 then
+		-- CLVL command is non-volatile so it should be issued if in any case and only if the volue value is different from the current one
+		local ret_val = device:send_singleline_command('AT+CLVL?', "+CLVL:")
+		if ret_val:match('+CLVL:%s?(%d)') ~= tostring(settings.audio_volume_level) then
+			device:send_command(string.format('AT+CLVL=%d', settings.audio_volume_level))
+		end
+	end
+end
+
 local function switch_to_data_codec(device, call_id, codec_name)
 	local desired_codec = codec_ids[codec_name]
 	if not desired_codec then
@@ -1255,6 +1394,7 @@ local function switch_to_data_codec(device, call_id, codec_name)
 		end
 	end
 
+	configure_audio(device, device.audio_settings.data)
 	return device:send_command(string.format('AT+QIMSCFG="speech_codec",%d,%d', desired_codec, call_id))
 end
 
@@ -1274,7 +1414,10 @@ function Mapper:unsolicited(device, data, sms_data) --luacheck: no unused args
 			device:send_event("mobiled", event_data)
 		end
 		return true
-	elseif prefix == "+QNWLOCK" or prefix == "+QUSIM" or prefix == "+CGEV" then
+	elseif prefix == "+CGEV" and message:match('NW DETACH') then
+		device.runtime.log:warning("Received network detach indication")
+		return true
+	elseif prefix == "+QNWLOCK" or prefix == "+QUSIM" then
 		return true
 	elseif prefix == "+QIND" then
 		if message == "SMS DONE" or message == "PB DONE" then
@@ -1324,14 +1467,19 @@ function Mapper:unsolicited(device, data, sms_data) --luacheck: no unused args
 	elseif prefix == "^DSCI" then
 		local call_id, direction, call_state, mode, remote_party, number_type = message:match('(%d+),(%d+),(%d+),(%d+),(.-),(%d+)')
 		call_id = tonumber(call_id)
-		if call_id and voice.clcc_mode[mode] == "voice" then
+		local call_type = dsci_call_type[mode]
+		if call_id and ( call_type == "voice" or call_type == "emergency" ) then
 			local current_dsci_call_state = dsci_call_states[call_state].call_state
 			device.calls[call_id] = device.calls[call_id] or {}
 			device.calls[call_id].remote_party = remote_party
 			device.calls[call_id].direction = voice.clcc_direction[direction]
 			device.calls[call_id].number_format = voice.clcc_number_type[number_type]
-
-			device.runtime.log:debug("Processing DSCI: call_id=%s, call_state=%s, remote_party=%s", tostring(call_id), tostring(current_dsci_call_state), tostring(remote_party))
+			device.calls[call_id].call_type = call_type
+			if call_type == "emergency" and not device.calls[call_id].emergency then
+				device.calls[call_id].emergency = true
+				device.runtime.log:debug("call with module_call_id=%d and mmpbx_call_id= %s is an emergency call" , call_id, tostring(device.calls[call_id].mmpbx_call_id))
+			end
+			device.runtime.log:debug("Processing DSCI: call_id=%d, call_state=%s, remote_party=%s, call_type=%s", call_id, tostring(current_dsci_call_state), tostring(remote_party), call_type)
 
 			-- sip:mmtel is the remote party when we are getting connected to the conference server.
 			-- if device.conference exists and sip:mmtel is the remote party it means that this is the first conference server related ^DSCI message
@@ -1575,6 +1723,7 @@ function Mapper:unsolicited(device, data, sms_data) --luacheck: no unused args
 					call_id = call.mmpbx_call_id,
 					event = "data_call",
 				})
+				configure_audio(device, device.audio_settings.data)
 			end
 		end
 
@@ -1612,8 +1761,9 @@ function Mapper:set_attach_params(device, profile)
 	if not device:send_command(string.format('AT+CGDCONT=1,"%s","%s"', pdptype, apn)) then
 		return nil, "Failed to set attach parameters"
 	end
-	if device.cops_command then
-		device:send_command(device.cops_command, 60000)
+	if device.cops_command and not device.cops_pending then
+		device.cops_pending = true
+		device:start_command(device.cops_command, 60000)
 	end
 
 	return true
@@ -1641,11 +1791,16 @@ end
 
 function Mapper:handle_event(device, message)
 	if message.event == "command_finished" then
-		if message.command == "AT+CGATT=1" then
+		if message.command == device.cops_command then
+			if not device:poll_command() then
+				device.runtime.log:notice("Network selection failed")
+			end
+			device.cops_pending = nil
+		elseif message.command == "AT+CGATT=1" then
 			if not device:poll_command() then
 				device.runtime.log:notice("Attach failed")
 			end
-			device.attach_pending = false
+			device.attach_pending = nil
 		end
 
 		if device.firmware_upgrade_path then
@@ -1654,7 +1809,9 @@ function Mapper:handle_event(device, message)
 		end
 	elseif message.event == "command_cleared" then
 		if message.command == "AT+CGATT=1" then
-			device.attach_pending = false
+			device.attach_pending = nil
+		elseif message.command == device.cops_command then
+			device.cops_pending = nil
 		end
 
 		if device.firmware_upgrade_path then
@@ -1663,7 +1820,7 @@ function Mapper:handle_event(device, message)
 		end
 	elseif message.event == "async_chunk_received" then
 		if device.firmware_upload then
-			local write_timeout = 2 -- s
+			local write_timeout = 5 -- s
 			local limited_source = atchannel.limited_source(device.firmware_upload.async_source, message.num_bytes)
 			if limited_source then
 				local write_command = string.format('AT+QFWRITE=%s,%d,%d', device.firmware_upload.file_handle, message.num_bytes, write_timeout)
@@ -1759,6 +1916,8 @@ local function is_emergency_number(device, number)
 end
 
 function Mapper:dial(device, number)
+	configure_audio(device, device.audio_settings.voice)
+
 	local ret = device:send_command(string.format("ATD%s;", number))
 	if ret then
 		ret = device:send_multiline_command("AT+CLCC", "+CLCC:")
@@ -1862,6 +2021,7 @@ function Mapper:accept_call(device, mmpbx_call_id)
 			end
 
 			device.runtime.log:debug("Accept call: mmpbx_call_id= %s !!!!!", tostring(mmpbx_call_id))
+			configure_audio(device, device.audio_settings.voice)
 			return device:send_command("AT+CHLD=2", 5000)
 		end
 	end
@@ -1881,6 +2041,34 @@ local function find_module_call_id(calls, mmpbx_call_id)
 			return id, call
 		end
 	end
+end
+
+local function check_calls_status_and_correct(device)
+	local ret = device:send_multiline_command("AT+CLCC", "+CLCC:")
+
+	for module_call_id, call in pairs(device.calls) do
+		module_call_id = tonumber(module_call_id)
+		local keep_module_call_id = false
+		for _, clcc_call in pairs(ret or {}) do
+			local clcc_module_call_id = clcc_call:match('%+CLCC:%s*(%d+),%d+,%d+,%d+,%d+,".-",%d+')
+			if clcc_module_call_id then
+				if tonumber(clcc_module_call_id) == module_call_id then
+					keep_module_call_id = true
+					device.runtime.log:debug("confcall timeout cleaning actions: keep module call id = %d", module_call_id)
+					break
+				end
+			end
+		end
+		if not keep_module_call_id then
+			call.release_reason = "normal"
+			call.call_state = "disconnected"
+			send_call_disconnect_event(device, call)
+			device.runtime.log:debug("confcall timeout cleaning actions: release module call id = %d, mmpbx_call_id= %d", module_call_id, call.mmpbx_call_id)
+			device.calls[module_call_id] = nil
+		end
+	end
+	device.runtime.log:debug("AT+CHLD=3 timeout repair actions executed!!!!!")
+	return true
 end
 
 function Mapper:multi_call(device, mmpbx_call_id, action, mmpbx_second_call_id)
@@ -1970,6 +2158,10 @@ function Mapper:multi_call(device, mmpbx_call_id, action, mmpbx_second_call_id)
 		if err == "cme error" then
 			device.runtime.log:debug("Multi call: media state of module_call_id_to_release = %s", tostring(device.calls[module_call_id_to_release].media_state))
 			return nil, "Conference setup error, AT+CHLD=3 returned cme error"
+
+		elseif  err == "timeout" then
+			check_calls_status_and_correct(device)
+			return nil, "Conference setup error, AT+CHLD=3 timed out"
 		end
 
 		if device.calls[module_call_id_to_keep].remote_party ~= "sip:mmtel" and device.calls[module_call_id_to_keep].remote_party ~= "mmtel" then
@@ -2078,19 +2270,17 @@ function Mapper:get_voice_info(device, info)
 end
 
 function Mapper:set_emergency_numbers(device, numbers)
-	local current_numbers = get_emergency_numbers(device, false)
-	for _, number in pairs(current_numbers) do
-		if number ~= "911" and number ~= "112" then
-			device:send_command(string.format('AT+QECCNUM=2,0,"%s"', number))
-			device:send_command(string.format('AT+QECCNUM=2,1,"%s"', number))
-		end
-	end
+	-- This commit is a temoprary hack for the telstra delivery of MR1.5. The deleting of the existing emergency numbers is removed
+	-- This is only done for the 18.1.c branch
+	device.runtime.log:debug('set_emergency_numbers: setting emergeny numbers START')
 	for _, number in pairs(numbers) do
+		device.runtime.log:debug('set_emergency_numbers: print number= %s', tostring(number))
 		if number ~= "911" and number ~= "112" then
 			device:send_command(string.format('AT+QECCNUM=1,0,"%s"', number))
 			device:send_command(string.format('AT+QECCNUM=1,1,"%s"', number))
 		end
 	end
+	device.runtime.log:debug('set_emergency_numbers: setting emergeny numbers THE END')
 end
 
 local Interface = {}

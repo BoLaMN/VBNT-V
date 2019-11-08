@@ -69,13 +69,8 @@ local function ping(user)
 
   if timeout < 1 then timeout = 1 end
 
-  -- Webui has option for ping and ping6 so using a local variable to store iptype
-  -- ping represents IPv4 and ping6 represents IPv6
-  -- For other users ip type will always be ping i.e. IPv4
   local ipType = "ping"
-  if user == "webui" then
-    ipType = cursor:get(config, user, "iptype") == "IPv6" and "ping6" or "ping"
-  end
+  ipType = cursor:get(config, user, "iptype") == "IPv6" and "ping6" or "ping -4"
 
   -- do ping and capture output
   local cmdline = format("%s %s -c %d -s %d -W %d %s 2>&1", ipType, iface_option, count, size, timeout, host)
@@ -102,8 +97,7 @@ local function ping(user)
   --    ping: bad address 'foo.bar'
   if match(output,"100%% packet loss") then
     state = "Complete"
-  end
-  if match(output, "^ping: bad address") then
+  elseif match(output, "^ping: bad address") or match(output, "^ping6: bad address") then
     state = "Error_CannotResolveHostName"
   elseif match(output, "ping: sendto: Network is unreachable") then
     -- IGD specifications do not have Error_NoRouteToHost, hence we need to distinguish Device2 and IGD for Error_NoRouteToHost

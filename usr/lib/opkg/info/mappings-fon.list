@@ -3,6 +3,7 @@
 /usr/share/transformer/commitapply/uci_hotspotd.ca
 /usr/share/transformer/mappings/bbf/XTelstraIWiFi.map
 /usr/share/transformer/mappings/bbf/XTelstraIWiFi.L2TP.PPPConnection.map
+/usr/share/transformer/mappings/rpc/services.x_vfwifi.map
 /usr/share/transformer/mappings/igd/X_000E50.Stats.map
 /usr/share/transformer/mappings/uci/hotspotd.map
 /usr/lib/lua/transformer/shared/fon_helper.lua

@@ -11,7 +11,7 @@
     local setmetatable = setmetatable
     local items = {
         {"/home.lp", "home", T"HOME",
-         setmetatable({ ["/home.lp"] = true }, untaint_mt) },
+         setmetatable({ ["/home.lp"] = true, ["/booster.lp"] = true, ["/wifidevices.lp"] = true }, untaint_mt) },
         {"/broadband.lp", "broadband", T"BROADBAND",
          setmetatable({ ["/broadband.lp"] = true }, untaint_mt) },
         {"/wifi.lp?radio=2.4", "wifi", T"WI-FI",

@@ -209,6 +209,7 @@ local getAllFromUci = uciHelper.getall_from_uci
 local configChanged = false
 local findLanWanInterfaces = mapper("nwcommon").findLanWanInterfaces
 local wanconn = require("transformer.shared.wanconnection")
+local list = require("transformer.shared.common.list")
 local match = string.match
 local commitApply = commitapply
 local dmordering = require 'transformer.shared.models.dmordering'
@@ -248,22 +249,6 @@ local lookUp = {
   wrr = "WRR",
   wfq = "WFQ",
 }
-
-local function convertStringToTable(str)
-  local tbl={}
-  -- uci entries of type "list" are interpretted as 'table' when they have multiple elements,
-  -- and interpretted as 'string' when they have a single element. So, handle 'table' types before processing.
-  if type(str) == 'table' then
-    return str
-  end
-  -- if the input string is a single element, then only one entry is added into the table
-  -- if it is a comma separated list, then all the comma separated entries are added into the table.
-  for item in string.gmatch(str or "", "([^,]+),?") do
-     tbl[#tbl + 1] = item
-  end
-  -- If the input is an empty string, then we return a table with one element containing ""
-  return #tbl > 0 and tbl or {""}
-end
 
 Multi_QueueManagement_Queue_i_.entries = function(mapping)
   qosBinding.sectionname = "class"
@@ -370,10 +355,10 @@ Multi_QueueManagement_Queue_i_.get = {
     return key
   end,
   UsMaxBW = function(mapping, param, key)
-    return getUciValue(key, "pbr", "0")
+    return getUciValue(key, "peak_bit_rate", "0")
   end,
   UsMinBW = function(mapping, param, key)
-    return getUciValue(key, "mbr", "0")
+    return getUciValue(key, "min_bit_rate", "0")
   end
 }
 
@@ -392,7 +377,7 @@ end
 
 Multi_QueueManagement_Queue_i_.set = {
   TrafficClasses = function(mapping, param, value, key)
-    local trafficTable = convertStringToTable(value)
+    local trafficTable = list.ensureList(value)
     setUciValue(key, queueParamMap[param], trafficTable)
   end,
   QueueWeight = function(mapping, param, value, key)
@@ -417,10 +402,10 @@ Multi_QueueManagement_Queue_i_.set = {
     end)
   end,
   UsMaxBW = function(mapping, param, value, key)
-    setBandwidth(key, "pbr", value)
+    setBandwidth(key, "peak_bit_rate", value)
   end,
   UsMinBW = function(mapping, param, value, key)
-    setBandwidth(key, "mbr", value)
+    setBandwidth(key, "min_bit_rate", value)
   end,
 }
 

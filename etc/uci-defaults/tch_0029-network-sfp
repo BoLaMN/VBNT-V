@@ -17,22 +17,22 @@ sfp=`uci get env.rip.sfp`
 
 if [ "$sfp" = "1" ] ; then
 	uci set network.sfp=interface
-	uci set network.sfp.proto=static
-	uci set network.sfp.ifname=eth4
-	uci set network.sfp.ipaddr=192.168.2.2
-	uci set network.sfp.netmask=255.255.255.0
+	uci set network.sfp.proto='static'
+	uci set network.sfp.ifname='eth4'
+	uci set network.sfp.ipaddr='192.168.2.2'
+	uci set network.sfp.netmask='255.255.255.0'
 
 	uci set network.sfptag=interface
-	uci set network.sfptag.proto=static
-	uci set network.sfptag.ifname=vlan_sfp
-	uci set network.sfptag.ipaddr=192.168.10.2
-	uci set network.sfptag.netmask=255.255.255.0
+	uci set network.sfptag.proto='static'
+	uci set network.sfptag.ifname='vlan_sfp'
+	uci set network.sfptag.ipaddr='192.168.10.2'
+	uci set network.sfptag.netmask='255.255.255.0'
 
 	uci set network.vlan_sfp=device
-	uci set network.vlan_sfp.ifname=eth4
-	uci set network.vlan_sfp.name=vlan_sfp
-	uci set network.vlan_sfp.type=8021q
-	uci set network.vlan_sfp.vid=2
+	uci set network.vlan_sfp.ifname='eth4'
+	uci set network.vlan_sfp.name='vlan_sfp'
+	uci set network.vlan_sfp.type='8021q'
+	uci set network.vlan_sfp.vid='2'
 
 	uci commit network
 fi

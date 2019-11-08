@@ -1,6 +1,6 @@
 Package: iptables-mod-ipset
-Version: 1.4.21-2
-Depends: libc, libssp, iptables
+Version: 1.6.1-1
+Depends: libc, libssp, librt, libpthread, iptables
 Source: package/network/utils/iptables
 License: GPL-2.0
 Section: net

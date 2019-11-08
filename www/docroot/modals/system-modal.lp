@@ -31,7 +31,7 @@ local function set_firewall(target)
    -- go through rules to find SSH-wan anonymous section name
    local rules = proxy.get("uci.firewall.rule.")
    for _,v in ipairs(rules) do
-      if v.param == "name" and string.untaint(v.value) == "SSH_wan" then
+      if v.param == "name" and v.value == "SSH-wan" then
          proxy.set(v.path.."target", target)
          return
       end
@@ -143,7 +143,6 @@ local gVIPIL = post_helper.getValidationIfPropInList
 local vSII = post_helper.validateStringIsIP
 local vB = post_helper.validateBoolean
 local vSIPR = post_helper.validateStringIsPortRange
-local gOV = post_helper.getOptionalValidation
 local vNES = post_helper.validateNonEmptyString
 
 local function valid_comma_string(value)
@@ -157,11 +156,35 @@ local function valid_comma_string(value)
     return true
 end
 
+local function syslogValidate(ipaddr, object)
+  if object.syslog_present == '1' then
+    if object.syslog_filter_sw == '0' then
+      local success, errmsg = vSII(ipaddr)
+      if not success then
+        return nil, errmsg
+      end
+    end
+  end
+  return true
+end
+
+local function syslogFilterValidate(ipaddr, object)
+  if object.syslog_present == '1' then
+    if object.syslog_filter_sw == '1' then
+      local success, errmsg = vSII(ipaddr)
+      if not success then
+        return nil, errmsg
+      end
+    end
+  end
+  return true
+end
+
 local syslog_valid = {
   syslog_present = vB,
   syslog_filter_sw = vB,
-  syslog_ip = gVIPIL(gVIPIL(gOV(vSII), "syslog_filter_sw", {"0"}), "syslog_present", {"1"}),
-  syslog_filter_ip = gVIPIL(gVIPIL(gOV(vSII), "syslog_filter_sw", {"1"}), "syslog_present", {"1"}),
+  syslog_ip = syslogValidate,
+  syslog_filter_ip = syslogFilterValidate,
   syslog_port = gVIPIL(vSIPR, "syslog_present", {"1"}),
 }
 local syslog_Params, helpmsg = post_helper.handleQuery(syslog_Params, syslog_valid)
@@ -281,10 +304,12 @@ ngx.print(ui_helper.createMessages(message_helper.popMessages()))
           class = "alert-info monitor-syslog_present monitor-1 monitor-syslog_filter_sw monitor-1"
         },
       }
-      html[#html + 1] = ui_helper.createAlertBlock(T"Every filter is a regular expression string; Start with '!' to invert selection", filter_warning)
-      html[#html + 1] = format('<div class="control-group"><label class="control-label monitor-syslog_present monitor-1 monitor-syslog_filter_sw monitor-1">%s</label><div class="controls">', T"Syslog filters")
-      html[#html+1] = ui_helper.createTable(filter_columns, filter_data, filter_options, Sysloginputip_fltr_fltr, filter_helpmsg)
-      html[#html + 1] = '</div></div>'
+      if syslog_filter_sw == "1" then
+        html[#html + 1] = ui_helper.createAlertBlock(T"Every filter is a regular expression string; Start with '!' to invert selection", filter_warning)
+        html[#html + 1] = format('<div class="control-group"><label class="control-label monitor-syslog_present monitor-1 monitor-syslog_filter_sw monitor-1">%s</label><div class="controls">', T"Syslog filters")
+        html[#html+1] = ui_helper.createTable(filter_columns, filter_data, filter_options, Sysloginputip_fltr_fltr, filter_helpmsg)
+        html[#html + 1] = '</div></div>'
+      end
       html[#html+1] = ui_helper.createInputText(T"Port", "syslog_port", syslog_Params["syslog_port"], Sysloginput, helpmsg["syslog_port"])
       ngx.print(html)
       ngx.print('\
@@ -295,28 +320,6 @@ ngx.print(ui_helper.createMessages(message_helper.popMessages()))
   var refreshTimeOut = 5000;\
   var refreshDelay = 3000;\
   var target = $(".modal form").attr("action");\
-\
-  function wait_for_webserver_running() {\
-    $.ajax({ url: "/", timeout: refreshTimeOut, data: { check: "1"} })\
-    .done(function(data) {\
-      document.open("text/html");\
-      document.write(data);\
-      document.close();\
-    })\
-    .fail(function() {\
-      window.setTimeout(wait_for_webserver_running, refreshDelay);\
-    });\
-  }\
-\
-  function wait_for_webserver_down() {\
-    $.ajax({ url: target, timeout: refreshTimeOut, data: { check: "1"}  })\
-    .done(function() {\
-      window.setTimeout(wait_for_webserver_down, refreshDelay);\
-    })\
-    .fail(function() {\
-      window.setTimeout(wait_for_webserver_running, refreshDelay);\
-    });\
-  }\
 \
   function resetreboot(msg, msg_dst, action) {\
     msg_dst.after(msg);\

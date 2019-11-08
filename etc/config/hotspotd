@@ -24,10 +24,6 @@ config wifi-iface 'FON2G'
   option enable '1'
   option iface 'wl0_3'
 
-config wifi-iface 'TLS5G'
-  option enable '0'
-  option iface 'wl1_2'
-
 config wifi-iface 'FON5G'
   option enable '0'
   option iface 'wl1_3'

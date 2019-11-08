@@ -216,7 +216,6 @@ end
 Multi_WiFi_NeighboringWiFiDiagnostic_Result_i_.entries = function(mapping, parentKey)
   local key
   radioList = nil
-  bssList = {}
   local  entries = {}
   -- For IGD entries are formed only if the access point is not remotely managed
   -- for remotely managed accesspoints parentkey would be "ap_remote eg: wl0_remote)

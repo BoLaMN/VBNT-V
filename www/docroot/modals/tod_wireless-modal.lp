@@ -21,6 +21,8 @@ local tod = parental_helper.getTodwifi()
 local tod_columns = tod.columns
 local untaint_mt = require("web.taint").untaint_mt
 local session = ngx.ctx.session
+local telstra_helper = require("telstra_helper")
+local symbolv1 = telstra_helper.symbolnamev1
 
 local validDays = post_helper.getValidateInEnumSelect(tod.days)
 local validateBoolean = post_helper.validateBoolean
@@ -294,7 +296,7 @@ session:store("timer_data", timer_data)
     ');  if ngx.var.request_method == "POST" and (ngx.req.get_post_args().action == "TABLE-NEW" or ngx.req.get_post_args().action == "TABLE-EDIT") then  ngx.print('\
       <script type="text/javascript">\
         var warning = \'<div class="control-group"><div style="padding-top: 12px;" class="controls"><span class="alert">\'\
-                      +\'');  ngx.print( T"The Gateway will block/allow all the time if none of the days are selected" ); ngx.print('</span></div></div>\';\
+                      +\'');  ngx.print( T("The " .. symbolv1 .. " will block/allow all the time if none of the days are selected") ); ngx.print('</span></div></div>\';\
         $(\'#stoptime\').parent().parent().after(warning);\
       </script>\
     ');  end  ngx.print('\

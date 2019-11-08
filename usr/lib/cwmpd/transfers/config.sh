@@ -1,5 +1,6 @@
 #!/bin/sh
 
+. /usr/lib/cwmpd/transfers/common_functions.sh
 unset CDPATH
 
 SCRIPT=$0
@@ -212,10 +213,11 @@ if [ "$TRANSFER_ACTION" = "start" ]; then
       #wget $URL -O $DLFILE
       #replaced wget by curl to support https download
       local user_passwd=$(get_usr_passwd "$TRANSFER_USERNAME" "$TRANSFER_PASSWORD")
+      local client_auth_arguments=$(get_client_auth_arguments)
       if [ -n "$user_passwd" ]; then
-         curl -u "$user_passwd" "$TRANSFER_URL"  -S -s --capath /etc/ssl/certs -o $DLFILE
+         curl -u "$user_passwd" "$TRANSFER_URL"  -S -s --capath /etc/ssl/certs -o "$DLFILE" $client_auth_arguments
       else
-         curl "$TRANSFER_URL" -S -s --capath /etc/ssl/certs -o $DLFILE
+         curl "$TRANSFER_URL" -S -s --capath /etc/ssl/certs -o "$DLFILE" $client_auth_arguments
       fi
 
       if [ $? -ne 0 ]; then

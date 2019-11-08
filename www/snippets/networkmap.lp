@@ -1,8 +1,7 @@
 --pretranslated: do not change this file
  
 
-local format,        find,        sub,        untaint =
-string.format, string.find, string.sub, string.untaint
+local format, find, sub, untaint, match = string.format, string.find, string.sub, string.untaint, string.match
 local floor, ipairs = math.floor, ipairs
 
 -- Localization
@@ -10,6 +9,7 @@ gettext.textdomain('webui-telstra')
 
 local content_helper = require("web.content_helper")
 local proxy = require("datamodel")
+local lp = require("web.lp")
 
 local dcols = {
     {--[1]
@@ -118,7 +118,7 @@ for k,v in ipairs(devices) do
             iswireless = "0"
         end
 
-        local html = string.format('<div class="device"><a href=/device.lp?mac=%s&wireless=%s&ticked=%s><img src="img/dev_laptop%s.gif"/></a><div class="deviceinfo right">%s</div><div><br /></div></div>', v[4], iswireless, ticked, ticked, tooltip)
+        local html = string.format('<div class="device"><a href=/device.lp?mac=%s&wireless=%s&ticked=%s><img src="img/dev_laptop%s.gif"/></a><div class="showdeviceinfo right">%s</div><div><br /></div></div>', v[4], iswireless, ticked, ticked, tooltip)
 
         if v[5] == "wireless" then
             if uri == "/wifi.lp" then
@@ -134,7 +134,7 @@ for k,v in ipairs(devices) do
                     wireless[#wireless+1] = html
                 end
             else
-                if ((v[8]=="wl0") or (v[8]=="wl1")) then
+                if ((v[8]=="wl0") or (v[8]=="wl1") or match(v[8], "wds%d+_%d+_%d+")) then
                     wireless[#wireless+1] = html
                 end
             end
@@ -206,7 +206,7 @@ for k,v in ipairs(usbdevices) do
 -- don't show embedded Huawei mobile on basic GUI
     if device_info.model ~= env["model"] or v[6] ~= device_info.vid or v[7] ~= device_info.pid then
         tooltip = string.format("Product Name: %s<br />Manufacturer: %s<br />Port: %s", v[1], v[2], port)
-        usb[#usb+1] = string.format('<div class="device"><img src="img/dev_usb.png"/><div class="deviceinfo right">%s</div><div><br /></div></div>', tooltip)
+        usb[#usb+1] = string.format('<div class="device"><img src="img/dev_usb.png"/><div class="showdeviceinfo right">%s</div><div><br /></div></div>', tooltip)
     end
 end
 
@@ -237,7 +237,7 @@ for _,v in ipairs(dectdevices) do
 
     if v[3] == "Located" then
         tooltip = string.format("Handset ID: %s<br />Friendly Name: %s>", v[1], v[2])
-        dect[#dect+1] = string.format('<div class="device"><img src="img/dev_dectphone.png"/><div class="deviceinfo right">%s</div><div><br /></div></div>', tooltip)
+        dect[#dect+1] = string.format('<div class="device"><img src="img/dev_dectphone.png"/><div class="showdeviceinfo right">%s</div><div><br /></div></div>', tooltip)
     end
 end
 
@@ -277,7 +277,7 @@ elseif wan_intf == "wwan" then
 end
 
 local wanhtml = {}
-if content_wwan.ipaddr:len() ~= 0 then
+if content.wanip:len() ~= 0 then
    wanhtml = string.format('WAN IP: <font color="green"><strong>%s</strong></font><br />Conn. type: %s', content.wanip, wan_type)
 else
    wanhtml = string.format('Conn. type: %s', wan_type)
@@ -416,6 +416,11 @@ end
   ngx.print('\
 \
 <div class="container">\
+   ');  
+      if uri == "/home.lp" then
+         lp.include("tabs-home.lp")
+      end
+     ngx.print('\
     <div class="row">\
         <br />\
         <div class="networkmap span11" id="networkmap">\

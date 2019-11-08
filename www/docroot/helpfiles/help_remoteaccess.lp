@@ -1,5 +1,9 @@
 --pretranslated: do not change this file
- ngx.print('\r\
+ 
+local telstra_helper = require("telstra_helper")
+local symbolv1 = telstra_helper.symbolnamev1
+local symbolv2 = telstra_helper.symbolnamev2
+  ngx.print('\r\
 <h3>Set up Remote Web Access</h3>\r\
 \r\
 <div class="container span7">\r\
@@ -19,7 +23,7 @@
 </div>\r\
 \r\
 <div class="container span7">\r\
-<legend>Step 5:</legend>&nbsp;&nbsp;After saving, you will see the username password URL info for the remote access to your T Gateway\r\
+<legend>Step 5:</legend>&nbsp;&nbsp;After saving, you will see the username password URL info for the remote access to your ');  ngx.print( symbolv1 ); ngx.print('\r\
 </div>\r\
 \r\
 '); 

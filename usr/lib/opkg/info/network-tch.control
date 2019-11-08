@@ -1,6 +1,6 @@
 Package: network-tch
 Version: 1.0-1
-Depends: libc, libssp
+Depends: libc, libssp, librt, libpthread
 Source: feeds/technicolor/network-tch
 Section: opt
 Maintainer: Technicolor <linuxgw@technicolor.com>

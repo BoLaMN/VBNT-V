@@ -5,7 +5,11 @@ lp.setpath("/www/snippets/")
 lp.include("header.lp")
 lp.include("help_menubar.lp")
   ngx.print('\
-\
+');  
+local telstra_helper = require("telstra_helper")
+local symbolv1 = telstra_helper.symbolnamev1
+local symbolv2 = telstra_helper.symbolnamev2
+  ngx.print('\
 <div class="container toplevel" style="width:830px">\
     <div class="row">\
         <div class="span11">\
@@ -15,7 +19,7 @@ lp.include("help_menubar.lp")
             <div class="span7 container">\
                 <div class="container span7">\
                     <br>\
-                    <p style="margin: 0 0 0">In this section you will be able to change/view settings that are related to user that is accessing the T-Gateway Web Management Interface</p>                \
+                    <p style="margin: 0 0 0">In this section you will be able to change/view settings that are related to user that is accessing the ');  ngx.print( symbolv1 ); ngx.print(' Web Management Interface</p>\
                     \
                     <div class="container span7">\
                         <legend>Step 1:</legend>&nbsp;&nbsp;Click on \'User Settings\' tab on the menu bar\

@@ -51,6 +51,7 @@ local Multi_X_000E50_WANSensing_ = {
 local uci_helper = mapper("ucihelper")
 local binding={config="wansensing", sectionname="global"}
 local binding_mobiled = {config = "mobiled", sectionname = "device"}
+local binding_supervision = {config = "supervision", sectionname = "global", option = "mode"}
 local transactions = {}
 
 ----------------------------------------------------------
@@ -83,13 +84,13 @@ Multi_X_000E50_WANSensing_.get = {
     return uci_helper.get_from_uci(binding)
   end,
   WANSupervision = function(mapping)
-    binding.option = "supervision_mode"
-    return uci_helper.get_from_uci(binding)
+    return uci_helper.get_from_uci(binding_supervision)
   end,
 }
 
 Multi_X_000E50_WANSensing_.getall = function(mapping)
   local allValues = uci_helper.getall_from_uci(binding)
+  local mode = uci_helper.get_from_uci(binding_supervision)
   return {
     Enable = allValues.enable or '',
     L2Type = allValues.l2type or '',
@@ -97,7 +98,7 @@ Multi_X_000E50_WANSensing_.getall = function(mapping)
     InitMode = allValues.initmode or '',
     AutoFailover = allValues.autofailover or '0',
     AutoFailoverMaxWait = allValues.autofailovermaxwait or '',
-    WANSupervision = allValues.supervision_mode or ""
+    WANSupervision = mode or ""
   }
 end
 
@@ -161,9 +162,8 @@ Multi_X_000E50_WANSensing_.set = {
     end
   end,
   WANSupervision = function(mapping, param, value)
-    binding.option = "supervision_mode"
-    uci_helper.set_on_uci(binding, value, commitapply)
-    transactions[binding.config] = true
+    uci_helper.set_on_uci(binding_supervision, value, commitapply)
+    transactions[binding_supervision.config] = true
   end,
 }
 

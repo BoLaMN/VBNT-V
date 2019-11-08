@@ -1,6 +1,6 @@
 Package: conf-hostmanager
 Version: 1.0
-Depends: libc, libssp, hostmanager
+Depends: libc, libssp, librt, libpthread, hostmanager
 Source: feeds/custo/conf-hostmanager
 Section: conf-hostmanager
 Maintainer: Technicolor <linuxgw@technicolor.com>

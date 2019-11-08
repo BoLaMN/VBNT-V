@@ -279,11 +279,16 @@ function Device:get_model()
 	local ret = self:send_singleline_command('AT+CGMM', '+CGMM:')
 	if ret then
 		return string.match(ret, '+CGMM:%s?"?(.-)"?$')
-	else
-		-- Some modules respond without a prefix
-		ret = self:send_singleline_command('AT+CGMM', '')
-		if ret then return ret end
 	end
+
+	-- Some modules respond without a prefix. In this case do not return lines that look like unsolicted messages.
+	for _ = 1, 5 do
+		ret = self:send_singleline_command('AT+CGMM', '')
+		if ret and not ret:match('^%p%u+:') then
+			return ret
+		end
+	end
+
 	return nil
 end
 
@@ -291,11 +296,16 @@ function Device:get_manufacturer()
 	local ret = self:send_singleline_command('AT+CGMI', '+CGMI:')
 	if ret then
 		return string.match(ret, '+CGMI:%s?"?(.-)"?$')
-	else
-		-- Some modules respond without a prefix
-		ret = self:send_singleline_command('AT+CGMI', '')
-		if ret then return ret end
 	end
+
+	-- Some modules respond without a prefix. In this case do not return lines that look like unsolicted messages.
+	for _ = 1, 5 do
+		ret = self:send_singleline_command('AT+CGMI', '')
+		if ret and not ret:match('^%p%u+:') then
+			return ret
+		end
+	end
+
 	return nil
 end
 

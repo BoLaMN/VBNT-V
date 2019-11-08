@@ -7,3 +7,7 @@ config atmdevice 'atm_8_35'
         option vci '35'
         option path 'fast'
         option enc 'llc'
+	option td 'td_ubr'
+
+config trafficdesc 'td_ubr'
+        option servicecat 'ubr'

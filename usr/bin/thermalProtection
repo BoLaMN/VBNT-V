@@ -19,9 +19,15 @@ local proxy = require("datamodel")
 local ubus = require("ubus")
 local uci_cursor = require("uci").cursor(nil, "/var/state")
 local radio_thermal_map = require("thermal-protection.radio_thermal_map")
-
+local lfs = require("lfs")
+local temp_file_name = "temp1_input"
 local ubus_conn
 ubus_conn = ubus.connect()
+
+if (type(arg[1]) ~= "string" or type(arg[2]) ~= "string") then
+  log:error("error temp1_file paths for thermal chips")
+  return nil
+end
 
 if not ubus_conn then
   log:error("Failed to connect to ubus")
@@ -36,14 +42,16 @@ local admin_state,oper_state
 --           and address mapping . if you don't know the address, please check
 --           with hardware team
 
-local function getTemperature(wifi_radio)
-	local temp_file = io.open("/sys/devices/i2c-0/"..radio_thermal_map[wifi_radio].."/temp1_input", r)
-	if not temp_file then
-		return nil
-	end
-	local tmp75_output = temp_file:read("*all")
-	temp_file:close()
-	return tonumber(tmp75_output) / 1000
+local function getTemperature(path)
+  local temp_file = io.open(path, r)
+  if not temp_file then
+    log:error("error open temp1_file for thermal chip")
+    return nil
+  end
+
+  local tmp75_output = temp_file:read("*all")
+  temp_file:close()
+  return tonumber(tmp75_output) / 1000
 end
 
 -- end of get the temperature
@@ -89,42 +97,49 @@ if thermal_protection_enabled == "1" then
     local upper_threshold  = proxy.get(thermal_upper_threshold)[1].value
     local lower_threshold  = proxy.get(thermal_lower_threshold)[1].value
     local overheat_2G, overheat_5G = false , false
-	if thermalState == "1" then
+    if thermalState == "1" then
         overheat_2G = true
         overheat_5G = true
-	end
-    for radio in pairs(radio_thermal_map) do
-        local temp = getTemperature(radio)
-        local curr_radio_admin_state = "rpc.wireless.radio.@" .. radio ..".admin_state"
-        local curr_radio_oper_state = "rpc.wireless.radio.@" .. radio ..".oper_state"
-        local state = proxy.get(curr_radio_admin_state, curr_radio_oper_state)
-        if state ~= nil then
-            admin_state = state[1].value
-            oper_state = state[2].value
-        end
-		-- if the current temperature is higher then pre-defined threshold
-		-- then shutdown the wireless radio
-		if (temp ~= nil and tonumber(temp) > tonumber(upper_threshold)) then
-            overheat_2G = true
-            overheat_5G = true
-			if (admin_state == "1" and oper_state == "1" and thermalState == "0") then
-                switchOperState("1")
+    end
+    for radio,subpath in pairs(radio_thermal_map) do
+        if (type(subpath) == "string") then
+            local temp = nil
+            if (string.find(arg[1],subpath) ~= nil) then
+                temp = getTemperature(arg[1])
+            elseif (string.find(arg[2],subpath) ~= nil) then
+                temp = getTemperature(arg[2])
             end
-		elseif (temp ~= nil and tonumber(temp) < tonumber(lower_threshold)) then
-            if radio == "radio_2G" then
-                overheat_2G = false
-            else
-                overheat_5G = false
+            local curr_radio_admin_state = "rpc.wireless.radio.@" .. radio ..".admin_state"
+            local curr_radio_oper_state = "rpc.wireless.radio.@" .. radio ..".oper_state"
+            local state = proxy.get(curr_radio_admin_state, curr_radio_oper_state)
+            if state ~= nil then
+                admin_state = state[1].value
+                oper_state = state[2].value
             end
-			if (admin_state == "1" and oper_state == "0" and thermalState == "1" and overheat_5G == false and overheat_2G == false) then
-                switchOperState("0")
+            -- if the current temperature is higher then pre-defined threshold
+            -- then shutdown the wireless radio
+            if (temp ~= nil and tonumber(temp) > tonumber(upper_threshold)) then
+                overheat_2G = true
+                overheat_5G = true
+                if (admin_state == "1" and oper_state == "1" and thermalState == "0") then
+                    switchOperState("1")
+                end
+            elseif (temp ~= nil and tonumber(temp) < tonumber(lower_threshold)) then
+                if radio == "radio_2G" then
+                    overheat_2G = false
+                else
+                    overheat_5G = false
+                end
+                if (admin_state == "1" and oper_state == "0" and thermalState == "1" and overheat_5G == false and overheat_2G == false) then
+                    switchOperState("0")
+                end
             end
         end
     end
-	-- send out the ubus event for thermalProtection
-	if (overheat_5G == true or overheat_2G == true) then
+    -- send out the ubus event for thermalProtection
+    if (overheat_5G == true or overheat_2G == true) then
         ubus_conn:send("thermalProtection",{ state="overheat" })
-	elseif (overheat_5G == false and overheat_2G == false) then
+    elseif (overheat_5G == false and overheat_2G == false) then
         ubus_conn:send("thermalProtection",{ state="operational" })
     end
 end

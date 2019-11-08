@@ -5,28 +5,40 @@
 
 TOD_LAN_ZONES=""
 chain_timeofday="timeofday_fw"
-timeofday_rule_index=0
 http_mark=""
-http_accept_mark=""
 mark_match_str=""
 accept_rule=""
 mask_value=""
+mac_filter="/usr/share/transformer/scripts/mac_filter.sh"
+
+setup_routing()
+{
+    while ip rule delete lookup tod 2>/dev/null; do true; done;
+    ip rule add fwmark ${http_mark} lookup tod
+    ip route flush table tod
+    ip route add local 0.0.0.0/0 dev lo table tod
+}
 
 create_tod_chain()
 {
     iptables -N ${chain_timeofday} || iptables -F ${chain_timeofday}
-
     ip6tables -N ${chain_timeofday} || ip6tables -F ${chain_timeofday}
+
+    iptables -t mangle -N ${chain_timeofday} || iptables -t mangle -F ${chain_timeofday}
+    ip6tables -t mangle -N ${chain_timeofday} || ip6tables -t mangle -F ${chain_timeofday}
+
+    iptables >/dev/null 2>&1 -t mangle -D PREROUTING -p tcp --dport 80 -m addrtype \! --dst-type LOCAL -j ${chain_timeofday}
+    iptables -t mangle -I PREROUTING 1 -p tcp --dport 80 -m addrtype \! --dst-type LOCAL -j ${chain_timeofday}
+
+    ip6tables >/dev/null 2>&1 -t mangle -D PREROUTING -p tcp --dport 80 -m addrtype \! --dst-type LOCAL -j ${chain_timeofday}
+    ip6tables -t mangle -I PREROUTING 1 -p tcp --dport 80 -m addrtype \! --dst-type LOCAL -j ${chain_timeofday}
 }
 
 create_zone_forward_rule()
 {
     local zone="$1"
 
-    [ "$accept_rule" = "1" ] && iptables -I zone_${zone}_forward -p tcp --dport 80 -m connmark --mark 0x0000000/0x${mask_value} -m comment --comment 'tod_accept_unblocked_http' -j CONNMARK --set-xmark $http_accept_mark
     iptables -I zone_${zone}_forward -m comment --comment 'Time-of-Day' -j ${chain_timeofday}
-
-    [ "$accept_rule" = "1" ] && ip6tables -I zone_${zone}_forward -p tcp --dport 80 -m connmark --mark 0x0000000/0x${mask_value} -m comment --comment 'tod_accept_unblocked_http' -j CONNMARK --set-xmark $http_accept_mark
     ip6tables -I zone_${zone}_forward -m comment --comment 'Time-of-Day' -j ${chain_timeofday}
 }
 
@@ -34,43 +46,30 @@ create_tod_rule_mac_block()
 {
     local src_mac="$1"
     local option_time="$2"
-    local index="$3"
 
-    iptables -I ${chain_timeofday} ${index} $mark_match_str -m mac --mac-source ${src_mac} ${option_time} -j reject
-    [ -n "$http_mark" ] && iptables -I ${chain_timeofday} ${index} -p tcp --dport 80 -m mac --mac-source ${src_mac} ${option_time} -j CONNMARK --set-xmark $http_mark
+    iptables -A ${chain_timeofday} $mark_match_str -m mac --mac-source ${src_mac} ${option_time} -j reject
+    [ -n "$http_mark" ] && iptables -t mangle -A ${chain_timeofday} -p tcp --dport 80 -m mac --mac-source ${src_mac} ${option_time} -j TPROXY --tproxy-mark "${http_mark}" --on-port 55556
 
-    ip6tables -I ${chain_timeofday} ${index} $mark_match_str -m mac --mac-source ${src_mac} ${option_time} -j reject
-    [ -n "$http_mark" ] && ip6tables -I ${chain_timeofday} ${index} -p tcp --dport 80 -m mac --mac-source ${src_mac} ${option_time} -j CONNMARK --set-xmark $http_mark
-}
+    ip6tables -A ${chain_timeofday} $mark_match_str -m mac --mac-source ${src_mac} ${option_time} -j reject
+    [ -n "$http_mark" ] && ip6tables -t mangle -A ${chain_timeofday} -p tcp --dport 80 -m mac --mac-source ${src_mac} ${option_time} -j TPROXY --tproxy-mark "${http_mark}" --on-port 55556
 
-check_append_rule()
-{
-    local rule=$1
-    local ipt=$2
-
-    [ -z "$rule" ] && return
-
-    ip${ipt}tables -C $rule
-    if [ "$?" = "1" ]; then
-         ip${ipt}tables -A $rule
-    fi
 }
 
 create_tod_rule_mac_allow()
 {
     local src_mac="$1"
     local option_time="$2"
-    local index="$3"
 
-    iptables -I ${chain_timeofday} ${index} -m mac --mac-source ${src_mac} ${option_time} -j RETURN
+    iptables -A ${chain_timeofday} -m mac --mac-source ${src_mac} ${option_time} -j RETURN
+    [ -n "$http_mark" ] && iptables -t mangle -A ${chain_timeofday} -m mac --mac-source ${src_mac} ${option_time} -j RETURN
+    [ -n "$http_mark" ] && iptables -t mangle -A ${chain_timeofday} -p tcp --dport 80 -m mac --mac-source ${src_mac} -j TPROXY --tproxy-mark "${http_mark}" --on-port 55556
+    iptables -A ${chain_timeofday} $mark_match_str -m mac --mac-source ${src_mac} -j reject
 
-    [ -n "$http_mark" ] && check_append_rule "${chain_timeofday} -p tcp --dport 80 -m mac --mac-source ${src_mac} -j CONNMARK --set-xmark $http_mark"
-    check_append_rule "${chain_timeofday} $mark_match_str -m mac --mac-source ${src_mac} -j reject"
+    ip6tables -A ${chain_timeofday} -m mac --mac-source ${src_mac} ${option_time} -j RETURN
+    [ -n "$http_mark" ] && ip6tables -t mangle -A ${chain_timeofday} -m mac --mac-source ${src_mac} ${option_time} -j RETURN
+    [ -n "$http_mark" ] && ip6tables -t mangle -A ${chain_timeofday} -p tcp --dport 80 -m mac --mac-source ${src_mac} -j TPROXY --tproxy-mark "${http_mark}" --on-port 55556
+    ip6tables -A ${chain_timeofday} $mark_match_str -m mac --mac-source ${src_mac} -j reject
 
-    ip6tables -I ${chain_timeofday} ${index} -m mac --mac-source ${src_mac} ${option_time} -j RETURN
-
-    [ -n "$http_mark" ] && check_append_rule "${chain_timeofday} -p tcp --dport 80 -m mac --mac-source ${src_mac} -j CONNMARK --set-xmark $http_mark" 6
-    check_append_rule "${chain_timeofday} $mark_match_str -m mac --mac-source ${src_mac} -j reject" 6
 }
 
 create_tod_rule_mac()
@@ -108,10 +107,8 @@ create_tod_rule_mac()
 	return
     fi
 
-    timeofday_rule_index=$(($timeofday_rule_index+1))
-
     echo "Configuring TOD for host [${id}] : ${mode} (${timedesc})"
-    create_tod_rule_mac_${mode} "${id}" "${option_time}" "$timeofday_rule_index"
+    create_tod_rule_mac_${mode} "${id}" "${option_time}"
 }
 
 tod_host_load() {
@@ -143,26 +140,30 @@ load_action() {
 
     [ -z "$parental" ] && return   # parental control/weburl module is not enabled in this board
 
-    local redir_mark="$(uci -q get parental.general.redirect_mark_value)"
-    local accept_mark="$(uci -q get parental.general.accept_mark_value)"
-    mask_value="$(uci -q get parental.general.mark_mask_value)"
+    lanip="$(uci -q get network.lan.ipaddr)"
+
+    # use skipped_mark from weburl
+    local skipped_mark="$(uci -q get parental.general.skipped_mark)"
+    [ -z "$skipped_mark" ] && skipped_mark="0x1000000"
+
     local parental_enabled="$(uci -q get parental.general.enable)"
     local tod_enabled="$(uci -q get tod.global.tod_enabled)"
 
-    [ -z "$redir_mark" ] && redir_mark="4000000"
-    [ -z "$accept_mark" ] && accept_mark="2000000"
-    [ -z "$mask_value" ] && mask_value="6000000"
     [ -z "$parental_enabled" ] && parental_enabled="1"
     [ -z "$tod_enabled" ] && tod_enabled="1"
 
-    http_mark="0x${redir_mark}/0x${mask_value}"
-    http_accept_mark="0x${accept_mark}/0x${mask_value}"
+    http_mark="${skipped_mark}/${skipped_mark}"
     mark_match_str="-m connmark ! --mark "$http_mark
     [ "$tod_enabled" = "1" -a "$parental_enabled" = "0" ] && accept_rule="1"
 }
 
+if [ -x "$mac_filter" ]; then
+	$mac_filter
+	exit 0
+fi
 
 load_action
+setup_routing
 
 create_tod_chain
 

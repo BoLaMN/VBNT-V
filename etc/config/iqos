@@ -43,3 +43,19 @@ config rule
        option proto 'tcp'
        option destports '80,443,110,995,25,2195,5223'
        option priority '1'
+
+config rule
+       option target 'bfd_udp'
+       option proto 'udp'
+       option destports '3785'
+       option priority '1'
+
+config rule
+        option target 'gre'
+        option proto  '47'
+        option priority '0'
+
+config rule
+        option target 'esp'
+        option proto  '50'
+        option priority '0'

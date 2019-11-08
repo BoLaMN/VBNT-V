@@ -21,10 +21,10 @@ local Multi_IP_Diagnostics_IPPing_ = {
         pathRef = true,
       },
       ProtocolVersion = {
-        access = "readOnly", -- readWrite not Supported
+        access = "readWrite",
         type = "string",
         enumeration = {
-          "Any",
+          -- "Any", currently not supported
           "IPv4",
           "IPv6",
         },
@@ -147,6 +147,7 @@ local uciBindingParamMap = {
   Timeout = "timeout",
   DataBlockSize = "size",
   DSCP = "dscp",
+  ProtocolVersion = "iptype",
 }
 
 local function getSectionName(mapping)
@@ -180,22 +181,6 @@ local function SetOnIPPingHelper(mapping, param, value)
   ipPingHelper.uci_ipping_set(mapping._section, param, value, commitapply)
 end
 
--- the key is generally interface|devicename for non active interfaces
--- in case of an active interface key is ACTIVE|interface
--- this function is used to retrieve the key and protocol for the given wan interface connection
-local ucinw = {config="network"}
-local function get_connection_key(intf)
-  if not activedevice.isActiveInterface(intf) then
-    return wanConn.get_connection_key(intf)
-  else
-    local key = "ACTIVE|"..intf
-    ucinw.sectionname = intf
-    ucinw.option = "proto"
-    local proto = uciHelper.get_from_uci(ucinw)
-    return key, {proto=proto}
-  end
-end
-
 local function getIgdInterface(mapping, param)
   local value = uciHelper.get_from_uci(mapping._uciBinding[param])
   local path = ""
@@ -210,7 +195,7 @@ local function getIgdInterface(mapping, param)
   if (isLan) then
     path = resolve('InternetGatewayDevice.LANDevice.{i}.LANHostConfigManagement.IPInterface.{i}.', value)
   else
-    local key, status = get_connection_key(value)
+    local key, status = wanConn.get_connection_key(value)
     if key and status then
       if status.proto == "pppoe" or status.proto == "pppoa" then
         path = resolve("InternetGatewayDevice.WANDevice.{i}.WANConnectionDevice.{i}.WANPPPConnection.{i}.", key)
@@ -268,7 +253,7 @@ Multi_IP_Diagnostics_IPPing_.get = {
   Interface = function(mapping, param)
     return mapping._getInterface(mapping,param)
   end,
-  ProtocolVersion = "IPv4",
+  ProtocolVersion = getFromIPPingHelper,
   Host = getFromIPPingHelper,
   NumberOfRepetitions =getFromIPPingHelper,
   Timeout = getFromIPPingHelper,
@@ -295,6 +280,7 @@ Multi_IP_Diagnostics_IPPing_.set = {
   Timeout = SetOnIPPingHelper,
   DataBlockSize = SetOnIPPingHelper,
   DSCP = SetOnIPPingHelper,
+  ProtocolVersion = SetOnIPPingHelper,
 }
 
 Multi_IP_Diagnostics_IPPing_.commit = ipPingHelper.uci_ipping_commit

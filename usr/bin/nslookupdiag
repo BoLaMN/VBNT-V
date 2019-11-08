@@ -6,6 +6,8 @@ local logger = require("transformer.logger")
 local cursor = require("uci").cursor()
 local proxy = require("datamodel")
 local ubus = require("ubus")
+local process = require("tch.process")
+local popen = process.popen
 
 local ubus_conn = ubus.connect()
 if not ubus_conn then
@@ -54,7 +56,7 @@ Name : fd-fp3.wg1.b.yahoo.com Type : A IPv4 address : 46.228.47.114
 
 Authoritive Records : 0
 
-Additional Records : 0 
+Additional Records : 0
 
 
 -- typical output if the address is not valid on the device
@@ -98,62 +100,74 @@ local function dnsquery(user)
   local timeout = cursor:get(config, user, "timeout")
   local repetitions = cursor:get(config, user, "repetitions")
   local dnsserver = cursor:get(config, user, "dnsserver")
-  local cmdline = "dnsquery"
+  local dnsargs = {}
   if not (hostname and repetitions and timeout) then
     state = "Error_Other"
     return
   end
   repetitions = tonumber(repetitions)
-  if dnsserver ~= nil then cmdline = cmdline .. " -s " .. dnsserver end
+  if dnsserver then
+    dnsargs[#dnsargs+1] = "-s"
+    dnsargs[#dnsargs+1] = dnsserver
+  end
   local interface = cursor:get(config, user, "interface")
   if interface ~= nil then
     if interface == "Any" or interface == nil then
-	  log:info("dnsquery without interface")
-	else
-	  local address = proxy.get('rpc.network.interface.@' .. interface .. '.ipaddr')[1].value
-        if (address == "") then
-          log:error("Can not retrieve IP address for interface " .. interface)
-		  state = "Error_Other"
-		  return
-		end
-	  cmdline = cmdline .. " -b " .. address
-	end
+      log:info("dnsquery without interface")
+    else
+      local address = proxy.get('rpc.network.interface.@' .. interface .. '.ipaddr')[1].value
+      if (address == "") then
+        log:error("Can not retrieve IP address for interface " .. interface)
+        state = "Error_Other"
+        return
+      end
+        dnsargs[#dnsargs+1] = "-b"
+        dnsargs[#dnsargs+1] = address
+    end
   end
 
   -- check if all required parameters are present
-  if timeout ~= "" then cmdline = cmdline .. " -m " .. timeout end
-  cmdline = cmdline .. " " .. hostname
+  if timeout ~= "" then
+    dnsargs[#dnsargs+1] = "-m"
+    dnsargs[#dnsargs+1] = timeout
+  end
+
+  dnsargs[#dnsargs+1] = hostname
+
   -- according to the repetitions value , do the dnsquery repetitions times and then summarize the results
   local dnsquery_results = {}
   local successcount = 0
   for i=1, repetitions do
-    local p = assert(io.popen(cmdline))
+    local p = process.popen("dnsquery", dnsargs)
+    if not p then
+      return nil,"Invalid command or arguments"
+    end
     local output = p:read("*a")
     p:close()
+    dnsserverIP = match(output, "dnserver is (%d+%.%d+%.%d+%.%d+)") or ""
+    local ipadd_list = {}
     if match(output, "please correct the input") then
       state = "Error_DNSServerNotResolved"
-      results_status = "Error_DNSServerNotResolved"
+      results_status = "Error_DNSServerNotAvailable"
     elseif match(output, "bind failed") then
       state = "Error_Internal"
       results_status = "Error_Other"
     elseif match(output, "recvfrom failed") then
       if match(output, "defined dns server") then
-        state = "Error_DNSServerNotAvailable"
+        state = "Error_Other"
         results_status = "Error_DNSServerNotAvailable"
       else
-        state = "Error_Timeout"
+        state = "Error_Other"
         results_status = "Error_Timeout"
       end
     elseif match(output, "1 Authoritative Servers") or match(output, "0 Answers") and match(output, "0 mesc") then
-      state = "Error_HostNameNotResolved"
+      state = "Error_Other"
       results_status = "Error_HostNameNotResolved"
     else
-      dnsserverIP = match(output, "dnserver is (%d+%.%d+%.%d+%.%d+)")
       responseTime = match(output, "Query time: (%d*) mesc")
 	  if tonumber(responseTime) == 0  then responseTime = 1 end
       local spoofip = proxy.get('uci.intercept.dns.spoofip')[1].value
       local matchPattern = 'Name : (%S+) Type : (%S+) IPv4 address : (%d+%.%d+%.%d+%.%d+)'
-      local ipadd_list = {}
       for hostnamereturned,authoritystate,IPAddresses in output:gmatch(matchPattern) do
           if (IPAddresses and IPAddresses ~= spoofip ) then
             HostNameReturned = hostnamereturned
@@ -168,8 +182,8 @@ local function dnsquery(user)
           ipadd_list[#ipadd_list +1] = IPAddresses
       end
     successcount = successcount + 1
-    dnsquery_results[i] = format('%s,%s,%s,%s,%s,%d\n', results_status, answertype, HostNameReturned, table.concat(ipadd_list, ";"), dnsserverIP, responseTime)
     end
+  dnsquery_results[i] = format('%s,%s,%s,%s,%s,%d\n', results_status, answertype, HostNameReturned, table.concat(ipadd_list, ";"), dnsserverIP, responseTime)
   end
 
   local fh, msg = io.open("/tmp/nslookupdiag_"..user, "w")

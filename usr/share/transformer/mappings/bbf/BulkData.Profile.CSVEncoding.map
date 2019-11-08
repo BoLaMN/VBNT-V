@@ -70,5 +70,7 @@ Multi_BulkData_Profile_i_CSVEncoding_.set = bulk_helper.set
 Multi_BulkData_Profile_i_CSVEncoding_.commit = bulk_helper.commit
 Multi_BulkData_Profile_i_CSVEncoding_.revert = bulk_helper.revert
 
+--[[ Removed temperately due to currently not supported
 bulk_helper.register(Multi_BulkData_Profile_i_CSVEncoding_, register)
+--]]
 

@@ -16,17 +16,11 @@ local Device_Hosts_Host_i_IPv4Address_i_ = {
   }
 }
 
-local conn = mapper("ubus").connect()
 local split_key = mapper("nwcommon").split_key
-
-local function getDataForHost(hostkey)
-  local data = {}
-  data = conn:call("hostmanager.device", "get",  { name = hostkey })
-  return data[hostkey] or data
-end
+local network = require("transformer.shared.common.network")
 
 Device_Hosts_Host_i_IPv4Address_i_.entries = function(mapping, parentkey)
-  local data = getDataForHost(parentkey)
+  local data = network.getHostDataByName(parentkey)
   local hostkeys = {}
   for k,v in pairs(data.ipv4) do
     if v.state == "connected" then
@@ -39,7 +33,7 @@ end
 Device_Hosts_Host_i_IPv4Address_i_.get = {
   IPAddress = function(mapping,param,key)
     local devname,ip_intf = split_key(key)
-    local data = getDataForHost(devname)
+    local data = network.getHostDataByName(devname)
     return data.ipv4[ip_intf].address
   end,
 }

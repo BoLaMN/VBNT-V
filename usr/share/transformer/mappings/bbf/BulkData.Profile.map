@@ -69,6 +69,7 @@ local Multi_BulkData_Profile_i_ = {
         type = "dateTime",
         default = "0001-01-01T00:00:00Z",
       },
+--[[ Removed temperately due to currently not supported
       StreamingHost = {
         access = "readWrite",
         type = "string",
@@ -120,6 +121,7 @@ local Multi_BulkData_Profile_i_ = {
         type = "string",
         max = "128",
       },
+--]]
       -- ParameterNumberOfEntries
       -- automatically created when #ROOT.BulkData.Profile.{i}.Parameter.{i}. is loaded
     }

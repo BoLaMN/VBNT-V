@@ -1,28 +1,29 @@
 local string, tonumber, type = string, tonumber, type
 
 local mobiled_device_radio_preferences = {
-	objectType = {
-		name = 'rpc.mobiled.device.@.radio_preference.@.',
-		access = 'readOnly',
-		numEntriesParameter = "RadioPreferenceNumberOfEntries",
-		minEntries = 0,
-		maxEntries = math.huge,
-		parameters = {
-			name = {
-				access = "readOnly",
-				type = "string",
-			},
-			radios = {
-				access = "readOnly",
-				type = "string",
-			}
-		}
-	}
+       objectType = {
+                name = 'rpc.mobiled.device.@.radio_preference.@.',
+                access = 'readOnly',
+                numEntriesParameter = "RadioPreferenceNumberOfEntries",
+                minEntries = 0,
+                maxEntries = math.huge,
+                parameters = {
+                        name = {
+                                access = "readOnly",
+                                type = "string",
+                        },
+                        radios = {
+                                access = "readOnly",
+                                type = "string",
+                        }
+                }
+        }
 }
+
 
 local conn = mapper("ubus").connect()
 if not conn then
-	return
+       return
 end
 
 local helper = require("mobiled.scripthelpers")
@@ -43,11 +44,11 @@ local function getRadioPreferenceData(key, parent_key)
 end
 
 local function getall(mapping, key, parent_key)
-	return getRadioPreferenceData(key, parent_key)
+       return getRadioPreferenceData(key, parent_key)
 end
 
 local function get(mapping, paramName, key, parent_key)
-	return getall(mapping, key, parent_key)[paramName]
+       return getall(mapping, key, parent_key)[paramName] 
 end
 
 local function radioPreferenceEntries(mapping, key, parent_key)
@@ -58,7 +59,7 @@ local function radioPreferenceEntries(mapping, key, parent_key)
 			table.insert(radio_preferences, { tostring(i), "radio_preference" .. i })
 		end
 	end
-	return radio_preferences
+	return radio_preferences 
 end
 
 mobiled_device_radio_preferences.getall = getall

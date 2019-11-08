@@ -19,25 +19,10 @@ local Device_NeighborDiscovery_ = {
 
 local mapper = mapper
 local uciHelper = mapper("ucihelper")
-local nwCommon = mapper("nwcommon")
+local network = require("transformer.shared.common.network")
 local ipairs = ipairs
 local dhcpBinding = {config = "dhcp"}
 local isConfigChanged = false
-
-local function getInterfaces()
-  local interfaces = {}
-  local lan = nwCommon.findLanWanInterfaces(false)
-  dhcpBinding.sectionname = "dhcp"
-  uciHelper.foreach_on_uci(dhcpBinding, function(s)
-    for _,v in pairs(lan) do
-      if s.interface == v then
-        interfaces[#interfaces + 1] = s['.name']
-        break
-      end
-    end
-  end)
-  return interfaces
-end
 
 local function enableNDP(value, interfaces)
   dhcpBinding.option = "ndp"
@@ -52,7 +37,7 @@ Device_NeighborDiscovery_.get = {
   Enable = function(mapping, param)
     dhcpBinding.option = "ndp"
     local enable = false
-    local interfaces = getInterfaces()
+    local interfaces = network.getDHCPLanInterfaces()
     for _,interface in ipairs(interfaces) do
       dhcpBinding.sectionname = interface
       local value = uciHelper.get_from_uci(dhcpBinding)
@@ -69,7 +54,7 @@ Device_NeighborDiscovery_.get = {
 
 Device_NeighborDiscovery_.set = {
   Enable = function(mapping, param, value)
-    local interfaces = getInterfaces()
+    local interfaces = network.getDHCPLanInterfaces()
     if value == "1" then
       enableNDP("relay", interfaces)
     elseif value == "0" then

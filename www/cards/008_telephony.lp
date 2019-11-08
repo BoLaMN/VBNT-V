@@ -11,6 +11,13 @@ datamodel = require ("datamodel")
 ui_helper = require ("web.ui_helper")
 content_helper = require ("web.content_helper")
 
+-- Retrieving emission state
+local emission_content = {
+    emission_state = "rpc.mmpbx.dectemission.state",
+}
+content_helper.getExactContent(emission_content)
+emission_state = string.format("%s", emission_content.emission_state)
+
 local session = ngx.ctx.session
 if session:hasAccess("/modals/mmpbx-global-modal.lp") and session:hasAccess("/modals/mmpbx-profile-modal.lp") and session:hasAccess("/modals/mmpbx-service-modal.lp") and session:hasAccess("/modals/mmpbx-log-modal.lp") and session:hasAccess("/modals/mmpbx-dect-modal.lp") then
     local currentuserrole = session.getrole()
@@ -25,7 +32,11 @@ if session:hasAccess("/modals/mmpbx-global-modal.lp") and session:hasAccess("/mo
         mmpbx_state = mmpbx_state[1].value
     end
 
-    modalPath = "/modals/mmpbx-dect-modal.lp"
+    if emission_state == "1" then
+        modalPath = "/modals/mmpbx-dect-modal.lp"
+    else
+        modalPath = "/modals/mmpbx-global-modal.lp"
+    end
 
     local mmpbx_info
     if mmpbx_state and mmpbx_state == "1" then

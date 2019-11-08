@@ -45,6 +45,7 @@ local Multi_ = {
 -- function aliases
 local mapper = mapper
 local uciHelper = mapper("ucihelper")
+local network = require("transformer.shared.common.network")
 local networkBinding = { config = "network", option = "vendorid"}
 local isConfigChanged = false
 local string = string
@@ -64,18 +65,12 @@ Multi_.entries = function(mapping, parentKey)
   return { parentKey }
 end
 
-local function stringToHex(str)
-  return (str:gsub('.', function (c)
-    return string.format('%02x', string.byte(c))
-  end))
-end
-
 Multi_.get = {
   Enable = '1',
   Tag = '60', --only Tag 60 is currently implemented.
   Value = function(mapping, param, key)
     key = splitKey(key) or key
-    return stringToHex(getUciParam(key))
+    return network.stringToHex(getUciParam(key))
   end
 }
 
@@ -84,7 +79,7 @@ Multi_.getall = function(mapping, key)
   local allValues= {
     Enable = '1',
     Tag = '60', --only Tag 60 is currently implemented.
-    Value = stringToHex(getUciParam(key))
+    Value = network.stringToHex(getUciParam(key))
   }
   return allValues
 end

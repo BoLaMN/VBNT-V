@@ -1,4 +1,5 @@
-<%
+--pretranslated: do not change this file
+ 
 -- Enable localization
 gettext.textdomain('webui-core')
 local content_helper = require("web.content_helper")
@@ -11,18 +12,6 @@ local proxy = require("datamodel")
 local ethLan_data = {
     actNumEthernet = "sys.hosts.ActiveEthernetNumberOfEntries",
     numEthernet = "uci.network.interface.@lan.ifname",
-}
-
-local barcode_data = {
-    model_num = "uci.env.var.prod_friendly_name",
-    pba_tocom = "uci.env.rip.pba_tocom",
-    factory_date = "uci.env.rip.factory_date",
-    factory_id = "uci.env.rip.factory_id",
-    serial_num = "uci.env.rip.serial",
-    firmware_version = "uci.version.version.@version[0].version",
-    fwversion_prefix = "uci.versioncusto.override.fwversion_prefix",
-    fwversion_suffix = "uci.versioncusto.override.fwversion_suffix",
-    fwversion_override = "uci.versioncusto.override.fwversion_override",
 }
 
 local ethWan_data = {
@@ -185,6 +174,8 @@ local activeMANULModule = {"dt1","led","dectbtn","wifibtn","dt2"}
 
 --table.insert(activeAUTOModule,"ethLan")
 
+local fxsdevNum = format("%s", proxy.get("uci.mmpbxbrcmfxsdev.deviceNumberOfEntries")[1].value)
+
 function tmpSplit(str, delimiter)
     if str==nil or str=='' or delimiter==nil then
         return nil
@@ -212,9 +203,9 @@ if ngx.req.get_method() == "POST" then
         for a_k,a_v in ipairs(allEth) do
             local find = 0
             local state =  format("%s", proxy.get(hosts_path..a_v..".operstate")[1].value)
-			if(state == "up") then
-				find = 1
-			end
+            if(state == "up") then
+              find = 1
+            end
             if (find == 1) then
             else
                 errorCode = format("%d",a_k)
@@ -265,11 +256,10 @@ if ngx.req.get_method() == "POST" then
         local usb_path_value = content_helper.convertResultToObject(usb_path,proxy.get(usb_path))
         local ret = 0
         for k,v in ipairs(usb_path_value) do
-            local port = format("%s",v.path)
-			local partition = format("sys.usb.device.%s.partition.",v.paramindex)
-            if port == "1-1" then
-                        ret = 1
-                        break;
+            local deviceClass = proxy.get("sys.usb.device." .. v.paramindex .. ".interface.1.bInterfaceClass")[1].value
+            if deviceClass == "08" then
+                ret = 1
+                break;
             end
         end
         ngx.header.content_type = "application/json"
@@ -284,7 +274,7 @@ if ngx.req.get_method() == "POST" then
         local ret = 0
         for k,v in ipairs(usb_path_value) do
             local port = format("%s",v.path)
-			local partition = format("sys.usb.device.%s.partition.",v.paramindex)
+            local partition = format("sys.usb.device.%s.partition.",v.paramindex)
             if port == "1-2" then
                         ret = 1
                         break;
@@ -367,13 +357,12 @@ if ngx.req.get_method() == "POST" then
         end
     elseif action == "dect" then
         content_helper.getExactContent(mmpbx_state)
-	local mState = 0
+        local mState = 0
         local ret = 0
         local state = args["state"]
-	if mmpbx_state["state"] == "RUNNING" then
+        if mmpbx_state["state"] == "RUNNING" then
             local host_path = "sys.dect.dev."
             local host_path_value = content_helper.convertResultToObject(host_path,proxy.get(host_path))
-            
             for _,v in ipairs(host_path_value) do
                 local locate = format("%s",v.LocationStatus)
                 if locate == "Located" then
@@ -381,7 +370,7 @@ if ngx.req.get_method() == "POST" then
                         break
                 end
             end
-	end
+        end
         if(state == nil or state == "testing") then
             if mState ==  1 then
                 ret = 1;
@@ -402,9 +391,9 @@ if ngx.req.get_method() == "POST" then
 
         if(ret == 1) then
             ngx.print('{ "result":"suc","act":"dect" }')
-	elseif(ret == -1) then
+        elseif(ret == -1) then
             ngx.print('{ "result":"testing","act":"dect" }')
-	elseif(ret == -2) then
+        elseif(ret == -2) then
             ngx.print('{ "result":"preparing","act":"dect" }')
         else
             ngx.print('{ "result":"fail","act":"dect" }')
@@ -423,19 +412,21 @@ if ngx.req.get_method() == "POST" then
         proxy.set("rpc.mmpbx.phonebook.flush.keepDefault", "1")
         return resetreboot("rpc.system.reset", "1")
     elseif action == "check_leds" then
-    local color = format("%s",args["color"])
-	if(color == "red") then
+        local color = format("%s",args["color"])
+        if(color == "red") then
             proxy.set("sys.led.ledtest","red")
-	elseif(color == "blue") then
+        elseif(color == "blue") then
             proxy.set("sys.led.ledtest","blue")
-	elseif(color == "green") then
+        elseif(color == "green") then
             proxy.set("sys.led.ledtest","green")
-	end
-	proxy.apply()
+        end
+        proxy.apply()
     elseif action == "switchDT" then
-	    proxy.set("uci.mmpbxbrcmfxsdev.device.@fxs_dev_0.relay_state" , "1")
-	    proxy.set("uci.mmpbxbrcmfxsdev.device.@fxs_dev_1.relay_state" , "1")
-	    proxy.apply()
+        proxy.set("uci.mmpbxbrcmfxsdev.device.@fxs_dev_0.relay_state" , "1")
+        if fxsdevNum == "2" then
+            proxy.set("uci.mmpbxbrcmfxsdev.device.@fxs_dev_1.relay_state" , "1")
+        end
+        proxy.apply()
     end
     ngx.exit(ngx.HTTP_OK)
 end
@@ -444,7 +435,10 @@ if ngx.req.get_method() == "GET" then
     local mode_active = ""
 
     local relay_state0 = format("%s", proxy.get("uci.mmpbxbrcmfxsdev.device.@fxs_dev_0.relay_state")[1].value)
-    local relay_state1 = format("%s", proxy.get("uci.mmpbxbrcmfxsdev.device.@fxs_dev_1.relay_state")[1].value)
+    local relay_state1
+    if fxsdevNum == "2" then
+        relay_state1 = format("%s", proxy.get("uci.mmpbxbrcmfxsdev.device.@fxs_dev_1.relay_state")[1].value)
+    end
     local fxo_enabled = format("%s", proxy.get("uci.mmpbxbrcmfxonet.profile.@fxo_profile.enabled")[1].value)
 
     -- incase we don't need to restart mmpbxd as it takes too long time (~50s)
@@ -557,6 +551,17 @@ function isWifiConnect(val)
 end
 function createBarcode(state,id,type,ext)
     local barData = "";
+    local barcode_data = {
+        model_num = "uci.env.var.prod_friendly_name",
+        pba_tocom = "uci.env.rip.pba_tocom",
+        factory_date = "uci.env.rip.factory_date",
+        factory_id = "uci.env.rip.factory_id",
+        serial_num = "uci.env.rip.serial",
+        firmware_version = "uci.version.version.@version[0].version",
+        fwversion_prefix = "uci.versioncusto.override.fwversion_prefix",
+        fwversion_suffix = "uci.versioncusto.override.fwversion_suffix",
+        fwversion_override = "uci.versioncusto.override.fwversion_override",
+    }
     content_helper.getExactContent(barcode_data)
     --ngx.log(ngx.ERR, format("createBarcode state %s -- id is %s -- type is %s --- ",state,id,type))
     if barcode_data["firmware_version"] then
@@ -619,54 +624,54 @@ local function createFunctionButton(content, action, param, text)
                 tinsert(content, '<div data-bind="click: function(){ ' .. action .. '(); }" class="btn float-left">'.. text .. '</div>')
         end
 end
-%>
-<!DOCTYPE HTML>
-<%= string.format('<html lang="%s">', gettext.language()) %>
-<head>
-    <meta charset="UTF-8">
-    <meta name="CSRFtoken" content="<%= ngx.ctx.session:getCSRFtoken() %>">
-    <link href="/css/gw.css" rel="stylesheet">
-    <!--[if IE 7]><link rel="stylesheet" href="/css/font-awesome-ie7.css"><![endif]-->
-    <script src="/js/main-min.js" ></script>
-    <!--[if lt IE 9]> <script src="/js/media-min.js"></script> <![endif]-->
-    <script src="/js/srp-min.js" ></script>
-    <script language="javascript" type="text/javascript" src="/js/selftest.js"></script>
-    <title><%= T"After sales tool" %></title>
-</head>
-<body>
-<div class="container">
-    <br />
-    <br />
-    <br />
-    <br />
-    <div class="row" style="text-align: center; font-size: 50px;">
-        AFTER SALES TOOL
-    <br />
-    <br />
-        <hr />
-    <br />
-    </div>
-    <div class="row" style="text-align: center; ">
-        AUTHORISED USE ONLY
-    </div>
-    <br />
-    <div class="row" style="text-align: center; ">
-        <span style= "color: #ff0000;">Note : Modem should be reset at the end of the test</span>
-    </div>
-</div>
-<div class="container">
-<div>
-<br/>
-<br/>
-<center><div id="barcode" style="display:none"></div></center>
-<br/>
-<br/>
-</div>
-    <div class="row">
-        <fieldset>
-            <legend id="manualText"><%= T"Manual Test" %></legend>
-                <div class="control-group">
-<%
+  ngx.print('\
+<!DOCTYPE HTML>\
+');  ngx.print( string.format('<html lang="%s">', gettext.language()) ); ngx.print('\
+<head>\
+    <meta charset="UTF-8">\
+    <meta name="CSRFtoken" content="');  ngx.print( ngx.ctx.session:getCSRFtoken() ); ngx.print('">\
+    <link href="/css/gw.css" rel="stylesheet">\
+    <!--[if IE 7]><link rel="stylesheet" href="/css/font-awesome-ie7.css"><![endif]-->\
+    <script src="/js/main-min.js" ></script>\
+    <!--[if lt IE 9]> <script src="/js/media-min.js"></script> <![endif]-->\
+    <script src="/js/srp-min.js" ></script>\
+    <script language="javascript" type="text/javascript" src="/js/selftest-min.js"></script>\
+    <title>');  ngx.print( T"After sales tool" ); ngx.print('</title>\
+</head>\
+<body>\
+<div class="container">\
+    <br />\
+    <br />\
+    <br />\
+    <br />\
+    <div class="row" style="text-align: center; font-size: 50px;">\
+        AFTER SALES TOOL\
+    <br />\
+    <br />\
+        <hr />\
+    <br />\
+    </div>\
+    <div class="row" style="text-align: center; ">\
+        AUTHORISED USE ONLY\
+    </div>\
+    <br />\
+    <div class="row" style="text-align: center; ">\
+        <span style= "color: #ff0000;">Note : Modem should be reset at the end of the test</span>\
+    </div>\
+</div>\
+<div class="container">\
+<div>\
+<br/>\
+<br/>\
+<center><div id="barcode" style="display:none"></div></center>\
+<br/>\
+<br/>\
+</div>\
+    <div class="row">\
+        <fieldset>\
+            <legend id="manualText">');  ngx.print( T"Manual Test" ); ngx.print('</legend>\
+                <div class="control-group">\
+');  
 local html = {}
 html[#html+1] = "<table class=\"table table-striped\" id=\"manualTable\"><thead><tr>"
 
@@ -689,421 +694,444 @@ end
 
 html[#html + 1] =  "</tbody></table>"
 ngx.print (html)
-%>
-            </div>
-        </fieldset>
-</div>
-
-<div class="row"></div>
-<div class="row"></div>
-    <div class="row">
-        <fieldset>
-            <legend id="autoText"><%= T"Automation Test" %></legend>
-                <div class="control-group">
-<% 
+  ngx.print('\
+            </div>\
+        </fieldset>\
+</div>\
+\
+<div class="row"></div>\
+<div class="row"></div>\
+    <div class="row">\
+        <fieldset>\
+            <legend id="autoText">');  ngx.print( T"Automation Test" ); ngx.print('</legend>\
+                <div class="control-group">\
+');  
 local html = {}
 html[#html+1] = "<table class=\"table table-striped\" id=\"autoTable\"><thead><tr>"
 
+html[#html + 1] = "<th><input id=\"selectAll\" type=\"checkbox\" checked=\"checked\"></th>"
 html[#html + 1] = "<th style=\"width: 50%;\">MODULE</th>"
 html[#html + 1] = "<th style=\"width: 50%;\">STATUS</th>"
 html[#html + 1] =  "</tr></thead>"
 
 html[#html + 1] = "<tbody>"
 for key,value in ipairs(activeAUTOModule) do
-    html[#html + 1] = "<tr><td>" .. matchAUTOTable[value].text .. "</td>" .. "<td id=\"" .. matchAUTOTable[value].name .. "\"></td></tr>"
+    html[#html + 1] = "<tr><td><input id=\"select_" .. matchAUTOTable[value].name .. "\" name=\"" .. matchAUTOTable[value].name .. "\" type=\"checkbox\" checked=\"checked\"></td>"
+    html[#html + 1] = "<td>" .. matchAUTOTable[value].text .. "</td>" .. "<td id=\"" .. matchAUTOTable[value].name .. "\"></td></tr>"
 end
 
 html[#html + 1] =  "</tbody></table>"
 ngx.print (html)
-%>
-                </div>
-<!--<div>
-<div class="row"><%=ui_helper.createSimpleButton(T"Start Auto Test", "icon-ok-sign", autoTest_class)%></div>
-<br/>
-<br/>
-<center><div id="barcode" style="display:none"></div></center>
-</div>-->
-            <center><div>
-                <div id="stopTest" class="btn btn-primary btn-large"><%= T"STOP TEST" %></div>
-                &nbsp;
-                <!--<a href="/SelfTest.lp" class="btn btn-primary btn-large"><%= T"RESET" %></a>-->
-                <div id="startReset" class="btn btn-primary btn-large"><%= T"RESET" %></div>
-                <!--&nbsp;
-                <a href="/" class="btn btn-primary btn-large"><%= T"CANCEL" %></a>-->
-            </div></center>
-
-        </fieldset>
-</div>
-
-
-<div class="row"><div class="copyright span12"><p>&copy; Technicolor 2014</p></div></div>
-<script>
-(function() {
-var target = "/SelfTest.lp";
-var activeArr = new Array(<%=tabletostring(activeAUTOModule)%>);
-var activeMArr = new Array(<%=tabletostring(activeMANULModule)%>);
-
-var restTestCase = activeArr.length + activeMArr.length;
-var currentTest = "";
-var lastTest = "";
-var testComplete = 0;
-var count = 0;
-var refreshTimeOut = 5000;
-var refreshDelay = 3000;
-
-window.setTimeout(startAutoTest, 1500);
-window.setTimeout(reset, 1800*1000);
-
-function autoTestAllModule()
-{
-    if(currentTest == "")
-    {
-        if(activeArr.length == 0)
-        return;
-        currentTest = activeArr[0];
-        document.getElementById(currentTest).innerHTML = "TESTING";
-        $.post(
-            target,
-            { action: currentTest, CSRFtoken: $("meta[name=CSRFtoken]").attr("content") },
-            postResult,
-            "json"
-         );
-    }
-    else if(currentTest == lastTest)
-    {
-        var next = $.inArray(currentTest,activeArr)+1;
-        if(next == activeArr.length)
-        {
-            return;
-        }
-        else
-        {
-            currentTest = activeArr[next];
-            document.getElementById(currentTest).innerHTML = "TESTING";
-            $.post(
-            target,
-            { action: currentTest, CSRFtoken: $("meta[name=CSRFtoken]").attr("content") },
-            postResult,
-            "json"
-            );
-        }
-    }
-    else if(currentTest == "dsl")
-    {
-        var st = "";
-        count++;
-        if(count == 4)
-        {
-            count = 0;
-            st = "final";
-        }
-        else
-        {
-            st = "testing";
-        }
-        $.post(
-            target,
-            { action: currentTest, state:st,CSRFtoken: $("meta[name=CSRFtoken]").attr("content") },
-            postResult,
-            "json"
-            );
-    }    
-    else if(currentTest == "wifi1")
-    {
-        var st = "";
-        count++;
-        if(count == 30)
-        {
-            count = 0;
-            st = "final";
-        }
-        else
-        {
-            st = "testing";
-        }
-        $.post(
-            target,
-            { action: currentTest, state:st,CSRFtoken: $("meta[name=CSRFtoken]").attr("content") },
-            postResult,
-            "json"
-            );
-    }
-    else if(currentTest == "wifi2")
-    {
-        var st = "";
-        count++;
-        if(count == 30)
-        {
-            count = 0;
-            st = "final";
-        }
-        else
-        {
-            st = "testing";
-        }
-        $.post(
-            target,
-            { action: currentTest, state:st,CSRFtoken: $("meta[name=CSRFtoken]").attr("content") },
-            postResult,
-            "json"
-            );
-    }
-    else if(currentTest == "dect")
-    {
-        var st = "";
-        count++;
-        if(count == 60)
-        {
-            count = 0;
-            st = "final";
-        }
-        else
-        {
-            st = "testing";
-        }
-        $.post(
-            target,
-            { action: currentTest, state:st,CSRFtoken: $("meta[name=CSRFtoken]").attr("content") },
-            postResult,
-            "json"
-            );
-    }
-}
-
-
-function startAutoTest(data,status)
-{
-    currentTest = "";
-    lastTest = "";
-
-    autoTestAllModule();
-
-}
-
-function setTestComplete(status,typeId,testType,exData)
-{
-    testComplete = 1;
-    if(exData == null)
-    {
-        $.post(
-            target,
-            { action: "generatorBarcode", state:status,id:typeId,type:testType,CSRFtoken: $("meta[name=CSRFtoken]").attr("content") },
-            generatorBarCode,
-            "json"
-        );
-    }
-    else
-    {
-        $.post(
-            target,
-            { action: "generatorBarcode", state:status,id:typeId,type:testType,extmodule:exData,CSRFtoken: $("meta[name=CSRFtoken]").attr("content") },
-            generatorBarCode,
-            "json"
-        );
-    }
-}
-
-function postResult(data,status)
-{
-    if(testComplete == 1)
-        return;
-    if(data.result == "suc")
-        document.getElementById(data.act).innerHTML = "PASS";
-    else if(data.result == "fail")
-    {
-        document.getElementById(data.act).innerHTML = "FAIL";
-        setTestComplete("fail",data.act,"auto",data.extModuleName);
-        return;
-    }else if(data.result == "testing")
-    {
-        document.getElementById(data.act).innerHTML = "TESTING";
-        window.setTimeout(autoTestAllModule, 1500);
-        return;
-    }else
-    {
-        document.getElementById(data.act).innerHTML = "";
-        window.setTimeout(autoTestAllModule, 1500);
-        return;
-    }
-
-    testCaseDone();
-    lastTest = data.act;
-    if(testComplete == 0)
-    window.setTimeout(autoTestAllModule, 1500);
-}
-$("#stopTest").click(function() {
-    if(testComplete == 1)
-        return;
-    setTestComplete("manualStop","0","0",null);
-    return false;
-});
-$("#startReset").click(function() {
-    reset();
-});
-
-function wait_for_webserver_running() {
-    $.ajax({ url: "/", timeout: refreshTimeOut })
-    .done(function(data) {
-      document.open("text/html");
-      document.write(data);
-      document.close();
-    })
-    .fail(function() {
-      window.setTimeout(wait_for_webserver_running, refreshDelay);
-    });
-}
-
-function wait_for_webserver_down() {
-    $.ajax({ url: target, timeout: refreshTimeOut })
-    .done(function() {
-      window.setTimeout(wait_for_webserver_down, refreshDelay);
-    })
-    .fail(function() {
-      window.setTimeout(wait_for_webserver_running, refreshDelay);
-    });
-}
-
-function reset()
-{
-    $.post(
-      target,
-      { action: "system_reset", CSRFtoken: $("meta[name=CSRFtoken]").attr("content") },
-      wait_for_webserver_down,
-      "json"
-    );
-    return false;
-}
-function generatorBarCode(data,status)
-{
-    var code = data.barData;
-    var state = data.state;
-    var bg ="";
-    if(state == "fail" || state == "manualStop")
-    {
-        bg  = "#ff0000";
-    }
-    else
-    {
-        bg  = "#000000";
-    }
-    var barcodeElement = document.getElementById('barcode');
-    barcodeElement.style.display="";
-    genbarcode({
-                renderToID : 'barcode',
-                string : code,
-                barWidth : 1,
-                height : '100',
-                showText : true,
-                fontColor : bg
-            });
-$('html, body').animate({scrollTop:0}, 'slow');
-}
-
-function processMTestResult(id,state)
-{
-    if(testComplete == 1 || document.getElementById(id).innerHTML != "UNTESTED")
-    {
-        return;
-    }
-    if(state == "pass")
-    {
-        document.getElementById(id).innerHTML = "PASS";
-
-            if(id == "dt1")
-	    {
-		    $.post(
-		      target,
-		      { action: "switchDT", CSRFtoken: $("meta[name=CSRFtoken]").attr("content")},
-		      null,
-		      "json"
-		    );
-	    }
-    }
-    else
-    {
-        document.getElementById(id).innerHTML = "FAIL";
-        setTestComplete("fail",id,"manual",null);
-        return;
-    }
-    testCaseDone();
-}
-
-function checkLed(data)
-{
-    $.post(
-      target,
-      { action: "check_leds", CSRFtoken: $("meta[name=CSRFtoken]").attr("content"),color:data},
-      null,
-      "json"
-    );
-    return false;
-}
-
-function testCaseDone()
-{
-    restTestCase--;
-
-    if(restTestCase == 0)
-    {
-        setTestComplete("pass","0","0",null);
-    }
-}
-
-var asView = function(){
-    this.ledTest = function(state) {
-processMTestResult("led",state);
-    };
-    this.fxsTest = function(state) {
-processMTestResult("fxs",state);
-    };
-    this.fxoTest = function(state) {
-processMTestResult("fxo",state);
-    };
-    this.dt1Test = function(state) {
-processMTestResult("dt1",state);
-    };
-    this.dt2Test = function(state) {
-processMTestResult("dt2",state);
-    };
-    this.btnTest = function(state) {
-processMTestResult("btn",state);
-    };
-    this.nfcTest = function(state) {
-processMTestResult("nfc",state);
-    };
-    this.wpsbtnTest = function(state) {
-processMTestResult("wpsbtn",state);
-    };
-    this.resetbtnTest = function(state) {
-processMTestResult("resetbtn",state);
-    };
-    this.wifibtnTest = function(state) {
-processMTestResult("wifibtn",state);
-    };
-    this.statusbtnTest = function(state) {
-processMTestResult("statusbtn",state);
-    };
-    this.dectbtnTest = function(state) {
-processMTestResult("dectbtn",state);
-    };
-
-this.redBtn = function(state) {
-checkLed("red");
-    };
-this.greenBtn = function(state) {
-checkLed("green");
-    };
-this.blueBtn = function(state) {
-checkLed("blue");
-    };
-
-
-};
-
-ko.applyBindings(asView);
-
-}())
-</script>
-</div>
-</body>
-</html>
+  ngx.print('\
+                </div>\
+<div>\
+<div class="row">');  ngx.print(ui_helper.createSimpleButton(T"Start Auto Test", "icon-ok-sign", autoTest_class)); ngx.print('</div>\
+</div>\
+            <center><div>\
+                <div id="stopTest" class="btn btn-primary btn-large">');  ngx.print( T"STOP TEST" ); ngx.print('</div>\
+                &nbsp;\
+                <!--<a href="/SelfTest.lp" class="btn btn-primary btn-large">');  ngx.print( T"RESET" ); ngx.print('</a>-->\
+                <div id="startReset" class="btn btn-primary btn-large">');  ngx.print( T"RESET" ); ngx.print('</div>\
+                <!--&nbsp;\
+                <a href="/" class="btn btn-primary btn-large">');  ngx.print( T"CANCEL" ); ngx.print('</a>-->\
+            </div></center>\
+\
+        </fieldset>\
+</div>\
+\
+\
+<div class="row"><div class="copyright span12"><p>&copy; Technicolor 2014</p></div></div>\
+<script>\
+(function() {\
+var target = "/SelfTest.lp";\
+var allAutoCasesArr = new Array(');  ngx.print(tabletostring(activeAUTOModule)); ngx.print(');\
+var activeArr = allAutoCasesArr;\
+var activeMArr = new Array(');  ngx.print(tabletostring(activeMANULModule)); ngx.print(');\
+\
+var restTestCase = activeArr.length + activeMArr.length;\
+var currentTest = "";\
+var lastTest = "";\
+var testComplete = 0;\
+var count = 0;\
+var refreshTimeOut = 5000;\
+var refreshDelay = 3000;\
+\
+window.setTimeout(startAutoTest, 1500);\
+window.setTimeout(reset, 1800*1000);\
+\
+function autoTestAllModule()\
+{\
+    if(currentTest == "")\
+    {\
+        if(activeArr.length == 0)\
+        return;\
+        currentTest = activeArr[0];\
+        document.getElementById(currentTest).innerHTML = "TESTING";\
+        $.post(\
+            target,\
+            { action: currentTest, CSRFtoken: $("meta[name=CSRFtoken]").attr("content") },\
+            postResult,\
+            "json"\
+         );\
+    }\
+    else if(currentTest == lastTest)\
+    {\
+        var next = $.inArray(currentTest,activeArr)+1;\
+        if(next == activeArr.length)\
+        {\
+            return;\
+        }\
+        else\
+        {\
+            currentTest = activeArr[next];\
+            document.getElementById(currentTest).innerHTML = "TESTING";\
+            $.post(\
+            target,\
+            { action: currentTest, CSRFtoken: $("meta[name=CSRFtoken]").attr("content") },\
+            postResult,\
+            "json"\
+            );\
+        }\
+    }\
+    else if(currentTest == "dsl")\
+    {\
+        var st = "";\
+        count++;\
+        if(count == 4)\
+        {\
+            count = 0;\
+            st = "final";\
+        }\
+        else\
+        {\
+            st = "testing";\
+        }\
+        $.post(\
+            target,\
+            { action: currentTest, state:st,CSRFtoken: $("meta[name=CSRFtoken]").attr("content") },\
+            postResult,\
+            "json"\
+            );\
+    }\
+    else if(currentTest == "wifi1")\
+    {\
+        var st = "";\
+        count++;\
+        if(count == 30)\
+        {\
+            count = 0;\
+            st = "final";\
+        }\
+        else\
+        {\
+            st = "testing";\
+        }\
+        $.post(\
+            target,\
+            { action: currentTest, state:st,CSRFtoken: $("meta[name=CSRFtoken]").attr("content") },\
+            postResult,\
+            "json"\
+            );\
+    }\
+    else if(currentTest == "wifi2")\
+    {\
+        var st = "";\
+        count++;\
+        if(count == 30)\
+        {\
+            count = 0;\
+            st = "final";\
+        }\
+        else\
+        {\
+            st = "testing";\
+        }\
+        $.post(\
+            target,\
+            { action: currentTest, state:st,CSRFtoken: $("meta[name=CSRFtoken]").attr("content") },\
+            postResult,\
+            "json"\
+            );\
+    }\
+    else if(currentTest == "dect")\
+    {\
+        var st = "";\
+        count++;\
+        if(count == 60)\
+        {\
+            count = 0;\
+            st = "final";\
+        }\
+        else\
+        {\
+            st = "testing";\
+        }\
+        $.post(\
+            target,\
+            { action: currentTest, state:st,CSRFtoken: $("meta[name=CSRFtoken]").attr("content") },\
+            postResult,\
+            "json"\
+            );\
+    }\
+}\
+\
+\
+function startAutoTest(data,status)\
+{\
+    currentTest = "";\
+    lastTest = "";\
+    testComplete = 0;\
+\
+    var selectCasesArr = new Array();\
+    for (var i=0;i<allAutoCasesArr.length;i++)\
+    {\
+        if ($("#select_" + allAutoCasesArr[i]).prop("checked") == true)\
+        {\
+            selectCasesArr.push(allAutoCasesArr[i]);\
+        }\
+    }\
+    activeArr = selectCasesArr;\
+    restTestCase = activeArr.length + activeMArr.length;\
+    autoTestAllModule();\
+\
+}\
+\
+function setTestComplete(status,typeId,testType,exData)\
+{\
+    testComplete = 1;\
+    if(exData == null)\
+    {\
+        $.post(\
+            target,\
+            { action: "generatorBarcode", state:status,id:typeId,type:testType,CSRFtoken: $("meta[name=CSRFtoken]").attr("content") },\
+            generatorBarCode,\
+            "json"\
+        );\
+    }\
+    else\
+    {\
+        $.post(\
+            target,\
+            { action: "generatorBarcode", state:status,id:typeId,type:testType,extmodule:exData,CSRFtoken: $("meta[name=CSRFtoken]").attr("content") },\
+            generatorBarCode,\
+            "json"\
+        );\
+    }\
+}\
+\
+function postResult(data,status)\
+{\
+    if(testComplete == 1)\
+        return;\
+    if(data.result == "suc")\
+        document.getElementById(data.act).innerHTML = "PASS";\
+    else if(data.result == "fail")\
+    {\
+        document.getElementById(data.act).innerHTML = "FAIL";\
+        setTestComplete("fail",data.act,"auto",data.extModuleName);\
+        return;\
+    }else if(data.result == "testing")\
+    {\
+        document.getElementById(data.act).innerHTML = "TESTING";\
+        window.setTimeout(autoTestAllModule, 1500);\
+        return;\
+    }else\
+    {\
+        document.getElementById(data.act).innerHTML = "";\
+        window.setTimeout(autoTestAllModule, 1500);\
+        return;\
+    }\
+\
+    testCaseDone();\
+    lastTest = data.act;\
+    if(testComplete == 0)\
+    window.setTimeout(autoTestAllModule, 1500);\
+}\
+$("#stopTest").click(function() {\
+    if(testComplete == 1)\
+        return;\
+    setTestComplete("manualStop","0","0",null);\
+    return false;\
+});\
+$("#startReset").click(function() {\
+    reset();\
+});\
+$("#btn-auto").click(function() {\
+    startAutoTest();\
+});\
+$("#selectAll").click(function() {\
+    var checkedAll = $("#selectAll").prop("checked");\
+    for (var i=0;i<allAutoCasesArr.length;i++)\
+    {\
+      $("#select_" + allAutoCasesArr[i]).prop("checked", checkedAll)\
+    }\
+});\
+function wait_for_webserver_running() {\
+    $.ajax({ url: "/", timeout: refreshTimeOut })\
+    .done(function(data) {\
+      document.open("text/html");\
+      document.write(data);\
+      document.close();\
+    })\
+    .fail(function() {\
+      window.setTimeout(wait_for_webserver_running, refreshDelay);\
+    });\
+}\
+\
+function wait_for_webserver_down() {\
+    $.ajax({ url: target, timeout: refreshTimeOut })\
+    .done(function() {\
+      window.setTimeout(wait_for_webserver_down, refreshDelay);\
+    })\
+    .fail(function() {\
+      window.setTimeout(wait_for_webserver_running, refreshDelay);\
+    });\
+}\
+\
+function reset()\
+{\
+    $.post(\
+      target,\
+      { action: "system_reset", CSRFtoken: $("meta[name=CSRFtoken]").attr("content") },\
+      wait_for_webserver_down,\
+      "json"\
+    );\
+    return false;\
+}\
+function generatorBarCode(data,status)\
+{\
+    var code = data.barData;\
+    var state = data.state;\
+    var bg ="";\
+    if(state == "fail" || state == "manualStop")\
+    {\
+        bg  = "#ff0000";\
+    }\
+    else\
+    {\
+        bg  = "#000000";\
+    }\
+    var barcodeElement = document.getElementById(\'barcode\');\
+    barcodeElement.style.display="";\
+    genbarcode({\
+                renderToID : \'barcode\',\
+                string : code,\
+                barWidth : 1,\
+                height : \'100\',\
+                showText : true,\
+                fontColor : bg\
+            });\
+$(\'html, body\').animate({scrollTop:0}, \'slow\');\
+}\
+\
+function processMTestResult(id,state)\
+{\
+/*\
+    if(testComplete == 1 || document.getElementById(id).innerHTML != "UNTESTED")\
+    {\
+        return;\
+    }\
+*/\
+    if(state == "pass")\
+    {\
+        document.getElementById(id).innerHTML = "PASS";\
+\
+            if(id == "dt1")\
+	    {\
+		    $.post(\
+		      target,\
+		      { action: "switchDT", CSRFtoken: $("meta[name=CSRFtoken]").attr("content")},\
+		      null,\
+		      "json"\
+		    );\
+	    }\
+    }\
+    else\
+    {\
+        document.getElementById(id).innerHTML = "FAIL";\
+        setTestComplete("fail",id,"manual",null);\
+        return;\
+    }\
+    testCaseDone();\
+}\
+\
+function checkLed(data)\
+{\
+    $.post(\
+      target,\
+      { action: "check_leds", CSRFtoken: $("meta[name=CSRFtoken]").attr("content"),color:data},\
+      null,\
+      "json"\
+    );\
+    return false;\
+}\
+\
+function testCaseDone()\
+{\
+    restTestCase--;\
+\
+    if(restTestCase == 0)\
+    {\
+        setTestComplete("pass","0","0",null);\
+    }\
+}\
+\
+var asView = function(){\
+    this.ledTest = function(state) {\
+processMTestResult("led",state);\
+    };\
+    this.fxsTest = function(state) {\
+processMTestResult("fxs",state);\
+    };\
+    this.fxoTest = function(state) {\
+processMTestResult("fxo",state);\
+    };\
+    this.dt1Test = function(state) {\
+processMTestResult("dt1",state);\
+    };\
+    this.dt2Test = function(state) {\
+processMTestResult("dt2",state);\
+    };\
+    this.btnTest = function(state) {\
+processMTestResult("btn",state);\
+    };\
+    this.nfcTest = function(state) {\
+processMTestResult("nfc",state);\
+    };\
+    this.wpsbtnTest = function(state) {\
+processMTestResult("wpsbtn",state);\
+    };\
+    this.resetbtnTest = function(state) {\
+processMTestResult("resetbtn",state);\
+    };\
+    this.wifibtnTest = function(state) {\
+processMTestResult("wifibtn",state);\
+    };\
+    this.statusbtnTest = function(state) {\
+processMTestResult("statusbtn",state);\
+    };\
+    this.dectbtnTest = function(state) {\
+processMTestResult("dectbtn",state);\
+    };\
+\
+this.redBtn = function(state) {\
+checkLed("red");\
+    };\
+this.greenBtn = function(state) {\
+checkLed("green");\
+    };\
+this.blueBtn = function(state) {\
+checkLed("blue");\
+    };\
+\
+\
+};\
+\
+ko.applyBindings(asView);\
+\
+}())\
+</script>\
+</div>\
+</body>\
+</html>\
+'); 

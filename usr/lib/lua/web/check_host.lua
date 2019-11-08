@@ -5,15 +5,13 @@ local format = string.format
 
 local dm = require "datamodel"
 
-local function append_dhcp_paths(paths)
-  local intf = dm.get({"uci.dhcp.dhcp."}, false) or {}
-  for _, v in ipairs(intf) do
-    if v.path:match("^uci%.dhcp%.dhcp%.") then
-       if v.param == "interface" and v.value ~= "" then
-           paths[#paths + 1] = format('rpc.network.interface.@%s.ipaddr', v.value)
-           paths[#paths + 1] = format('rpc.network.interface.@%s.ip6addr', v.value)
-       end
-    end
+local function append_interface_paths(paths)
+  local entries = dm.getPN("uci.network.interface.", true)
+  local intf
+  for _, entry in pairs(entries or {}) do
+    intf = entry.path:match("@(%S+)%.")
+    paths[#paths + 1] = format('rpc.network.interface.@%s.ipaddr', intf)
+    paths[#paths + 1] = format('rpc.network.interface.@%s.ip6addr', intf)
   end
 end
 
@@ -36,7 +34,7 @@ end
 local function validHostDMPaths()
   local paths = {"uci.system.system.@system[0].hostname"}
   append_dnsmasq_paths(paths)
-  append_dhcp_paths(paths)
+  append_interface_paths(paths)
   append_ddns_domains(paths)
   return paths
 end
@@ -46,36 +44,27 @@ local function normalize_hostname(host)
   return host and host:lower()
 end
 
-local function retrieveDomains(hosts)
-  local domains = {}
-  for _, val in ipairs(hosts) do
-    if val.param == "domain" and val.path:match("^uci%.dhcp%.dnsmasq%.") then
-       domains[#domains+1] = normalize_hostname(val.value)
-    end
-  end
-  return domains
-end
-
---- Verify if the given hostname a valid hostname or IP address for this system
+--- Verify if the given hostname is a valid hostname or IP address for this system
 -- @param http_req_host The hostname/IP address that needs to be authenticated
 -- @return True if the hostname is valid. Otherwise false
 local function hostRefersToUs(host)
   host = normalize_hostname(host)
   local hosts = dm.get(validHostDMPaths(), false) or {}
-  local domains = retrieveDomains(hosts)
   for _, v in ipairs(hosts) do
     if v.path == "uci.system.system.@system[0]." then
        if host == normalize_hostname(v.value) then
           return true
        end
-    elseif v.path:match("^uci%.dhcp%.dnsmasq%.[^.]*%.hostname%.") then
+    elseif v.path:match("^uci%.dhcp%.dnsmasq%.@.*%.hostname%.") then
        if v.param == "value" and host == normalize_hostname(v.value) then
          return true
        else
-         for _,domainValue in pairs(domains) do
-           --When the host is having both hostname and domain value
-           if host == normalize_hostname(v.value.."."..domainValue) then
-             return true
+         --When the host is having both hostname and domain value
+         for _, val in ipairs(hosts) do
+           if val.param == "domain" and val.path:match("^uci%.dhcp%.dnsmasq%.") then
+             if host == normalize_hostname(v.value.."."..val.value) then
+               return true
+             end
            end
          end
        end

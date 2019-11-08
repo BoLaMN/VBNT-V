@@ -92,8 +92,10 @@ function M.get_preferred_plmn(device)
 end
 
 function M.get_imsi(device)
-	local ret = device:send_singleline_command("AT+CIMI", "")
-	if ret and tonumber(ret) then return ret end
+	for _ = 1, 5 do
+		local ret = device:send_singleline_command("AT+CIMI", "")
+		if ret and tonumber(ret) then return ret end
+	end
 	return nil
 end
 

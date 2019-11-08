@@ -37,6 +37,11 @@ local Device_WiFi_Radio_i_ = {
         type = "string",
         max = "64",
       },
+      X_FASTWEB_ChannelHistory = {
+        access = "readOnly",
+        type = "string",
+        max = "96",
+      },
       LastChange = {
         access = "readOnly",
         activeNotify = "canDeny",
@@ -319,13 +324,21 @@ local Device_WiFi_Radio_i_ = {
         list = true,
         type = "string",
       },
---[[ TODO
       SupportedDataTransmitRates = {
         access = "readOnly",
         list = true,
         type = "string",
       },
-]]--
+      X_FASTWEB_ChannelQuality_LastRefreshTime = {
+        access = "readOnly",
+        type ="string",
+        description = "Last refresh Date and time of the ChannelQuality measures"
+      },
+      X_FASTWEB_AutoCHClientConn = {
+        access = "readWrite",
+        type = "boolean",
+        description = "Allows to customize the channel rescan behavior based on the presence/absence of clients associated"
+      },
     }
   },
   aliasDefault = "Name",
@@ -345,6 +358,8 @@ local wirelessBinding = {config="wireless"}
 local posix = require("tch.posix")
 local getClockTime = posix.clock_gettime
 local lastStateChangeTime = {}
+local split_key = mapper("nwcommon").split_key
+local floor = math.floor
 
 -- convert ext_channel_location to ExtensionChannel
 local extChannelMap = {
@@ -372,10 +387,6 @@ local cache = {
 local function drop_cache()
   cache.uci = {}
   cache.ubus = {}
-end
-
-local function trim(str) --Remove leading and trailing white spaces
-  return str and string.match(str, "^%s*(.-)%s*$") or ""
 end
 
 local function getFromUci(key, option)
@@ -499,6 +510,23 @@ Device_WiFi_Radio_i_.get = {
     return model:getName(key)
   end,
 
+  X_FASTWEB_ChannelHistory = function(mapping, param, key)
+    local lines = {}
+    local channelHistory = {}
+    local data = conn:call("wireless.radio.acs", "get", { name = key }) or {}
+    local scanHistory = data and data[key] and data[key].scan_history or ""
+    for timeHr, timeMin, date, channel in scanHistory:gmatch("%d+;(%d+):(%d+):%d+%-([^;]+);.-;%d+;([^;]+);[^;]+;[^;]+") do
+      local channelData = date.." "..timeHr..":"..timeMin.." ".."Ch:"..channel
+      lines[#lines+1] = channelData
+    end
+    if next(lines) then
+      for k = #lines, #lines-3, -1 do
+        channelHistory[#channelHistory+1] = lines[k]
+      end
+    end
+    return table.concat(channelHistory, ", ") or ""
+  end,
+
   LastChange = function(mapping, param, key)
     return tostring(getClockTime(posix.CLOCK_MONOTONIC) - (lastStateChangeTime[key] or 0))
   end,
@@ -557,17 +585,18 @@ Device_WiFi_Radio_i_.get = {
   end,
 
   AutoChannelRefreshPeriod = function(mapping, param, key)
-    local key = model:getUciKey(key)
-    local refreshPeriod = getFromUci(key, "acs_rescan_period")
+    local uciKey = model:getUciKey(key)
+    local refreshPeriod = getFromUci(uciKey, "acs_rescan_period")
     if not refreshPeriod then
       local radioData = conn:call("wireless.radio.acs", "get", {}) or {}
-      refreshPeriod = radioData[key] and tostring(radioData[key]["rescan_period"]) or "0"
+      refreshPeriod = radioData[uciKey] and tostring(radioData[uciKey].rescan_period) or "0"
     end
     return refreshPeriod
   end,
 
   MaxBitRate = function(mapping, param, key)
-    return getOption(key, nil, "max_phy_rate") or ""
+    local bitRate = getOption(key, nil, "max_phy_rate")
+    return bitRate and tostring(floor(bitRate/1000)) or "0"
   end,
 
   SupportedFrequencyBands = function(mapping, param, key)
@@ -632,7 +661,7 @@ Device_WiFi_Radio_i_.get = {
   end,
 
   IEEE80211hSupported = function(mapping, param, key)
-    if getOption(key, nil, "supported_frequency_bands") or "" == "5GHz" then
+    if (getOption(key, nil, "supported_frequency_bands") or "") == "5GHz" then
       local std = getOption(key, nil, "supported_standards") or ""
       if std:match("a?n") then
         return "1"
@@ -642,13 +671,36 @@ Device_WiFi_Radio_i_.get = {
   end,
 
   IEEE80211hEnabled = function(mapping, param, key)
-    if getOption(key, nil, "band") or "" == "5GHz" then
+    if (getOption(key, nil, "band") or "") == "5GHz" then
       local std = getOption(key, nil, "standard") or ""
       if std:match("a?n") then
         return "1"
       end
     end
     return "0"
+  end,
+  SupportedDataTransmitRates = function(mapping, param, key)
+    local rateSet = getOption(key, "rateset", "rateset") or ""
+    local suppRates = {}
+    for rate in rateSet:gmatch("([%d.]+)%(b%)") do
+      suppRates[#suppRates+1] = rate
+    end
+    return table.concat(suppRates, ",")
+  end,
+  X_FASTWEB_ChannelQuality_LastRefreshTime = function(mapping, param, key)
+    local data = conn:call("wireless.radio.acs", "get", { name = key }) or {}
+    local time = data[key] and data[key].scan_report or ""
+    return time:match("(.-);") or ""
+  end,
+
+  X_FASTWEB_AutoCHClientConn = function(mapping, param, key)
+    local autoClientConn =  getOption(key, "acs_rescan_delay_policy", "acs_rescan_delay_policy")
+    if autoClientConn == "always" then
+      return '1'
+    elseif autoClientConn == "nostation" then
+      return '0'
+    end
+    return ''
   end,
 }
 
@@ -833,6 +885,11 @@ Device_WiFi_Radio_i_.set = {
       return nil, error
     end
   end,
+
+  X_FASTWEB_AutoCHClientConn = function(mapping, param, value, key)
+    local autoConn = value == "1"  and "always" or "nostation"
+    setOption(key, "acs_rescan_delay_policy", autoConn)
+  end,
 }
 
 Device_WiFi_Radio_i_.commit = function()
@@ -859,7 +916,7 @@ local Device_WiFi_Radio_i_Multi_i_ = {
   objectType = {
     name = "#ROOT",
     access = "readOnly",
-    minEntries = 1,
+    minEntries = 0,
     maxEntries = math.huge,
     parameters = {
       Score = {
@@ -882,13 +939,34 @@ local Device_WiFi_Radio_i_Multi_i_ = {
         type = "string",
         description = "Tx/Rx level of channel occupation",
       },
+      AvgSignalStrength = {
+        access = "readOnly",
+        type = "int",
+        description = "Average signal strength of BSSID list of the channel"
+      },
+      MinSignalStrength = {
+        access = "readOnly",
+        type = "int",
+        description = "Minimum signal strength of BSSID list of the channel"
+      },
+      MaxSignalStrength = {
+        access = "readOnly",
+        type = "int",
+        description = "Maximum signal strength of BSSID list of the channel"
+      },
+      NumberAP = {
+        access = "readOnly",
+        type = "unsignedInt",
+        description = "Number of BSSID seen on channel"
+      },
+      Channel = {
+        access = "readOnly",
+        type = "int",
+        description = "Allowed channel value for radio 2G/5G",
+      },
     },
   }
 }
-
-Device_WiFi_Radio_i_Multi_i_.entries = function(mapping, parentkey)
-  return { parentkey }
-end
 
 -- Function to get the Ubus Call data for "ubusName" and "key"
 local function getUbusData(ubusName, key)
@@ -903,23 +981,28 @@ local function getRadioScore(ubusStr)
   return ubusStr:match("[^;]*;[^;]*;[^;]*;[^;]*;(%d*);") or ""
 end
 
+local function getDutyCycle(ubusStr)
+  return ubusStr:match("%d*;(%d*);") or ""
+end
 
--- Function to Find the Nth value from the UbusStr(a string),
+-- Function to Find the 15th and 18th value from the UbusStr(a string),
 -- so converting that string to table and returning the respective Value from the specified position
-local function findNth(ubusStr, position)
+local function extractNoiseLevels(ubusStr)
   local subStrTable = {}
-  for subStr in string.gmatch(ubusStr, "-?%d+") do
+  for subStr in string.gmatch(ubusStr, "%-?%d+") do
     subStrTable[#subStrTable+1] = subStr
   end
-  return subStrTable[position]
+  local wifiNoiseLevel = subStrTable[15] or ""
+  local nonwifiNoiseLevel = subStrTable[18] or ""
+  return wifiNoiseLevel, nonwifiNoiseLevel
 end
 
 -- Function to get Noise value for the respective params
-local function getWiFiNoiseLevel(ubusStr, position, key)
+local function getWiFiNoiseLevel(ubusStr, key)
   local rowNum = 1
   for subStr in ubusStr:gmatch("([^\n]+)") do
     if rowNum == 3 then
-      return findNth(subStr, position) or ""
+      return extractNoiseLevels(subStr)
     end
     rowNum = rowNum + 1
   end
@@ -937,49 +1020,131 @@ local function getSubUbusStr(ubusData, option)
   return ""
 end
 
--- Function to get the values for ChannelQuality Params
-local function getParamValue(param, parentkey)
-  local ubusCall = "wireless.radio.acs"
-  local ubusData, ubusStr
-  ubusData = getUbusData(ubusCall, parentkey)
-  if param == "Score" then
-    ubusStr = getSubUbusStr(ubusData, "scan_report")
-    if ubusStr then
-      return getRadioScore(ubusStr)
-    end
-  elseif param == "DutyCycle" then
-    ubusStr = getSubUbusStr(ubusData, "scan_report")
-    if ubusStr then
-      return (ubusStr:match("%d*;(%d*);")) or ""
-    end
-  elseif param == "WiFiNoiseLevel" then
-    ubusStr = getSubUbusStr(ubusData, "channel_stats")
-    if ubusStr then
-      return getWiFiNoiseLevel(ubusStr, 18, parentkey) or ""
-    end
-  elseif param == "NONWiFiNoiseLevel" then
-    ubusStr = getSubUbusStr(ubusData, "channel_stats")
-    if ubusStr then
-      return getWiFiNoiseLevel(ubusStr, 15, parentkey) or ""
+local function getNumberAP(channel, ubusStr)
+  local bssCount, currChannel
+  for val in ubusStr:gmatch("([^;]+)") do
+    currChannel , bssCount = val:match("^([^:]+):[^:]+:([^:]+):")
+    if bssCount and channel == currChannel then
+      return bssCount
     end
   end
-  return ""
+end
+
+local function signalStrength(key)
+  local channel
+  key, channel = split_key(key)
+  local ubusData = conn:call("wireless.radio.bsslist", "get",{}) or {}
+  local rssi = {}
+  if ubusData and ubusData[key] then
+    for _, v in pairs(ubusData[key]) do
+      if channel == tostring(v.channel) then
+        rssi[#rssi+1] = tonumber(v.rssi)
+      end
+    end
+  end
+  table.sort(rssi)
+  local minSignalStrength = rssi and rssi[1] and tostring(rssi[1]) or "0"
+  local maxSignalStrength = rssi and rssi[#rssi] and tostring(rssi[#rssi]) or "0"
+  return minSignalStrength, maxSignalStrength, rssi
+end
+
+local function avgSignalStrength(rssi)
+  local sum = 0
+  if next(rssi) then
+    for _, val in ipairs(rssi) do
+      sum = sum + val
+    end
+    return string.format("%0.3f",sum/#rssi)
+  end
+  return "0"
+end
+
+local function getUbusDataValue(key, ubusStr)
+  local radioKey, channel = split_key(key)
+  local data = conn:call("wireless.radio.acs", "get",  { name = radioKey }) or {}
+  if ubusStr then
+    return data[radioKey] and data[radioKey][ubusStr] or ""
+  else
+    local scan = data[radioKey] and data[radioKey]["scan_report"] or ""
+    local channel_stats = data[radioKey] and data[radioKey]["channel_stats"] or ""
+    return scan, channel_stats
+  end
+end
+
+Device_WiFi_Radio_i_Multi_i_.entries = function(mapping, parentkey)
+  local ubusData, ubusStr
+  ubusData = getUbusData("wireless.radio.acs", parentkey)
+  ubusStr = getSubUbusStr(ubusData, "allowed_channels")
+  local allowedchannels = {}
+  if ubusStr then
+    for val in ubusStr:gmatch("[^%s]+") do
+      allowedchannels[#allowedchannels+1] = parentkey .."|".. val
+    end
+  end
+  return allowedchannels
 end
 
 Device_WiFi_Radio_i_Multi_i_.get = {
-  Score = function(mappings, param, parentkey)
-    return getParamValue(param, parentkey) or ""
+  Score = function(mappings, param, key)
+    local scan = getUbusDataValue(key, "scan_report")
+    return getRadioScore(scan) or ""
   end,
-  WiFiNoiseLevel = function(mappings, param, parentkey)
-    return getParamValue(param, parentkey) or ""
+  WiFiNoiseLevel = function(mappings, param, key)
+    local radioKey = split_key(key)
+    local channel_stats = getUbusDataValue(key, "channel_stats")
+    local wifiNoiseLevel = getWiFiNoiseLevel(channel_stats, radioKey)
+    return wifiNoiseLevel or ""
   end,
-  NONWiFiNoiseLevel = function(mappings, param, parentkey)
-    return getParamValue(param, parentkey) or ""
+  NONWiFiNoiseLevel = function(mappings, param, key)
+    local radioKey = split_key(key)
+    local channel_stats = getUbusDataValue(key, "channel_stats")
+    local _, nonwifiNoiseLevel = getWiFiNoiseLevel(channel_stats, radioKey)
+    return nonwifiNoiseLevel or ""
   end,
-  DutyCycle = function(mappings, param, parentkey)
-    return getParamValue(param, parentkey) or ""
+  DutyCycle = function(mappings, param, key)
+    local scan = getUbusDataValue(key, "scan_report")
+    return getDutyCycle(scan) or ""
+  end,
+  MinSignalStrength = function(mapping, param, key)
+    local minSignalStrength = signalStrength(key)
+    return minSignalStrength
+  end,
+  MaxSignalStrength = function(mapping, param, key)
+    local _, maxSignalStrength = signalStrength(key)
+    return maxSignalStrength
+  end,
+  AvgSignalStrength = function(mapping, param, key)
+    local _, _, rssi = signalStrength(key)
+    return avgSignalStrength(rssi)
+  end,
+  NumberAP =  function(mapping, param, key)
+    local _, channel = split_key(key)
+    local scan = getUbusDataValue(key, "scan_report")
+    return getNumberAP(channel, scan) or "0"
+  end,
+  Channel = function(mapping, param, key)
+    local _, channel = split_key(key)
+    return channel or ""
   end,
 }
+
+Device_WiFi_Radio_i_Multi_i_.getall = function(mapping, key)
+  local radioKey, channel = split_key(key)
+  local scan, channel_stats = getUbusDataValue(key)
+  local minSignalStrength, maxSignalStrength, rssi = signalStrength(key)
+  local wifiNoiseLevel, nonwifiNoiseLevel = getWiFiNoiseLevel(channel_stats, radioKey)
+  return {
+    Score = getRadioScore(scan),
+    WiFiNoiseLevel = wifiNoiseLevel,
+    NONWiFiNoiseLevel = nonwifiNoiseLevel,
+    DutyCycle = getDutyCycle(scan),
+    MinSignalStrength = minSignalStrength,
+    MaxSignalStrength = maxSignalStrength,
+    AvgSignalStrength = avgSignalStrength(rssi),
+    NumberAP = getNumberAP(channel, scan) or "0",
+    Channel = channel or "",
+}
+end
 
 local duplicator = mapper("multiroot").duplicate
 local duplicates = duplicator(Device_WiFi_Radio_i_Multi_i_, "#ROOT", {"Device.WiFi.Radio.{i}.X_FASTWEB_ChannelQuality.{i}.", "Device.WiFi.Radio.{i}.X_000E50_ChannelQuality.{i}."})

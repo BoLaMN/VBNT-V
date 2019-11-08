@@ -6,6 +6,10 @@ local format, match, gsub = string.format, string.match, string.gsub
 
 local uci = require("uci")
 local uci_cursor
+local uciHelper = require("transformer.mapper.ucihelper")
+local getFromUci = uciHelper.get_from_uci
+local setOnUci = uciHelper.set_on_uci
+local sysBinding = { config = "system", sectionname = "config" }
 
 local export_version = "1.00"
 local export_list = "/etc/config.export"
@@ -74,6 +78,11 @@ end
 -- return true if import without signature is allowed
 local function check_import_unsigned()
   return uci_get_boolean(uci_prefix_config .. "import_unsigned")
+end
+
+-- return true if import_restricted is enabled in the config
+local function check_import_restricted()
+  return uci_get_boolean(uci_prefix_config .. "import_restricted")
 end
 
 local function get_rip_random(rip_random)
@@ -192,7 +201,7 @@ local function config_read_list(list, file)
     -- keep first word only
     line = line:match("^%S+")
     if line then  -- skip empty lines
-      local value, package, section
+      local value
       if line:sub(1,1) == "^" then
         value = false
         line = line:sub(2)
@@ -226,7 +235,7 @@ end
 local function export_compose_header(export_data)
   local header = {}
   local function add_header_uci(key)
-    local value, err = uci_cursor:get(uci_path_header[key])
+    local value = uci_cursor:get(uci_path_header[key])
     if not value then throw_error() end
     header[#header+1] = { key = key, value = value }
   end
@@ -263,7 +272,7 @@ local function export_config_start_package(data, package)
   export_config_add(data, format("[%s]", package))
 end
 
-local function export_config_end_package(data, package)
+local function export_config_end_package(data)
   export_config_add(data, "")
 end
 
@@ -271,7 +280,7 @@ local function export_config_start_section(data, package, section)
   export_config_add(data, format("[%s.%s]", package, section))
 end
 
-local function export_config_end_section(data, package, section)
+local function export_config_end_section(data)
   export_config_add(data, "")
 end
 
@@ -379,7 +388,7 @@ local function export_collect_configdata(export_data, list)
     if list.pkg[package] or list.all then
       -- check if the config file truly has data; ignore if not
       local all = uci_cursor:get_all(package)
-      if next(all) then
+      if all and next(all) then
         export_package(data, package, list.pkg[package] or { value = true, sn = {} })
       end
     end
@@ -392,7 +401,12 @@ local function export_encrypt_data(export_data)
   export_data.iv = crypto.random(16)
   if not export_data.iv then throw_error() end
 
-  export_data.ciphertext = crypto.encrypt(cipher_scheme, get_cipher_key(get_export_commonkey()), export_data.iv, export_data.plaintext)
+  export_data.ciphertext = crypto.encrypt(
+                             cipher_scheme,
+                             get_cipher_key(get_export_commonkey()),
+                             export_data.iv,
+                             export_data.plaintext
+                           )
   if not export_data.ciphertext then throw_error() end
 
   -- remove plaintext from export_data
@@ -603,21 +617,21 @@ end
 -- with header a table with the key/value pairs in the header
 -- and rawheader a string with the exact content of the header.
 local function read_header(file)
-  local header = {}
+  local headers = {}
   local raw = {}
-  local line = file:read('*l')
-  if line~="PREAMBLE=THENC" then
+  local header = file:read('*l')
+  if header~="PREAMBLE=THENC" then
     throw_error()
   end
-  raw[1] = line
+  raw[1] = header
   while true do
     local line = file:read("*l")
     if line=="" then break end
     local k, v = line:match("^([^=]+)=(.*)$")
-    if not k  or header[k] then
+    if not k  or headers[k] then
       throw_error()
     end
-    header[k] = v
+    headers[k] = v
     raw[#raw+1] = line
   end
   -- add an explicit newline so that the rawheader will end with two consecutive
@@ -625,7 +639,7 @@ local function read_header(file)
   -- This is important as the signature check will fail if the rawheader does
   -- not match the file exactly.
   raw[#raw+1] = "\n"
-  return header, table.concat(raw, '\n')
+  return headers, table.concat(raw, '\n')
 end
 
 local function import_read_data(import_data, filepath)
@@ -641,39 +655,6 @@ local function import_read_data(import_data, filepath)
   -- read the rest of the file
   import_data.rawcontent = f_data:read("*all")
   f_data:close()
-end
-
-local function import_check_signature(import_data)
-  if import_data.header["SIGNATUREKEY"] ~= get_import_commonkey()
-     or #import_data.rawcontent < 20 then
-    throw_error()
-  end
-
-  import_data.signature = import_data.rawcontent:sub(-20, -1)
-  import_data.rawcontent = import_data.rawcontent:sub(1, -21)
-
-  if true ~= crypto.validate(signature_scheme, get_signature_key(get_import_commonkey()), import_data.rawheader .. import_data.rawcontent,
-                             import_data.signature) then
-    throw_error()
-  end
-end
-
-local function import_decrypt_data(import_data)
-  if import_data.header["CIPHERKEY"] ~= get_import_commonkey()
-     or #import_data.rawcontent < 16 then
-    throw_error()
-  end
-
-  local iv = import_data.rawcontent:sub(1,16)
-  import_data.rawcontent = import_data.rawcontent:sub(17)
-
-  local plaintext = crypto.decrypt(cipher_scheme, get_cipher_key(get_import_commonkey()), iv, import_data.rawcontent)
-  if not plaintext then
-    throw_error()
-  end
-
-  -- replace encrypted rawcontent with plaintext
-  import_data.rawcontent = plaintext
 end
 
 local function import_parse_content(import_data)
@@ -804,20 +785,7 @@ local function import_apply_configdata(data)
   end
 end
 
-local function set_vendor_config_param(param, value)
-  if param and value then
-    if not uci_cursor:set("env", "var", param, value) then
-      throw_error()
-    end
-  end
-end
-
-local function import_execute(import_mapdata)
-  import_mapdata.info = "import started"
-
-  local rv, err
-  local import_data = {}
-
+local function import_read_import_config(import_mapdata)
   import_mapdata.info = "reading import list"
   -- open file with import rules
   local f_list = io.open(import_list, "r")
@@ -827,15 +795,103 @@ local function import_execute(import_mapdata)
   end
   -- read import rules
   local import_config_list = {}
-  rv, err = pcall(config_read_list, import_config_list, f_list)
+  local rv, err = pcall(config_read_list, import_config_list, f_list)
   if not rv then
     import_set_error(import_mapdata, format("read import list failed (%s)", get_error_info(err) or "?"))
     import_config_list = nil
   end
   -- cleanup
   f_list:close()
-  -- check if read failed
+  return import_config_list
+end
+
+local function import_on_same_version(import_mapdata, import_data)
+  local rv, err
+  local import_config_list = import_read_import_config(import_mapdata)
   if not import_config_list then return end
+
+  -- parse raw content
+  import_mapdata.info = "parsing import content"
+  rv, err = pcall(import_parse_content, import_data)
+  if not rv then
+    return nil, format("parse import content failed (%s)", get_error_info(err) or "?")
+  end
+
+  -- filter config data with import list
+  import_mapdata.info = "filtering config data"
+  rv, err = pcall(import_filter_configdata, import_data.config, import_config_list)
+  if not rv then
+    return format("filter config data failed (%s)", get_error_info(err) or "?")
+  end
+
+  -- apply import data
+  import_mapdata.info = "applying config data"
+  rv, err = pcall(import_apply_configdata, import_data.config)
+  if not rv then
+    return format("apply config data failed (%s)", get_error_info(err) or "?")
+  end
+
+  return true
+end
+
+-- To verify the build version from the imported config
+local function import_check_buildversion(import_data)
+  local version = uci_cursor:get(uci_path_header["BUILDVERSION"])
+  local from_version = import_data.header["BUILDVERSION"]
+  if version ~= from_version then
+    local import = require "import_export.import"
+    local importer = import.importer_from_version(uci_cursor, from_version)
+    if not importer then
+      throw_error()
+    end
+    return importer
+  end
+  return import_on_same_version
+end
+
+local function import_check_signature(import_data)
+  if import_data.header["SIGNATUREKEY"] ~= get_import_commonkey()
+     or #import_data.rawcontent < 20 then
+    throw_error()
+  end
+
+  import_data.signature = import_data.rawcontent:sub(-20, -1)
+  import_data.rawcontent = import_data.rawcontent:sub(1, -21)
+
+  local sigok = crypto.validate(
+                  signature_scheme,
+                  get_signature_key(get_import_commonkey()),
+                  import_data.rawheader .. import_data.rawcontent,
+                  import_data.signature)
+  if not sigok  then
+    throw_error()
+  end
+end
+
+local function import_decrypt_data(import_data)
+  if import_data.header["CIPHERKEY"] ~= get_import_commonkey()
+     or #import_data.rawcontent < 16 then
+    throw_error()
+  end
+
+  local iv = import_data.rawcontent:sub(1,16)
+  import_data.rawcontent = import_data.rawcontent:sub(17)
+
+  local plaintext = crypto.decrypt(cipher_scheme, get_cipher_key(get_import_commonkey()), iv, import_data.rawcontent)
+  if not plaintext then
+    throw_error()
+  end
+
+  -- replace encrypted rawcontent with plaintext
+  import_data.rawcontent = plaintext
+end
+
+
+local function import_execute(import_mapdata)
+  import_mapdata.info = "import started"
+
+  local rv, err
+  local import_data = {}
 
   -- read import data
   import_mapdata.info = "reading import data"
@@ -843,6 +899,21 @@ local function import_execute(import_mapdata)
   if not rv then
     import_set_error(import_mapdata, format("read import data failed (%s)", get_error_info(err) or "?"))
     return
+  end
+
+  -- To check if the import is done on the same build version
+  local importer = import_on_same_version
+  if check_import_restricted() then
+    if import_data.header["BUILDVERSION"] then
+      import_mapdata.info = "checking buildversion"
+      rv, importer = pcall(import_check_buildversion, import_data)
+      if not rv then
+        import_set_error(import_mapdata, format("Buildversion check failed (%s)", get_error_info(importer) or "?"))
+        return
+      end
+    else
+      import_set_error(import_mapdata, "Buildversion cannot be found")
+    end
   end
 
   -- check signature if present
@@ -871,31 +942,22 @@ local function import_execute(import_mapdata)
     return
   end
 
-  -- parse raw content
-  import_mapdata.info = "parsing import content"
-  rv, err = pcall(import_parse_content, import_data)
-  if not rv then
-    import_set_error(import_mapdata, format("parse import content failed (%s)", get_error_info(err) or "?"))
-    return
+  do
+    local imported, err_msg = importer(import_mapdata, import_data)
+    if not imported then
+      import_set_error(import_mapdata, err_msg)
+      return
+    end
   end
 
-  -- filter config data with import list
-  import_mapdata.info = "filtering config data"
-  rv, err = pcall(import_filter_configdata, import_data.config, import_config_list)
-  if not rv then
-    import_set_error(import_mapdata, format("filter config data failed (%s)", get_error_info(err) or "?"))
-    return
-  end
-  -- cleanup
-  import_config_list = nil
-
-  -- apply import data
-  import_mapdata.info = "applying config data"
-  rv, err = pcall(import_apply_configdata, import_data.config)
-  if not rv then
-    import_set_error(import_mapdata, format("apply config data failed (%s)", get_error_info(err) or "?"))
-    return
-  end
+  sysBinding.option = "exportSaveDate"
+  local saveDate = getFromUci(sysBinding)
+  sysBinding.option = "savedate"
+  setOnUci(sysBinding, saveDate)
+  sysBinding.option = "exportSaveTime"
+  local saveTime = getFromUci(sysBinding)
+  sysBinding.option = "savetime"
+  setOnUci(sysBinding, saveTime)
 
   import_mapdata.state = "Complete"
   import_mapdata.info = "import succesfully completed"
@@ -909,7 +971,7 @@ end
 
 function M.import_init(location)
   local import_mapdata = {}
-  M.import_reset()
+  M.import_reset(import_mapdata)
   if location then
     import_mapdata.location = location
   else

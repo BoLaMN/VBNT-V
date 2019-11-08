@@ -6,6 +6,9 @@ gettext.textdomain('webui-core')
 local ui_helper = require("web.ui_helper")
 local proxy = require("datamodel")
 local content_helper = require("web.content_helper")
+local telstra_helper = require("telstra_helper")
+local symbolv1 = telstra_helper.symbolnamev1
+
 local insert, format = table.insert, string.format
 local session = ngx.ctx.session
 if session:hasAccess("/modals/ethernet-modal.lp") then
@@ -40,7 +43,7 @@ end
         ngx.print(
             ui_helper.createSimpleLight(dhcpState, dhcpState_text),
             '<p class="subinfos">',
-            format(T'Gateway IP is <strong>%s</strong> and netmask is <strong>%s</strong>', mapParams["localdevIP"], mapParams["localdevmask"]),
+            format(T'%s IP is <strong>%s</strong> and netmask is <strong>%s</strong>', symbolv1, mapParams["localdevIP"], mapParams["localdevmask"]),
             '</p>'
         )
         ngx.print('\

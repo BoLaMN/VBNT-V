@@ -141,6 +141,7 @@ Device_Services_X_TESSARES_MPTCP_Policy_.get = function(mapping, param)
 end
 
 Device_Services_X_TESSARES_MPTCP_Policy_.getall = function()
+  mproxyBinding.sectionname = "tr069"
   local allValues = uciHelper.getall_from_uci(mproxyBinding)
   return {
     ServerAddress = allValues["server_address"] or "",

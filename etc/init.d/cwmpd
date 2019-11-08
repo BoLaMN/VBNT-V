@@ -16,11 +16,11 @@ boot() {
   logger -t cwmpd "Starting cwmpd on boot"
 
   if [ -f /usr/bin/cwmpd-boot-delay ]; then
-     logger -t cwmpd "Calling cwmpd-boot-delay script."
-     source /usr/bin/cwmpd-boot-delay
+    logger -t cwmpd "Calling cwmpd-boot-delay script."
+    /usr/bin/cwmpd-boot-delay && start &
+  else
+    start
   fi
-
-  start
 }
 
 start_service() {

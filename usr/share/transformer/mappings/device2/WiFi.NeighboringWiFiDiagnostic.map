@@ -25,6 +25,7 @@ local Device_WiFi_NeighboringWiFiDiagnostic_ = {
 
 local mapper, pairs, register = mapper, pairs, register
 local conn = mapper("ubus").connect()
+local network = require("transformer.shared.common.network")
 local diagnosticState
 local diagResult
 local rescanStatus = {}
@@ -47,7 +48,7 @@ Device_WiFi_NeighboringWiFiDiagnostic_.get = {
 Device_WiFi_NeighboringWiFiDiagnostic_.set = {
   DiagnosticsState = function (mapping, param, value, key)
     if value == "Requested" then
-      conn:call("wireless.radio.acs", "rescan", {})
+      network.triggerACSRescan()
       diagResult = true
     else
       return nil, "The only allowed value is Requested"

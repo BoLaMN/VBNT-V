@@ -39,7 +39,7 @@ end
 local mapValid = {
     pairTime = validatePairTime,
     accCode = vAccCode,
-    baseName = post_helper.validateStringIsBaseName
+    baseName = post_helper.validateNonEmptyString
 }
 
 local mapParams = {

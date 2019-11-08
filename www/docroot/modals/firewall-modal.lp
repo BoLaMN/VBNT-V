@@ -14,6 +14,9 @@ local hosts_ac, hosts_ac_v6 = require("web.uinetwork_helper").getAutocompleteHos
 local pairs, table = pairs, table
 local remove = table.remove
 local format = string.format
+local telstra_helper = require("telstra_helper")
+local symbolv1 = telstra_helper.symbolnamev1
+local symbolv2 = telstra_helper.symbolnamev2
 
 local outgoingpolicy = {
     {"ACCEPT", T"ACCEPT"},
@@ -60,6 +63,7 @@ local gVSIDIP = post_helper.getValidateStringIsDeviceIPv4
 local gOV = post_helper.getOptionalValidation
 local vSIDIP = gVSIDIP(ipdetails.gw, ipdetails.netmask)
 local vSIIv6 = post_helper.validateStringIsIPv6
+local gAV = post_helper.getAndValidation
 
 local fw_valid = {
     fw_ping = post_helper.getValidateCheckboxSwitch(),
@@ -85,7 +89,6 @@ local fwrules_protocols = {
     { "tcp", T"TCP"},
     { "udp", T"UDP"},
     { "tcpudp", T"TCP/UDP"},
-    { "udplite", T"UDPLite"},
     { "icmp", T"ICMP"},
     { "esp", T"ESP"},
     { "ah", T"AH"},
@@ -265,8 +268,8 @@ local fwrule_valid = {
 }
 
 local fwrule_defaultObject = {
-    src = "wan",
-    dest = "lan"
+    src = "lan",
+    dest = "wan"
 }
 
 local fwrule_data, fwrule_helpmsg = post_helper.handleTableQuery(fwrule_columns, fwrule_options, nil, fwrule_defaultObject, fwrule_valid)
@@ -283,12 +286,16 @@ local fwrules_protocols_v6 = {
     { "tcp", T"TCP"},
     { "udp", T"UDP"},
     { "tcpudp", T"TCP/UDP"},
-    { "udplite", T"UDPLite"},
     { "icmpv6", T"ICMPv6"},
     { "esp", T"ESP"},
     { "ah", T"AH"},
     { "sctp", T"SCTP"},
     { "all", T"all"},
+}
+
+local fwrules_direction = {
+    { "lan", T"OUT"},
+    { "wan", T"IN"},
 }
 
 local fwrule_v6_columns = {
@@ -307,6 +314,15 @@ local fwrule_v6_columns = {
     default = "DROP",
     type = "select",
     values = fwrules_targets,
+    attr = { select = { class="span1" } },
+  },
+  {
+    header = T"Direction",
+    name = "direction_v6",
+    param = "src",
+    default = "OUT",
+    type = "select",
+    values = fwrules_direction,
     attr = { select = { class="span1" } },
   },
   {
@@ -355,9 +371,18 @@ local fwrule_v6_options = {
     sorted = fwrule_sort
 }
 
+local function directioncheck(direction)
+    if direction == "wan" then
+         fwrule_defaultObject.src = "wan"
+         fwrule_defaultObject.dest = "lan"
+    end
+    return true
+end
+
 local fwrule_v6_valid = {
     enabled_v6 = post_helper.getValidateCheckboxSwitch(),
     target_v6 = gVIES(fwrules_targets),
+    direction_v6 = gAV(directioncheck,gVIES(fwrules_direction)),
     protocol_v6 = gVIES(fwrules_protocols_v6),
     src_ip_v6 = gOV(vSIIv6),
     src_port_v6 = gOV(vSIPR),
@@ -406,14 +431,14 @@ ngx.print(ui_helper.createMessages(message_helper.popMessages()))
             class = "alert-info monitor-fw_level monitor-lax"
         },
     }
-    html[#html+1] = ui_helper.createAlertBlock(T"In <strong>low mode</strong>, the firewall will allow all outbound connections. It will reject unknown incoming connections but acknowledge the presence of the gateway.", lax_attr)
+    html[#html+1] = ui_helper.createAlertBlock(T("In <strong>low mode</strong>, the firewall will allow all outgoing connections. It will reject unknown incoming connections but acknowledge the presence of the " .. symbolv2 .. "."), lax_attr)
 
     local normal_attr = {
         alert = {
             class = "alert-info monitor-fw_level monitor-normal"
         },
     }
-    html[#html+1] = ui_helper.createAlertBlock(T"In <strong>normal mode</strong>, the firewall will allow all outbount connections. It will silently drop unknown incoming connections.", normal_attr)
+    html[#html+1] = ui_helper.createAlertBlock(T"In <strong>normal mode</strong>, the firewall will allow all outgoing connections. It will silently drop unknown incoming connections.", normal_attr)
 
     local high_attr = {
         alert = {
@@ -427,7 +452,7 @@ ngx.print(ui_helper.createMessages(message_helper.popMessages()))
             class = "alert-info monitor-fw_level monitor-user"
         },
     }
-    html[#html+1] = ui_helper.createAlertBlock(T"In <strong>user mode</strong>, you can configure each individual rule of the firewall as well as the default behavior.", user_attr)
+    html[#html+1] = ui_helper.createAlertBlock(T"In <strong>user defined mode</strong>, you can configure each individual rule of the firewall as well as the default behavior.", user_attr)
 
     ngx.print(html)
   ngx.print('\
@@ -456,7 +481,7 @@ ngx.print(ui_helper.createMessages(message_helper.popMessages()))
     html[#html+1] = ui_helper.createAlertBlock(T"The <strong>outgoing policy</strong> defines what is done with packets coming from the LAN devices toward the internet. Setting it to REJECT or DROP will forbid any internet traffic from the LAN unless explicitely allowed by a firewall rule.", info_attr)
 
     html[#html+1] = ui_helper.createInputSelect(T"Incoming default policy", "fw_incoming_policy", incomingpolicy, content["fw_incoming_policy"], outgoing_attr)
-    html[#html+1] = ui_helper.createAlertBlock(T"The <strong>incoming policy</strong> defines what is done with packets destined to the gateway. They can be either REJECTED (the gateway will notify the sender they were rejected) or DROPPED (the gateway will silently discard those packets).", info_attr)
+    html[#html+1] = ui_helper.createAlertBlock(T("The <strong>incoming policy</strong> defines what is done with packets destined to the " .. symbolv2 .. ". They can be either REJECTED (the " .. symbolv2 .. " will notify the sender they were rejected) or DROPPED (the " .. symbolv2 .. " will silently discard those packets)."), info_attr)
 
     ngx.print(html)
   ngx.print('\
@@ -483,6 +508,32 @@ ngx.print(ui_helper.createMessages(message_helper.popMessages()))
     //as this is a special case, we implement this here and not in actions.js\
     $(document).on("change", \'.modal select:not(.no-save):not(.disabled)\', function() {\
         $(".btn-table-new").addClass("disabled");\
+    });\
+    $(document).on("change focusin", \'.modal .line-edit\', function() {\
+        var proto = $("#protocol option:selected").val();\
+        if (typeof proto != \'undefined\') {\
+            if (proto == "tcp" || proto == "udp" || proto == "tcpudp") {\
+                $("#src_port").removeAttr("readonly");\
+                $("#dest_port").removeAttr("readonly");\
+            } else {\
+                $("#src_port").attr("readonly", true);\
+                $("#src_port").val("");\
+                $("#dest_port").attr("readonly", true);\
+                $("#dest_port").val("");\
+            }\
+        }\
+        var proto_v6 = $("#protocol_v6 option:selected").val();\
+        if (typeof proto_v6 != \'undefined\') {\
+            if (proto_v6 == "tcp" || proto_v6 == "udp" || proto_v6 == "tcpudp") {\
+                $("#src_port_v6").removeAttr("readonly");\
+                $("#dest_port_v6").removeAttr("readonly");\
+            } else {\
+                $("#src_port_v6").attr("readonly", true);\
+                $("#src_port_v6").val("");\
+                $("#dest_port_v6").attr("readonly", true);\
+                $("#dest_port_v6").val("");\
+            }\
+        }\
     });\
 }());\
 </script>\

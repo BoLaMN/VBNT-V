@@ -43,6 +43,23 @@ conf_rule_add() {
 	echo "${action} ${ext_start}${ext_end:+-}${ext_end} ${int_addr} ${int_start}${int_end:+-}${int_end}" >>$tmpconf
 }
 
+conf_add_reserved_port() {
+	local cfg="$1"
+	local tmpconf="$2"
+	local lports lproto
+
+	config_get lports "$cfg" ports ""
+	config_get lproto "$cfg" proto ""
+
+	if [[ -n "$lports" ]]; then
+		set -- junk $lports
+		shift
+		for port; do
+			echo "deny $port 0.0.0.0/0 0-65535" >>$tmpconf
+		done
+        fi
+}
+
 dhcp_calc() {
 	local ip="$1"
 	local res=0
@@ -267,8 +284,13 @@ start() {
 		[ -n "${upnp_wgclp_script}" ] && \
 			echo "upnp_wgclp_script=${upnp_wgclp_script}" >>$tmpconf
 
-	    config_foreach conf_rule_add_extiface extiface_rule "$tmpconf"
-	    config_foreach conf_rule_add perm_rule "$tmpconf"
+		config_foreach conf_rule_add_extiface extiface_rule "$tmpconf"
+
+		config_load "system"
+		config_foreach conf_add_reserved_port wan-service $tmpconf
+
+		config_load "upnpd"
+		config_foreach conf_rule_add perm_rule "$tmpconf"
 	fi
 
 

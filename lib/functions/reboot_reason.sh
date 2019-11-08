@@ -10,10 +10,10 @@ UPGRADE=8
 ROLLBACK=9
 SWOVER=10
 TR64=11
-RES1=12
-RES2=13
-RES3=14
-RES4=15
+RTFD=12
+RES1=13
+RES2=14
+RES3=15
 # REASONS_END : keep tag 'REASONS_END' at end of reasons, because this file is parsed by system.map!
 
 
@@ -21,7 +21,7 @@ get_reboot_reason()
 {
 	if [[ -f /proc/prozone/reboot ]]; then
 		val=${1:-$(cat /proc/prozone/reboot)}
-		for var_str in PWR CRASH BOOTP CLI GUI CWMP STS UERR UPGRADE ROLLBACK SWOVER TR64 RES1 RES2 RES3 RES4 ; do
+		for var_str in PWR CRASH BOOTP CLI GUI CWMP STS UERR UPGRADE ROLLBACK SWOVER TR64 RTFD RES1 RES2 RES3 ; do
 			var=$(eval echo \$$var_str)
 			if [ "$var" = "$val" ] ; then
 				echo -n "$var:$var_str"
@@ -45,7 +45,8 @@ is_reboot_reason()
 	if [[ -f /proc/prozone/reboot ]]; then
 		par=${1:-"PWR"}
 		val=$(cat /proc/prozone/reboot)
-		for var_str in PWR CRASH BOOTP CLI GUI CWMP STS UERR UPGRADE ROLLBACK SWOVER TR64 RES1 RES2 RES3 RES4 ; do		var=$(eval echo \$$var_str)
+		for var_str in PWR CRASH BOOTP CLI GUI CWMP STS UERR UPGRADE ROLLBACK SWOVER TR64 RTFD RES1 RES2 RES3 ; do
+			var=$(eval echo \$$var_str)
 			if [ "$var_str" = "$par" -a "$var" = "$val" ] ; then
 				return 0
 			fi

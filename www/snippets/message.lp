@@ -5,15 +5,18 @@
 ');  
     gettext.textdomain('webui-telstra')
     local content_helper = require("web.content_helper")
+    local telstra_helper = require("telstra_helper")
+    local symbolv1 = telstra_helper.symbolnamev1
+    local symbolv2 = telstra_helper.symbolnamev2
 
 	local content_wansensing = {
 		autofailover = "uci.wansensing.global.autofailover"
 	}
 	content_helper.getExactContent(content_wansensing)
 
-	local mobiledongle_note = "<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;NOTE: If your gateway has mobile reception, you can connect your backup service by clicking <a href=/gateway.lp?openmodal=lte-modal.lp > here </a>"
+	local mobiledongle_note = "<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;NOTE: If your " .. symbolv2 .. " has mobile reception, you can connect your backup service by clicking <a href=/gateway.lp?openmodal=lte-modal.lp > here </a>"
 	if content_wansensing.autofailover == "1" then
-		mobiledongle_note = "<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;NOTE: If your gateway has mobile reception, your backup service will be connected automatically."
+		mobiledongle_note = "<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;NOTE: If your " .. symbolv2 .. " has mobile reception, your backup service will be connected automatically."
 	end
 
     local ipairs, string = ipairs, string
@@ -21,15 +24,15 @@
         ["OK"] = {"ok", T"Your Broadband service is working normally. You are connected online."},
         ["OK_LTE"] = {"backup", T"Your Broadband service is working in backup mode. You are connected and online."},
         -- error msg for no previous connection method
-        ["E_NO_PRE"] = {"error", T("Your Internet connection is currently down. You can try the following: <br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;1. Check that your Telephone or Ethernet cable is firmly connected to the correct port on your Gateway, the Filter on the Telephone<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;socket or the Ethernet socket on the wall.<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;2. Check that your username is correct and re-enter your password <a href=/broadband.lp> here </a> .<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;3. Restart my gateway." .. mobiledongle_note),},
+        ["E_NO_PRE"] = {"error", T("Your Internet connection is currently down. You can try the following: <br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;1. Check that your Telephone or Ethernet cable is firmly connected to the correct port on your " .. symbolv1 .. ", the Filter on the Telephone<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;socket or the Ethernet socket on the wall.<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;2. Check that your username is correct and re-enter your password <a href=/broadband.lp> here </a> .<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;3. Restart my " .. symbolv2 .. "." .. mobiledongle_note),},
         -- error msg if PPPoEoDSL was previously connected
-        ["E_PPP_DSL"] = {"error", T("Your Internet connection is currently down. You can try the following: <br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;1. Check that your Telephone cable is firmly connected to the correct port on your Gateway or the Filter on the telephone socket <br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;on the wall.<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;2. Check that your username is correct and re-enter your password <a href=/broadband.lp> here </a> . <br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;3. Restart my gateway." .. mobiledongle_note),},
+        ["E_PPP_DSL"] = {"error", T("Your Internet connection is currently down. You can try the following: <br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;1. Check that your Telephone cable is firmly connected to the correct port on your " .. symbolv1 .. " or the Filter on the telephone socket <br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;on the wall.<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;2. Check that your username is correct and re-enter your password <a href=/broadband.lp> here </a> . <br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;3. Restart my " .. symbolv2 .. "." .. mobiledongle_note),},
         -- error msg if PPPoEoEWAN was previously connected
-        ["E_PPP_ETH"] = {"error", T("Your Internet connection is currently down. You can try the following: <br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;1. Check that your Ethernet cable is firmly connected to the correct port on your Gateway or the Ethernet socket on the wall.<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;2. Check that your username is correct and re-enter your password <a href=/broadband.lp> here </a> . <br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;3. Restart my gateway." .. mobiledongle_note),},
+        ["E_PPP_ETH"] = {"error", T("Your Internet connection is currently down. You can try the following: <br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;1. Check that your Ethernet cable is firmly connected to the correct port on your " .. symbolv1 .. " or the Ethernet socket on the wall.<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;2. Check that your username is correct and re-enter your password <a href=/broadband.lp> here </a> . <br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;3. Restart my " .. symbolv2 .. "." .. mobiledongle_note),},
         -- error msg if IPoEoDSL was previously connected
-        ["E_DHCP_DSL"] = {"error", T("Your Internet connection is currently down. You can try the following: <br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;1. Check that your Telephone cable is firmly connected to the correct port on your Gateway or the Filter on the telephone socket <br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;on the wall. <br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;2. Restart my gateway." .. mobiledongle_note),},
+        ["E_DHCP_DSL"] = {"error", T("Your Internet connection is currently down. You can try the following: <br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;1. Check that your Telephone cable is firmly connected to the correct port on your " .. symbolv1 .. " or the Filter on the telephone socket <br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;on the wall. <br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;2. Restart my " .. symbolv2 .. "." .. mobiledongle_note),},
         -- error msg if IPoEoEWAN was previously connected
-        ["E_DHCP_ETH"] = {"error", T("Your Internet connection is currently down. You can try the following: <br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;1. Check that your Ethernet cable is firmly connected to the correct port on your Gateway or the Ethernet socket on the wall. <br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;2. Restart my gateway." .. mobiledongle_note),},
+        ["E_DHCP_ETH"] = {"error", T("Your Internet connection is currently down. You can try the following: <br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;1. Check that your Ethernet cable is firmly connected to the correct port on your " .. symbolv1 .. " or the Ethernet socket on the wall. <br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;2. Restart my " .. symbolv2 .. "." .. mobiledongle_note),},
     }
     local html = {}
 
@@ -74,9 +77,33 @@
 		end
     end
 
-    local item = items[msg_key]
+    local item = items[msg_key] or items["E_NO_PRE"]
 
     html[#html+1] = string.format('<div class="message"><img class="%s" src="img/status.png"/>%s</div>', item[1], item[2])
+
+    --//VoLTE message status is only applicable for 4GFW
+
+    --local content_volte = {
+      --registration_status = "rpc.mobiled.device.@1.voice.info.volte.registration_status",
+      --cs_emergency = "rpc.mobiled.device.@1.voice.network_capabilities.cs.emergency",
+      --volte_emergency = "rpc.mobiled.device.@1.voice.network_capabilities.volte.emergency",
+    --}
+    --content_helper.getExactContent(content_volte)
+    --local status_message = ""
+    --local img_class = ""
+    --if content_volte["registration_status"] == "registered" then
+      --status_message = "Your phone service is connected and working normally."
+      --img_class = "ok"
+    --else
+      --if content_volte["cs_emergency"] == "true" or content_volte["volte_emergency"] == "true" then
+        --status_message = "Your phone service is available for emergency calls only."
+        --img_class = "backup"
+      --else
+        --status_message = "No signal, your phone service is not connected."
+        --img_class = "error"
+      --end
+    --end
+    --html[#html+1] = string.format('<div class="message"><img class="%s" src="img/status.png"/>%s</div>', img_class, status_message)
     ngx.print(html)
 
   ngx.print('\

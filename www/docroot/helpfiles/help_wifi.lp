@@ -5,7 +5,11 @@ lp.setpath("/www/snippets/")
 lp.include("header.lp")
 lp.include("help_menubar.lp")
   ngx.print('\
-\
+');  
+local telstra_helper = require("telstra_helper")
+local symbolv1 = telstra_helper.symbolnamev1
+local symbolv2 = telstra_helper.symbolnamev2
+  ngx.print('\
 <div class="container toplevel" style="width:830px">\
     <div class="row">\
         <div class="span11">\
@@ -14,7 +18,7 @@ lp.include("help_menubar.lp")
             </div>\
             <div class="span7 container">\
                 <div class="container span7">\
-                    <h3>Change your Wi-Fi details on your T-Gateway</h3> \
+                    <h3>Change your Wi-Fi details on your ');  ngx.print( symbolv1 ); ngx.print('</h3>\
                     <div class="container span7">\
                         <legend>Step 1:</legend>&nbsp;&nbsp;Click on \'Wi-Fi\' tab on the menu bar\
                     </div>\

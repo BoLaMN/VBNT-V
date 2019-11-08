@@ -143,7 +143,7 @@ smb_add_share() {
 	[ -n "$browsable" ] && echo -e "\tbrowsable = $browsable" >> /var/etc/smb.conf
 	[ -n "$writable" ] && echo -e "\twritable = $writable" >> /var/etc/smb.conf
 	[ -n "$min_print_space" ] && echo -e "\tmin print space = $min_print_space" >> /var/etc/smb.conf
-	if [ $name == "printers" ] ; then
+	if [ "$name" == "printers" ] ; then
 	  mkdir -p $path
 	  chmod 1777 $path
 	  reload_printers

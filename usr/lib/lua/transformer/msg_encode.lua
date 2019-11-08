@@ -197,16 +197,14 @@ function Encoder:RESOLVE_RESP(path)
 end
 
 --- Encodes a SUBSCRIBE_RESP message consisting of a subscription ID and
--- a possible collection of paths.
+-- a possible path.
 -- @param #number id The subscription ID to be encoded.
--- @param #table paths The optional paths of non-evented parameters covered by
+-- @param #string path An optional path of a non-evented parameter covered by
 --                     the subscription.
-function Encoder:SUBSCRIBE_RESP(id, paths)
+function Encoder:SUBSCRIBE_RESP(id, path)
   encode_number(self, id)
-  if paths then
-    for _, path in ipairs(paths) do
-      encode_string(self, path)
-    end
+  if path then
+    encode_string(self, path)
   end
   return confirm_encoding(self)
 end

@@ -16,6 +16,7 @@ local InternetGatewayDevice_LANDevice_i_Hosts_ = {
 
 register(InternetGatewayDevice_LANDevice_i_Hosts_)
 
+local math = math
 
 local InternetGatewayDevice_LANDevice_i_Hosts_Host_i_ = {
   objectType = {
@@ -98,6 +99,15 @@ local InternetGatewayDevice_LANDevice_i_Hosts_Host_i_ = {
         max = "256",
         default = "",
      },
+     X_000E50_WiFiBand = {
+        access = "readOnly",
+        type = "string",
+        enumeration = {
+            "2.4GHz",
+            "5GHz",
+        },
+        description = "Device current connected band (2.4GHz / 5GHz)"
+     },
     }
   }
 }
@@ -105,8 +115,11 @@ local InternetGatewayDevice_LANDevice_i_Hosts_Host_i_ = {
 local common = mapper('nwcommon')
 local ubus = mapper("ubus").connect()
 local ucihelper = mapper("ucihelper")
-local concat = table.concat
+local network = require("transformer.shared.common.network")
+local table = table
+local next = next
 local floor = math.floor
+local concat = table.concat
 local sort = table.sort
 
 local io = require 'io' --easier for testing
@@ -114,6 +127,7 @@ local open = io.open
 local os = require 'os' --easier for testing
 local time = os.time
 
+local string = string
 local format = string.format
 local match = string.match
 local pairs = pairs
@@ -183,13 +197,18 @@ local TechnologyMap={
   ["homeplug"]="HomePlug"
 }
 
+local radioMap = {
+  ["radio_2G"]="2.4GHz",
+  ["radio_5G"]="5GHz"
+}
+
 local intfType = {config='network', option='type', default=''}
 local function getL2interfaces(intf)
   local L2map = {}
   intfType.sectionname = intf
   local intfType = ucihelper.get_from_uci(intfType)
   local info = ubus:call('network.interface.'..intf, 'status', {})
-  if not info and not info.device then
+  if not info or not info.device then
     return L2map
   end
   if intfType=='bridge' then
@@ -224,21 +243,7 @@ local function dhcp_lease(mac)
   return lease or {}
 end
 
--- @function wlanRemotePort to get the wlan port
--- @return wlan port if it is present
-local function wlanRemotePort()
-  local ethernetBinding = { config = "ethernet", sectionname = "mapping" }
-  local port = ""
-  ucihelper.foreach_on_uci( ethernetBinding, function(s)
-    if s.wlan_remote == "1" then
-      port = s.port
-      return false
-    end
-  end)
-  return port
-end
-
-local wlanPort = wlanRemotePort()
+local wlanPort = network.wlanRemotePort()
 
 local integratedQtnMAC = string.lower(ucihelper.get_from_uci({config = "env", sectionname = "var", option = "qtn_eth_mac"}))
 
@@ -354,7 +359,6 @@ end
 -- To get the network id for the interface
 -- @param key key to identify the network id
 local function getNetworkId(key)
-  local interface = common.split_key(key)
   local _, LANintf = key2dev(key)
   local tag = ""
   dhcpBinding.sectionname = "dhcp"
@@ -426,17 +430,25 @@ local host_getter = {
       local _, mac = key2intf(key)
       lease = dhcp_lease(mac)
     end
-    dev = dev or key2dev(key)
-    -- Leasetimeleft has been calculated as, LeaseTimeRemaining = ((Connectedtime + LeaseTime) - CurrentTime)
-    local leaseLeft = "0"
-    if next(lease) then
-      leaseLeft = (tonumber(dev.connected_time) + tonumber(lease.leasetime)) - time()
-      -- The while loop was added inorder to adjust the renewal offset.
-      while leaseLeft < 0 do
-        leaseLeft = leaseLeft + tonumber(lease.leasetime)
-      end
+    local leasetime = tonumber(lease.leasetime)
+    if not leasetime then
+      -- not DHCP
+      return "0"
+    elseif leasetime == 0 then
+      -- infinite lease
+      return "-1"
     end
-    return tostring(leaseLeft)
+    -- normal case
+    dev = dev or key2dev(key)
+
+    -- this guesses the remaining lease time as we do not know when the
+    -- lease is renewed. (We do not have that info)
+    -- So we assume it is renewed every `leastime` seconds
+    local connected = tonumber(dev.connected_time) or 0
+    local now = time()
+    local nRenew = math.ceil((now - connected)/leasetime)+1
+    local leaseUntil = connected + nRenew*leasetime
+    return tostring(leaseUntil - now)
   end,
   MACAddress = function(key, dev)
     local _, mac = key2intf(key)
@@ -451,7 +463,7 @@ local host_getter = {
   end,
   InterfaceType = function(key, dev)
     dev = dev or key2dev(key)
-    local interfaceType = dev.l2interface and dev.l2interface == wlanPort and "wireless" or dev.technology
+    local interfaceType = dev.l2interface and wlanPort and dev.l2interface == wlanPort and "wireless" or dev.technology
     return TechnologyMap[ interfaceType or ""] or 'Other'
   end,
   Active = function(key, dev)
@@ -493,6 +505,10 @@ local host_getter = {
   end,
   UserClassID = function(key, dev, lease)
     return getID(key, "userclass", "userclass", lease) or ""
+  end,
+  X_000E50_WiFiBand = function(key, dev)
+    dev = dev or key2dev(key)
+    return dev.wireless and radioMap[dev.wireless.radio] or ""
   end,
 }
 

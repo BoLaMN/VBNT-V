@@ -295,9 +295,9 @@ local function single_dateTime_value(value, paramInfo)
     fault.InvalidValue("'%s' is not valid dateTime, day should be at least '1' and at most '31'", value)
   end
   hour = tonumber(hour)
-  -- The hour must be at least '1' value and at most '24'.
-  if hour < 1 or hour > 24  then
-    fault.InvalidValue("'%s' is not valid dateTime, hour should be at least '1' and at most '24' ", value)
+  -- The hour must be at least '0' value and at most '24'.
+  if hour < 0 or hour > 24  then
+    fault.InvalidValue("'%s' is not valid dateTime, hour should be at least '0' and at most '24' ", value)
   end
   minutes = tonumber(minutes)
   -- The minute must be non negative and at most '59'.

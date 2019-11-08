@@ -1,9 +1,9 @@
 Package: wlctl
-Version: 4.16L.05
-Depends: libc, libssp, libwlctl
+Version: 5.02L.03
+Depends: libc, libssp, librt, libpthread, libwlctl
 Source: feeds/technicolor/bcm_userspace
 Section: utils
 Maintainer: Technicolor <linuxgw@technicolor.com>
 Architecture: brcm63xx-tch
-Installed-Size: 750
+Installed-Size: 1643
 Description:  Broadcom wireless control

@@ -1,10 +1,10 @@
 Package: libubox
-Version: 2017-02-24-96305a3cafcc9c0df7f189567671bb26ce3eb129
-Depends: libc, libssp
+Version: 2017-10-06-729f47fd5279f902986457682f8f166c324eafb5
+Depends: libc, libssp, librt, libpthread
 Source: package/libs/libubox
 License: ISC
 Section: libs
 Maintainer: Felix Fietkau <nbd@openwrt.org>
 Architecture: brcm63xx-tch
-Installed-Size: 16927
+Installed-Size: 17837
 Description:  Basic utility library

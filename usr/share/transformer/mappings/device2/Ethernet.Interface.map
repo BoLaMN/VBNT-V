@@ -88,6 +88,15 @@ local Device_Ethernet_Interface_i_ = {
         access = "readOnly",
         type = "boolean",
       },
+      X_ShapingRate = {
+        access = "readWrite",
+        type = "int",
+        range = {
+          {
+            min = "-1",
+          },
+        },
+      },
     }
   },
   aliasDefault = "Name",
@@ -100,7 +109,6 @@ local uciHelper = mapper("ucihelper")
 local getFromUci = uciHelper.get_from_uci
 local setOnUci = uciHelper.set_on_uci
 local ethernetBinding = {config = "ethernet", sectionname = "", option = "", default = ""}
-local commitApply = commitapply
 local lfs = require("lfs")
 local nwmodel = require "transformer.shared.models.device2.network"
 local EthInterface = nwmodel.register("EthInterface", Device_Ethernet_Interface_i_.objectType.name)
@@ -195,14 +203,18 @@ Device_Ethernet_Interface_i_.get = {
   EEEEnable = function(mapping, param, key)
     return getFromUci(powerBinding)
   end,
+  X_ShapingRate = function(mapping, param, key)
+    local devName = model:getName(key)
+    return nwmodel.getShapingRate(devName, key)
+  end,
 }
 
 Device_Ethernet_Interface_i_.set = {
   Enable = function(mapping, param, value, key)
     ethernetBinding.sectionname = model:getUciKey(key)
     ethernetBinding.option = "enable"
-    setOnUci(ethernetBinding,value,commitApply)
-    transactions[ethernetBinding.config] = true
+    setOnUci(ethernetBinding,value,commitapply)
+    transactions[ethernetBinding] = true
   end,
   MaxBitRate = function(mapping, param, value, key)
     ethernetBinding.sectionname = model:getUciKey(key)
@@ -213,8 +225,8 @@ Device_Ethernet_Interface_i_.set = {
     elseif value ~= "-1" then
       return nil,"Invalid value"
     end
-    setOnUci(ethernetBinding,maxBitRate,commitApply)
-    transactions[ethernetBinding.config] = true
+    setOnUci(ethernetBinding,maxBitRate,commitapply)
+    transactions[ethernetBinding] = true
   end,
   DuplexMode = function(mapping, param, value, key)
     ethernetBinding.sectionname = model:getUciKey(key)
@@ -234,25 +246,33 @@ Device_Ethernet_Interface_i_.set = {
       return nil,"Cannot set DuplexMode when MaxBitRate is '-1'"
     end
     ethernetBinding.option = "duplex"
-    setOnUci(ethernetBinding,value,commitApply)
-    transactions[ethernetBinding.config] = true
+    setOnUci(ethernetBinding,value,commitapply)
+    transactions[ethernetBinding] = true
   end,
   EEEEnable = function(mapping, param, value, key)
-    setOnUci(powerBinding, value, commitApply)
-    transactions[powerBinding.config] = true
+    setOnUci(powerBinding, value, commitapply)
+    transactions[powerBinding] = true
+  end,
+  X_ShapingRate = function(mapping, param, value, key)
+    local devName = model:getName(key)
+    local shapingRate, errMsg = nwmodel.setShapingRate(value, key, devName)
+    if not shapingRate then
+      return nil, errMsg
+    end
+    transactions[ethernetBinding] = true
   end,
 }
 
 Device_Ethernet_Interface_i_.commit = function()
-  for config,_ in pairs(transactions) do
-    uciHelper.commit({config = config})
+  for binding in pairs(transactions) do
+    uciHelper.commit(binding)
   end
   transactions = {}
 end
 
 Device_Ethernet_Interface_i_.revert = function()
-  for config,_ in pairs(transactions) do
-    uciHelper.revert({config = config})
+  for binding in pairs(transactions) do
+    uciHelper.revert(binding)
   end
   transactions = {}
 end

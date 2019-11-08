@@ -148,13 +148,35 @@ ngx.print(ui_helper.createMessages(message_helper.popMessages()))
     form.submit();\
   }\
 \
+    function passwordCheck(password)\
+    {\
+        var level = 0;\
+\
+        //if password bigger than 6 give 1 point\
+        if (password.length >= 6) level++;\
+\
+        //if password has both lower and uppercase characters give 1 point\
+        if ( ( password.match(/[a-z]/) ) && ( password.match(/[A-Z]/) ) ) level++;\
+\
+        //if password has at least one number give 1 point\
+        if (password.match(/\\d+/)) level++;\
+\
+        //if password has at least one special caracther give 1 point\
+        if ( password.match(/[!,@,#,$,%,^,&,*,?,_,~,-,(,)]/) )  level++;\
+\
+        //if password bigger than 8 give another 1 point\
+        if (password.length >= 8) level++;\
+\
+        return level;\
+    }\
+\
   $(document).on("click", "#save-user-config", function() {\
     clear_error_password();\
     var password = $(\'input[name="new_password"]\').val();\
     var password2 = $(\'input[name="confirm_password"]\').val();\
 \
-    if (password.length < 12) {\
-      display_error_password("Minimum 12 Characters");\
+    if (password.length < 12 || (passwordCheck(password)) < 5) {\
+      display_error_password("');  ngx.print( T"Password must contain at least 12 alphanumeric characters including both upper and lower case letters," .. "<br/>" .. T"at least one number and at least one special character such as !@#$%^&*()_-?~" ); ngx.print('");\
       display_alert();\
     }\
     else if (password !== password2) {\

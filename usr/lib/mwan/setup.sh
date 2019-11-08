@@ -373,6 +373,47 @@ mwan_update_rules() {
 	mwan_iptables_mangle rename "ipv4" "new_mwan_rules" { "mwan_rules" }
 }
 
+mwan_update_queue() {
+	local event=$1
+	local comment="mwan_load_balancer"
+	local action="ifdown"
+	local lan_intf
+	local device
+	local enabled
+	local queue
+
+	config_get lan_intf "global" lan_intf "lan"
+	config_get_bool enabled "global" enabled 0
+
+	# Will not create queue if there's no configuration section for load balancer
+	[ "$enabled" = 1 ] || return
+
+	[ "$event" = true -a "$lan_intf" != "$INTERFACE" ] && return
+	if [ "$event" = true ] ; then
+		device=$DEVICE
+		action=$ACTION
+	elif network_is_up $lan_intf ; then
+		network_get_device device $lan_intf
+		action="ifup"
+	fi
+
+	queue=`mwan_iptables_mangle list "ipv4" "mwan_pre" | grep "$comment"`
+	queue=`echo ${queue##* }`
+	if [ -n "$queue" ] ; then
+		mwan_iptables_mangle del "ipv4" "mwan_pre" "NFQUEUE" \
+				{ "-i $device -m state --state NEW -m mark --mark 0x0/0xf0000000 \
+				--queue-num $queue -m comment --comment $comment" }
+	fi
+
+	if [ "$action" = "ifup" ] ; then
+		config_get queue "global" queue 0
+		mwan_iptables_mangle add "ipv4" "mwan_pre" "NFQUEUE" \
+				{ "-i $device -m state --state NEW -m mark --mark 0x0/0xf0000000 \
+				--queue-num $queue -m comment --comment $comment" }
+		logger -t mwan "mwan_load_balancer_add queue : $queue"
+	fi
+}
+
 mwan_setup_basic_iptables_rules() {
 	if ! mwan_iptables_mangle list "ipv4" "mwan_rules_hook" &> /dev/null; then
 		mwan_iptables_mangle add "ipv4" "mwan_rules_hook"
@@ -402,7 +443,7 @@ mwan_setup_basic_iptables_rules() {
 		mwan_iptables_mangle add "ipv4" "mwan_pre" "mwan_default_hook" \
 				{ "-m mark --mark 0x0/$MWAN_NF_MASK" }
 		mwan_iptables_mangle add "ipv4" "mwan_pre" "mwan_rules_hook" \
-				{ "-m mark --mark 0x0/$MWAN_NF_MASK" }
+				{ "-m conntrack --ctdir ORIGINAL -m mark --mark 0x0/$MWAN_NF_MASK" }
 	fi
 
 	if ! mwan_iptables_mangle list "ipv4" "mwan_post" | grep "CONNMARK save mask"; then
@@ -428,7 +469,7 @@ mwan_setup_basic_iptables_rules() {
 		mwan_iptables_mangle add "ipv4" "mwan_output" "mwan_default_hook" \
 				{ "-m mark --mark 0x0/$MWAN_NF_MASK" }
 		mwan_iptables_mangle add "ipv4" "mwan_output" "mwan_rules_hook" \
-				{ "-m mark  --mark 0x0/$MWAN_NF_MASK" }
+				{ "-m conntrack --ctdir ORIGINAL -m mark  --mark 0x0/$MWAN_NF_MASK" }
 	fi
 
 	if ! mwan_iptables_mangle list "ipv4" "INPUT" | grep mwan_post &> /dev/null; then
@@ -575,6 +616,7 @@ mwan_handle_ifaction() {
 	mwan_setup_basic_iptables_rules
 	config_foreach mwan_update_ip_rules policy
 	mwan_update_rules
+	mwan_update_queue true
 	touch /var/etc/mwan.config.$$
 	config_foreach mwan_parse_host host
 	mv -f /var/etc/mwan.config.$$ /var/etc/mwan.config 2>/dev/null
@@ -613,6 +655,7 @@ mwan_start() {
 	config_load mwan
 	mwan_set_state
 	config_foreach mwan_policy_cb policy
+	mwan_update_queue false
 }
 
 mwan_stop() {

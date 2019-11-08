@@ -16,6 +16,8 @@ local interface6 = proxy.get(path .. "interface6")[1].value
 local gVChkbox = post_helper.getValidateCheckboxSwitch()
 local bridged = require("bridgedmode_helper")
 local format = string.format
+local telstra_helper = require("telstra_helper")
+local symbolv2 = telstra_helper.symbolnamev2
 
 local state = assistant:enabled() and "1" or "0"
 local error
@@ -144,9 +146,9 @@ ngx.print(ui_helper.createMessages(message_helper.popMessages()))
      }
     local info
     if assistant:enabled() then
-        info = string.format("<p>Remote assistance is currently enabled. </p><p>Click 'Apply' button with the 'Enabled' checkbox disabled to disable remote assistance on your gateway </p>")
+        info = string.format("<p>Remote assistance is currently enabled. </p><p>Click 'Apply' button with the 'Enabled' checkbox disabled to disable remote assistance on your %s </p>", symbolv2 )
     else
-        info = string.format("<p>Remote assistance is currently disabled.</p><p> By clicking on the 'Apply' button with the 'Enabled' checkbox enabled your gateway will be accessible from your broadband connection. After %s minutes of inactivity, or on reboot, remote assistance will be automatically disabled. </p><p> Please provide the following parameters to your ISP:</p>", timeout )
+        info = string.format("<p>Remote assistance is currently disabled.</p><p> By clicking on the 'Apply' button with the 'Enabled' checkbox enabled your %s will be accessible from your broadband connection. After %s minutes of inactivity, or on reboot, remote assistance will be automatically disabled. </p><p> Please provide the following parameters to your ISP:</p>", symbolv2, timeout )
     end
     local html={}
     html[#html + 1] = ui_helper.createAlertBlock(T(info), infomessage)
@@ -163,6 +165,19 @@ ngx.print(ui_helper.createMessages(message_helper.popMessages()))
     local ra_class = {
         group = {
            class ="monitor-ra_enabled monitor-0",
+        }
+    }
+    local ra_random_class = {
+        group = {
+           class ="monitor-ra_enabled monitor-1",
+        },
+        input = {
+           class = "monitor-changes",
+        }
+    }
+    local ra_psw_class = {
+        group = {
+           class ="monitor-random_psw monitor-0",
         }
     }
 
@@ -200,10 +215,14 @@ ngx.print(ui_helper.createMessages(message_helper.popMessages()))
      html[#html + 1] = ui_helper.createLabel(T"Password", password)
      html[#html + 1] = error and ui_helper.createLabel("Error", error) or ''
   else
-     html[#html + 1] = ui_helper.createCheckboxSwitch(T"Use Random Password", "random_psw", content["random_psw"],ra_cfg_class)
+     html[#html + 1] = ui_helper.createCheckboxSwitch(T"Use Random Password", "random_psw", content["random_psw"],ra_random_class)
      html[#html + 1] = ui_helper.createLabel(T"Use Random Password", checkbox_map[content["random_psw"]],ra_class)
-     html[#html + 1] = ui_helper.createInputText(T"Password", "password", content["password"], ra_cfg_class, helpmsg["password"])
-     html[#html + 1] = ui_helper.createLabel(T"Password", password,ra_class)
+     html[#html + 1] = "<div class='monitor-ra_enabled monitor-1'>"
+     html[#html + 1] = ui_helper.createInputText(T"Password", "password", content["password"], ra_psw_class, helpmsg["password"])
+     html[#html + 1] = "</div>"
+     if content["random_psw"] == "0" then
+       html[#html + 1] = ui_helper.createLabel(T"Password", password,ra_class)
+     end
      html[#html + 1] = ui_helper.createSimpleInputHidden("salt", content["salt"])
      html[#html + 1] = ui_helper.createSimpleInputHidden("verifier", content["verifier"])
   end

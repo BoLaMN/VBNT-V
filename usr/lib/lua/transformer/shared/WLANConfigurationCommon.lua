@@ -3,13 +3,17 @@ local ubus = require("ubus")
 local bandSteerHelper = require("transformer.shared.bandsteerhelper")
 local nwWifi = require("transformer.shared.wifi")
 local nwCommon = require("transformer.mapper.nwcommon")
+local dhcp = require("transformer.shared.dhcp")
+local network = require("transformer.shared.common.network")
 
 local conn = ubus.connect()
 local wirelessBinding = { config = "wireless" }
 local wirelessDefaultsBinding = { config = "wireless-defaults" }
-local pairs, string, table, tonumber, tostring = pairs, string, table, tonumber, tostring
+local networkBinding = { config = "network" }
+local envBinding = { config = "env", sectionname = "var" }
+local ipairs, pairs, string, table, tonumber, tostring = ipairs, pairs, string, table, tonumber, tostring
 local floor = math.floor
-local configChanged
+local transactions = {}
 
 local beaconTypeMap = {
   ["none"]         = "Basic",
@@ -75,6 +79,17 @@ local wpsStateMap = {
     notconfigured = "Not configured",
 }
 
+local modeMap = {
+  Off = "disabled",
+  Allow = "unlock",
+  Deny = "lock",
+  disabled = "Off",
+  unlock = "Allow",
+  lock = "Deny",
+}
+
+local DFSChannels = { 52, 56, 60, 64, 100, 104, 108, 112, 116, 132, 136, 140 }
+
 local function getFromUci(sectionname, option, default)
   wirelessBinding.sectionname = sectionname
   if option then
@@ -99,14 +114,14 @@ local function setOnUci(sectionname, option, value, commitapply)
   wirelessBinding.sectionname = sectionname
   wirelessBinding.option = option
   uciHelper.set_on_uci(wirelessBinding, value, commitapply)
-  configChanged = true
+  transactions[wirelessBinding.config] = true
 end
 
 local function deleteOnUci(sectionname, commitapply)
   wirelessBinding.sectionname = sectionname
   wirelessBinding.option = nil
   uciHelper.delete_on_uci(wirelessBinding, commitapply)
-  configChanged = true
+  transactions[wirelessBinding.config] = true
 end
 
 --- Retrieves the ap for the given iface
@@ -143,11 +158,12 @@ end
 -- @param iface interface name
 -- @param option if present only particular value is returned(used in get) else the entire AP info is returned(used in getall)
 -- @return the table containing AP information for the given interface if present or {}
-local function getDataFromAP(iface, option)
+local function getDataFromAP(iface, option, default)
+  default = default or ""
   local ap = getAPFromIface(iface)
   local apInfo = conn:call("wireless.accesspoint", "get", { name = ap }) or {}
   if option then
-    return apInfo[ap] and tostring(apInfo[ap][option] or "") or ""
+    return apInfo[ap] and tostring(apInfo[ap][option] or default) or default
   end
   return apInfo[ap] and apInfo[ap] or {}
 end
@@ -250,9 +266,9 @@ local function getBandSteerRelatedNode(ap, key)
     return nil, "Band steering peer AP is invalid."
   end
   if bandSteerHelper.isBaseIface(peerAP) then
-    return ap, peerAP, key, iface
-  else
     return peerAP, ap, iface, key
+  else
+    return ap, peerAP, key, iface
   end
 end
 
@@ -284,8 +300,14 @@ local function setBandSteerPeerIfaceSSID(baseIface, relatedIface, enable, commit
   if enable then
     ssid = getFromUci(baseIface, "ssid")
   else
+    envBinding.option = "commonssid_suffix"
+    local suffix = uciHelper.get_from_uci(envBinding)
     ssid = getFromUci(relatedIface, "ssid")
-    ssid = ssid ~= "" and ssid .. "-5G" or ""
+    if suffix ~= "" then
+      ssid = ssid ~= "" and ssid .. suffix or ""
+    else
+      ssid = ssid ~= "" and ssid .. "-5G" or ""
+    end
   end
   setOnUci(relatedIface, "ssid", ssid, commitapply)
 end
@@ -307,8 +329,8 @@ local function enableBandSteer(key, commitapply)
   setBandSteerID(baseAP, relatedAP, bsid, true, commitapply)
   setBandSteerPeerIfaceSSID(baseIface, relatedIface, true, commitapply)
   -- set the authentication according to base AP authentication
-  setOnUci(relatedIface, "security_mode", getFromUci(baseIface, "security_mode"), commitapply)
-  setOnUci(relatedIface, "wpa_psk_key", getFromUci(baseAP, "wpa_psk_key"), commitapply)
+  setOnUci(relatedAP, "security_mode", getFromUci(baseAP, "security_mode"), commitapply)
+  setOnUci(relatedAP, "wpa_psk_key", getFromUci(baseAP, "wpa_psk_key"), commitapply)
 end
 
 -- Disables bandsteering
@@ -351,6 +373,25 @@ local function modifyBSPeerNodeAuthentication(option, value, iface, commitapply)
     setOnUci(sectionname, option, value, commitapply)
   end
   return
+end
+
+--- Sets the WPA Password
+-- @function setWPAKey
+-- @param key the interface name
+-- @param value the WPA Key
+local function setWPAKey(key, value, commitapply)
+  local len = #value
+  if (len < 8 or len > 63) then
+     return nil,"invalid value"
+  end
+  local iface = key:gsub("_remote", "")
+  if not bandSteerHelper.isBaseIface(iface) and bandSteerHelper.isBandSteerEnabledByIface(iface) then
+    return nil, "Cannot modify KeyPassphrase when bandsteer is enabled"
+  else
+    local ap = getAPFromIface(key)
+    setOnUci(ap, "wpa_psk_key", value, commitapply)
+    modifyBSPeerNodeAuthentication("wpa_psk_key", value, key, commitapply)
+  end
 end
 
 --- Retrieves the standard used by the given radio
@@ -456,7 +497,7 @@ local function getEnable(key)
   if val ~= "" then
     return val
   end
-  return getDataFromAP(key, "admin_state")
+  return getDataFromAP(key, "admin_state", "0")
 end
 
 --- Retrieves the security mode of ap
@@ -512,7 +553,7 @@ local function getSSIDAdvertisementEnabled(key)
   if val ~= "" then
     return val
   end
-  return getDataFromAP(key, "public")
+  return getDataFromAP(key, "public", "0")
 end
 
 --- Retrieves the state of radio
@@ -565,8 +606,12 @@ local function setAuthenticationMode(key, value, commitapply)
       val = "wpa2"
     end
   end
-  setOnUci(ap, "security_mode", val, commitapply)
-  modifyBSPeerNodeAuthentication("security_mode", val, key, commitapply)
+  if nwWifi.isSupportedMode(ap, val) then
+    setOnUci(ap, "security_mode", val, commitapply)
+    modifyBSPeerNodeAuthentication("security_mode", val, key, commitapply)
+  else
+    return nil, "Authentication mode cannot be set for unsupported security modes"
+  end
 end
 
 local uciACSOptionMap = {
@@ -749,18 +794,156 @@ local function restoreSection(sectionType, sectionName)
   end
 end
 
+--- Converts channel string into list
+-- @param str channel string
+local function channelStrToList(str)
+  local list = {}
+  for channel in str:gmatch("(%d+)") do
+    list[#list+1] = tonumber(channel)
+  end
+  return list
+end
+
+--- Checks if the given channel is present in the given channel list
+-- @param channels channels list
+-- @param chan channel number
+local function channelExist(channels, chan)
+  for _, channel in pairs(channels) do
+    if chan == channel then
+      return true
+    end
+  end
+  return false
+end
+
+--- Checks whether DFS channels are enabled
+-- @param radio the radio name
+local function getDFSStatus(radio)
+  local channels = channelStrToList(getFromUci(radio, "allowed_channels"))
+  for _, channel in pairs(channels) do
+    if channelExist(DFSChannels, channel) then
+      return "1"
+    end
+  end
+  return "0"
+end
+
+--- Adds DFS channels to allowed channels list
+-- @param channels the allowed channels list
+local function addDFSChannels(channels)
+  for _, dfsChannel in pairs(DFSChannels) do
+    local exist = channelExist(channels, dfsChannel)
+    if not exist then
+      channels[#channels + 1] = tonumber(dfsChannel)
+    end
+  end
+  table.sort(channels)
+  return table.concat(channels, " ")
+end
+
+--- Removes DFS channels from allowed channels list
+-- @param channels the allowed channels list
+local function removeDFSChannels(channels)
+  for key, channel in pairs(channels) do
+    if channelExist(DFSChannels, channel) then
+      channels[key] = nil
+    end
+  end
+  table.sort(channels)
+  return table.concat(channels, " ")
+end
+
+local getStationDataFromIface = function(iface, macAddress, option, default)
+  local ssid = getFromUci(iface, "ssid")
+  local ap = getAPFromIface(iface)
+  local stationInfo = conn:call("wireless.accesspoint.station", "get", { name = ap }) or {}
+  if stationInfo[ap] and option then
+    for mac, data in pairs(stationInfo[ap]) do
+      if mac == macAddress and data.state:match("Associated") and data.last_ssid == ssid then
+        return tostring(data[option] or default)
+      else
+	return default
+      end
+    end
+  end
+  return stationInfo[ap] or {}
+end
+
+local function getSubnetInfo(key, option)
+  local iface = key:gsub("_remote", "")
+  local interface = getFromUci(iface, "network")
+  networkBinding.sectionname = interface
+  networkBinding.state = false
+  if option then
+    networkBinding.option = option
+    return uciHelper.get_from_uci(networkBinding)
+  end
+  return uciHelper.getall_from_uci(networkBinding)
+end
+
+local function setSubnetInfo(key, option, value)
+  local iface = key:gsub("_remote", "")
+  local interface = getFromUci(iface, "network")
+  networkBinding.sectionname = interface
+  networkBinding.option = option
+  uciHelper.set_on_uci(networkBinding, value, commitapply)
+  transactions[networkBinding.config] = true
+end
+
+local function getSubnetAddress(key)
+  local subnetInfo = getSubnetInfo(key)
+  if subnetInfo and not subnetInfo.ipaddr or not subnetInfo.netmask then
+    return ""
+  end
+  local iface = key:gsub("_remote", "")
+  local interface = getFromUci(iface, "network")
+  local data = dhcp.parseDHCPData(nil, interface)
+  local startAddr = data.ipStart and nwCommon.numToIPv4(data.ipStart) or ""
+  local endAddr = data.ipEnd and nwCommon.numToIPv4(data.ipEnd) or ""
+  return startAddr, endAddr
+end
+
+local function commit()
+  for config, changed in pairs(transactions) do
+    if changed then
+      uciHelper.commit({ config = config })
+      transactions[config] = false
+    end
+  end
+end
+
+local function revert()
+  for config, changed in pairs(transactions) do
+    if changed then
+      uciHelper.revert({ config = config })
+      transactions[config] = false
+    end
+  end
+  transactions = {}
+end
+
 local M = {}
 
-M.getMappings = function(commitapply)
+local wepKeys = {}
+local wepKeyIndex = {}
+uciHelper.foreach_on_uci({ config = "wireless", sectionname = "wifi-ap" }, function(s)
+  local name = s[".name"]
+  wepKeyIndex[name] = 1
+  wepKeys[name] = { "", "", "", "" }
+end)
 
-  local wepKeys = {}
-  local wepKeyIndex = {}
-  uciHelper.foreach_on_uci({ config = "wireless", sectionname = "wifi-ap" }, function(s)
-    local name = s[".name"]
-    wepKeyIndex[name] = 1
-    wepKeys[name] = { "", "", "", "" }
-  end)
+M.getAPFromIface = getAPFromIface
+M.getStationDataFromIface = getStationDataFromIface
+M.getRadioFromIface = getRadioFromIface
+M.getFromUci = getFromUci
+M.setOnUci = setOnUci
+M.commit = commit
+M.revert = revert
+M.modifyBSPeerNodeAuthentication = modifyBSPeerNodeAuthentication
 
+-- WLAN section
+-- This function returns the get, getall, set, commit, revert for LANDevice.WLANConfiguration.{i}. object
+M.getWLANMappings = function(commitapply)
   local getWLANDevice = {
     WMMEnable = "1",
     UAPSDEnable = "0",
@@ -936,7 +1119,7 @@ M.getMappings = function(commitapply)
     end,
     X_WPS_V2_ENABLE = function(mapping, param, key)
       local ap = getAPFromIface(key)
-      return getFromUci(ap, "wps_state")
+      return getFromUci(ap, "wps_state", "0")
     end,
     X_000E50_ACSRescan = "0",
     X_000E50_ACSBssList = function(mapping, param, key)
@@ -1024,8 +1207,63 @@ M.getMappings = function(commitapply)
       local ap = getAPFromIface(key)
       return getFromUci(ap, "wpa_psk_key")
     end,
+    X_0876FF_WMMPowerSaveEnabled = "0",  --always returns "0" as it is hard-coded
     X_0876FF_RestoreDefaultKey = "0", -- always returns "0", If enabled sets the default key from wireless-defaults
     X_0876FF_RestoreDefaultWireless = "0", -- always returns "0", If enabled, resets the default configuration of particular interface and ap
+    X_0876FF_DFSAvailable = function(mapping, param, key)
+      local radio = getRadioFromIface(key)
+      if radio == "radio_2G" then
+        return "0" -- always returns "0", since DFS Channels are supported only for radio_5G
+      else
+        return "1" -- always returns "1", since DFS Channels are supported
+      end
+    end,
+    X_0876FF_DFSEnable = function(mapping, param, key)
+      local radio = getRadioFromIface(key)
+      if radio == "radio_2G" then
+        return "0" -- always returns "0", since DFS Channels are supported only for radio_5G
+      else
+        return getDFSStatus(radio)
+      end
+    end,
+    X_0876FF_MaxConcurrentDevices = function(mapping, param, key)
+      local ap = getAPFromIface(key)
+      return getFromUci(ap, "max_assoc", "0")
+    end,
+    X_000E50_Band = function(mapping, param, key)
+      local radio = getRadioFromIface(key)
+      return getDataFromRadio(radio, "band")
+    end,
+    X_VODAFONE_MACAddressControlMode = function(mapping, param, key)
+      local ap = getAPFromIface(key)
+      local aclMode = getFromUci(ap, "acl_mode")
+      return modeMap[aclMode] or "Off"
+    end,
+    X_0876FF_SubnetEnable = function(mapping, param, key)
+      return getSubnetInfo(key, "auto") == "0" and "0" or "1"
+    end,
+    X_0876FF_SubnetMask = function(mapping, param, key)
+      return getSubnetInfo(key, "netmask")
+    end,
+    X_0876FF_SubnetGatewayAddr = function(mapping, param, key)
+      return getSubnetInfo(key, "ipaddr")
+    end,
+    X_0876FF_RadioID = function(mapping, param, key)
+      local radio = getRadioFromIface(key)
+      -- TODO: Hard-coded values should be revisited
+      return radio == "radio_2G" and "1" or "2"
+   end,
+   X_0876FF_SubnetMinAddr = function(mapping, param, key)
+     return getSubnetAddress(key)
+   end,
+   X_0876FF_SubnetMaxAddr = function(mapping, param, key)
+     local _, endAddr = getSubnetAddress(key)
+     return endAddr or ""
+   end,
+   X_0876FF_GREInterface = function(mapping, param, key)
+     local iface = getFromUci(key, "gre_tunnel_iface", "gre-gt0")
+     return resolve('InternetGatewayDevice.GRE.Tunnel.{i}.Interface.{i}.', iface) or ""
+   end,
   }
 
   local function getallWLANDevice(mapping, key)
@@ -1038,6 +1276,8 @@ M.getMappings = function(commitapply)
     local ssidData = getDataFromSsid(key)
     local radioStats = getDataFromRadioStats(radio)
     local ifaceName = key:gsub("_remote", "") or ""
+    local subnetInfo = getSubnetInfo(key)
+    local startAddr, endAddr = getSubnetAddress(key)
     return {
       Enable = getEnable(key),
       Status = ssidData.oper_state and tostring(ssidData.oper_state) == "1" and "Up" or "Disabled",
@@ -1101,6 +1341,17 @@ M.getMappings = function(commitapply)
       X_0876FF_OperatingFrequencyBand = radioData.band and tostring(radioData.band) or "",
       X_0876FF_SupportedStandards = convertToList(radioData.supported_standards),
       X_0876FF_KeyPassphrase = getFromUci(ap, "wpa_psk_key"),
+      X_0876FF_DFSAvailable = (radio == "radio_2G") and "0" or "1",
+      X_0876FF_DFSEnable = (radio == "radio_2G") and "0" or getDFSStatus(radio),
+      X_0876FF_MaxConcurrentDevices = getFromUci(ap, "max_assoc", "0"),
+      X_000E50_Band = radioData.band and tostring(radioData.band) or "",
+      X_VODAFONE_MACAddressControlMode = modeMap[getFromUci(ap, "acl_mode")] or "Off",
+      X_0876FF_SubnetEnable = subnetInfo and subnetInfo.auto and subnetInfo.auto or "1",
+      X_0876FF_SubnetMask = subnetInfo and subnetInfo.netmask and subnetInfo.netmask or "",
+      X_0876FF_SubnetGatewayAddr = subnetInfo and subnetInfo.ipaddr and subnetInfo.ipaddr or "",
+      X_0876FF_RadioID = radio == "radio_2G" and "1" or "2", -- TODO: Hard-coded values should be revisited
+      X_0876FF_SubnetMinAddr = startAddr,
+      X_0876FF_SubnetMaxAddr = endAddr or ""
    }
    end
 
@@ -1132,8 +1383,12 @@ M.getMappings = function(commitapply)
       if not bandSteerHelper.isBaseIface(iface) and bandSteerHelper.isBandSteerEnabledByIface(iface) then
         return nil, "Cannot modify SSID when band steer enabled"
       else
-        setOnUci(iface, "ssid", value, commitapply)
-        modifyBSPeerNodeAuthentication("ssid", value, key, commitapply)
+        if value and value ~= "" then
+          setOnUci(iface, "ssid", value, commitapply)
+          modifyBSPeerNodeAuthentication("ssid", value, key, commitapply)
+        else
+          return nil, "SSID can not be empty"
+        end
       end
     end,
     TransmitPower = function(mapping, param, value, key)
@@ -1172,8 +1427,12 @@ M.getMappings = function(commitapply)
           beaconType = beaconType .. "-psk"
         end
       end
-      setOnUci(ap, "security_mode", beaconType, commitapply)
-      modifyBSPeerNodeAuthentication("security_mode", beaconType, key, commitapply)
+      if nwWifi.isSupportedMode(ap, beaconType) then
+        setOnUci(ap, "security_mode", beaconType, commitapply)
+        modifyBSPeerNodeAuthentication("security_mode", beaconType, key, commitapply)
+      else
+        return nil, "Cannot modify the beacon type for unsupported security modes"
+      end
     end,
     MACAddressControlEnabled = function(mapping, param, value, key)
       local ap = getAPFromIface(key)
@@ -1202,7 +1461,7 @@ M.getMappings = function(commitapply)
       else
         local ap = getAPFromIface(key)
         setOnUci(ap, "wpa_psk_key", value, commitapply)
-        modifyBSPeerNodeAuthentication("ssid", value, key, commitapply)
+        modifyBSPeerNodeAuthentication("wpa_psk_key", value, key, commitapply)
         for wepKey in pairs(wepKeys[ap]) do
           wepKeys[ap][wepKey] = value
         end
@@ -1361,7 +1620,9 @@ M.getMappings = function(commitapply)
         setOnUci(ap, "wps_state", value, commitapply)
     end,
     X_000E50_ACSRescan = function(mapping, param, value, key)
-      conn:call("wireless.radio.acs", "rescan", { name = getRadioFromIface(key), act = value })
+      if value == "1" then
+        commitapply:newset("ACSRescan." .. getRadioFromIface(key))
+      end
     end,
     X_000E50_ChannelMode = function(mapping, param, value, key)
       local radio = getRadioFromIface(key)
@@ -1444,9 +1705,74 @@ M.getMappings = function(commitapply)
         restoreSection("wifi-ap", ap)
       end
     end,
+    X_0876FF_DFSEnable = function(mapping, param, value, key)
+      local radio = getRadioFromIface(key)
+      if radio == "radio_5G" then
+        local channels = channelStrToList(getDataFromRadio(radio, "allowed_channels"))
+        if value == "1" then
+          channels = addDFSChannels(channels)
+        else
+          channels = removeDFSChannels(channels)
+        end
+        setOnUci(radio, "allowed_channels", channels, commitapply)
+      else
+        return nil, "For 2G mode, DFSEnable is not available"
+      end
+    end,
+    X_VODAFONE_MACAddressControlMode = function(mapping, param, value, key)
+      local ap = getAPFromIface(key)
+      setOnUci(ap, "acl_mode", modeMap[value], commitapply)
+    end,
+    X_0876FF_SubnetEnable = function(mapping, param, value, key)
+      local ifname = getSubnetInfo(key, "ifname")
+      local intf = {}
+      for word in ifname:gmatch("%S+") do intf[#intf + 1] = word end
+      if #intf > 1 then
+        return nil, "Subnet cannot be disabled since it involves more than 1 interface"
+      end
+      setSubnetInfo(key, "auto", value)
+    end,
+    X_0876FF_SubnetMask = function(mapping, param, value, key)
+      setSubnetInfo(key, "netmask", value)
+    end,
+    X_0876FF_SubnetGatewayAddr = function(mapping, param, value, key)
+      setSubnetInfo(key, "ipaddr", value)
+    end,
+    X_0876FF_SubnetMinAddr = function(mapping, param, value, key)
+      local iface = key:gsub("_remote", "")
+      local interface = getFromUci(iface, "network")
+      local res, err = network.setDHCPMinAddress(interface, value, commitapply)
+      if not res then
+        return nil, err
+      end
+      transactions["dhcp"] = true
+    end,
+    X_0876FF_SubnetMaxAddr = function(mapping, param, value, key)
+      local iface = key:gsub("_remote", "")
+      local interface = getFromUci(iface, "network")
+      local res, err = network.setDHCPMaxAddress(interface, value, commitapply)
+      if not res then
+        return nil, err
+      end
+      transactions["dhcp"] = true
+    end,
+    X_0876FF_GREInterface = function(mapping, param, value, key)
+      local val = tokey(value, "InternetGatewayDevice.GRE.Tunnel.{i}.Interface.{i}.")
+      setOnUci(key, "gre_tunnel_iface", val, commitapply)
+    end,
   }
+  return {
+    getAll = getallWLANDevice,
+    get = getWLANDevice,
+    set = setWLANDevice,
+    commit = commit,
+    revert = revert
+  }
+end
 
-  -- WEPKey section
+-- WEPKey section
+-- This function returns the table containing entries, get, set, commit, revert for LANDevice.WLANConfiguration.{i}.WEPKey.{i}. object
+M.getWEPMapping = function(commitapply)
   local function entriesWEPKey(mapping, parentkey)
     return { parentkey .. "_wep_1", parentkey .. "_wep_2", parentkey .. "_wep_3", parentkey .. "_wep_4" }
   end
@@ -1472,8 +1798,18 @@ M.getMappings = function(commitapply)
       wepKeys[ap][keyNumber] = value
     end
   end
+  return {
+    entries = entriesWEPKey,
+    get = getWEPKey,
+    set = setWEPKey,
+    commit = commit,
+    revert = revert
+  }
+end
 
-  -- PSK section
+-- PSK section
+-- This function returns the table containing entries, get, set, commit, revert for LANDevice.WLANConfiguration.{i}.PreSharedKey.{i}. object
+M.getPSKMapping = function(commitapply)
   local function entriesPreSharedKey(mapping, parentKey)
     local entries = {}
     -- The size of this table is fixed with exactly 10 entries
@@ -1510,22 +1846,18 @@ M.getMappings = function(commitapply)
       end
     end,
   }
+  return {
+    entries = entriesPreSharedKey,
+    get = getPreSharedKey,
+    set = setPreSharedKey,
+    commit = commit,
+    revert = revert,
+  }
+end
 
-  -- Associated devices section
-  local getStaDataFromIface = function(iface, macAddress, option, default)
-    local ssid = getFromUci(iface, "ssid")
-    local ap = getAPFromIface(iface)
-    local stationInfo = conn:call("wireless.accesspoint.station", "get", { name = ap }) or {}
-    if stationInfo[ap] and option then
-      for mac, data in pairs(stationInfo[ap]) do
-         if mac == macAddress and data.state:match("Associated") and data.last_ssid == ssid then
-           return tostring(data[option] or default)
-         end
-      end
-    end
-    return stationInfo[ap] or {}
-  end
-
+-- Associated devices section
+-- This function returns the table containing entries, get for LANDevice.WLANConfiguration.{i}.AssociatedDevice.{i}. object
+M.associatedDeviceMapping = function(commitapply)
   -- Function to retrieve information from SSID ubus call
   local function getStatus(mapping, param, key)
     local ssid = key:match("^(%S+)_sta*")
@@ -1573,13 +1905,13 @@ M.getMappings = function(commitapply)
   -- Function to retrieve information from accesspoint.station ubus call
   local function getStationInfo(_, param, key, parentKey)
     local macAddress = key:match("_sta_([%da-fA-F:]+)$") or ""
-    return getStaDataFromIface(parentKey, macAddress, paramMap[param], defaultValueMap[param])
+    return getStationDataFromIface(parentKey, macAddress, paramMap[param], defaultValueMap[param])
   end
 
   local entriesAssociatedDevice = function(mapping, parentKey)
     local entries = {}
     local ssid = getFromUci(parentKey, "ssid")
-    local stationInfo = getStaDataFromIface(parentKey)
+    local stationInfo = getStationDataFromIface(parentKey)
     if stationInfo then
       for mac, data in pairs(stationInfo) do
         if data.state:match("Associated") and data.last_ssid == ssid then
@@ -1626,7 +1958,29 @@ M.getMappings = function(commitapply)
       local txRate = getStationInfo(nil, param, key, parentKey)
       return txRate:match("%d+") or ""
     end,
+    X_OperatingStandard = function(mapping, param, key, parentKey)
+      local macAddress = key:match("_sta_([%da-fA-F:]+)$") or ""
+      operatingStandard = getStationDataFromIface(parentKey, macAddress, "capabilities")
+      return operatingStandard and operatingStandard:match("802.11(%a+)") or ""
+    end,
+    X_HostName = function(mapping, param, key, parentKey)
+      local macAddress = key:match("_sta_([%da-fA-F:]+)$") or ""
+      local hostData = conn:call("hostmanager.device", "get", { ["mac-address"] = macAddress }) or {}
+      for _, data in pairs(hostData) do
+        return data.hostname or ""
+      end
+      return ""
+    end,
+    X_Active = function(mapping, param, key, parentKey)
+      local macAddress = key:match("_sta_([%da-fA-F:]+)$") or ""
+      local hostData = conn:call("hostmanager.device", "get", { ["mac-address"] = macAddress }) or {}
+      for _, data in pairs(hostData) do
+        return data.state and data.state:match("connected") and "1" or "0"
+      end
+      return "0"
+    end,
     X_Status = getStatus,
+    X_000E50_Status = getStatus,
     X_LastDataUplinkRate = getStationInfo,
     X_000E50_LastDataUplinkRate = getStationInfo,
     X_LastDataDownlinkRate = getStationInfo,
@@ -1640,8 +1994,40 @@ M.getMappings = function(commitapply)
     X_000E50_RSSIHistory = getStationInfo,
     X_000E50_Capabilities = getStationInfo,
   }
+  return {
+    entries = entriesAssociatedDevice,
+    get = getAssociatedDevice,
+  }
+end
 
-  -- WPS Section
+-- Function to set the values for WBM common ssid feature
+M.WBMMethods = function(commitapply)
+  local function setWBM(ap, value, key)
+    local broadcastSSID = getFromUci(ap, "public")
+    local baseAP, peerAP = getBandSteerRelatedNode(ap, key)
+    if value == "1" then
+      setOnUci(baseAP, "group_id", "ap_group0", commitapply)
+      setOnUci(peerAP, "group_id", "ap_group0", commitapply)
+      enableBandSteer(key, commitapply)
+    else
+      setOnUci(baseAP, "group_id", "off", commitapply)
+      setOnUci(peerAP, "group_id", "off", commitapply)
+      disableBandSteer(key, commitapply)
+    end
+    setOnUci(peerAP, "public", broadcastSSID, commitapply)
+  end
+
+  return {
+    setWBM = setWBM,
+    commit = commit,
+    revert = revert
+  }
+
+end
+
+-- WPS Section
+-- This function returns the table containing get, getall, set, commit, revert for LANDevice.WLANConfiguration.{i}.WPS. object
+M.getWPSMapping = function(commitapply)
   local getWPS = {
     Enable = function(mapping, param, key)
       return getFromUci(getAPFromIface(key), "wps_state")
@@ -1670,6 +2056,7 @@ M.getMappings = function(commitapply)
     end,
     X_0876FF_PushButton = "0",
     X_000E50_PushButton = "0",
+    Version = "2",
   }
 
   local getallWPS = function(mapping, key)
@@ -1711,20 +2098,62 @@ M.getMappings = function(commitapply)
       triggerWPSPushButton(value)
     end,
   }
+  return {
+    get = getWPS,
+    getall = getallWPS,
+    set = setWPS,
+    commit = commit,
+    revert = revert
+  }
+end
 
- -- X_Stats Section
+local function stationStats(key, parentKey, option)
+  local macAddress = key:match("_sta_([%da-fA-F:]+)$") or ""
+  return getStationDataFromIface(parentKey, macAddress, option) or "0"
+end
+
+-- X_Stats Section
+-- This function returns the table containing get for LANDevice.WLANConfiguration.{i}.AssociatedDevice.{i}.X_Stats. object
+M.getWifiStats = function(commitapply)
   local getWifiStats = {
     SignalStrength = function(mapping, param, key, parentKey)
-      local macAddress = key:match("_sta_([%da-fA-F:]+)$") or ""
-      return getStaDataFromIface(parentKey, macAddress, "rssi") or "0"
+      return stationStats(key, parentKey, "rssi")
     end,
     Retransmissions = function(mapping, param, key, parentKey)
-      local macAddress = key:match("_sta_([%da-fA-F:]+)$") or ""
-      return getStaDataFromIface(parentKey, macAddress, "av_txbw_used") or "0"
+      return stationStats(key, parentKey, "av_txbw_used")
     end,
+    BytesSent = function(mapping, param, key, parentKey)
+      return stationStats(key, parentKey, "tx_bytes")
+    end,
+    BytesReceived = function(mapping, param, key, parentKey)
+      return stationStats(key, parentKey, "rx_bytes")
+    end,
+    PacketsSent = function(mapping, param, key, parentKey)
+      return stationStats(key, parentKey, "tx_packets")
+    end,
+    PacketsReceived = function(mapping, param, key, parentKey)
+      return stationStats(key, parentKey, "rx_packets")
+    end,
+    ErrorsSent = function(mapping, param, key, parentKey)
+      return stationStats(key, parentKey, "tx_noack_failures")
+    end,
+    RetransCount = function(mapping, param, key, parentKey)
+      return stationStats(key, parentKey, "tx_noack_failures")
+    end,
+    FailedRetransCount = function(mapping, param, key, parentKey)
+      return stationStats(key, parentKey, "rx_sec_failures")
+    end,
+    RetryCount = "0",
+    MultipleRetryCount = "0",
     }
+  return {
+    get = getWifiStats,
+  }
+end
 
-  -- WLAN Stats section
+-- WLAN Stats section
+-- This function returns the table containing get and getall for LANDevice.WLANConfiguration.{i}.Stats. object
+M.getWLANStats = function(commitapply)
   local function getDataFromSsidStats(key, option)
     local iface = key:gsub("_remote", "")
     local ssidStats = conn:call("wireless.ssid.stats", "get", { name = iface }) or {}
@@ -1754,7 +2183,7 @@ M.getMappings = function(commitapply)
   end
 
   local function getallWLANStats(mapping, key)
-    local ssidStats = getDataFromSsidStats(key)[key]
+    local ssidStats = getDataFromSsidStats(key)
     return {
       UnicastPacketsSent = ssidStats[wlanStatsMap["UnicastPacketsSent"]] and tostring(ssidStats[wlanStatsMap["UnicastPacketsSent"]]) or "",
       UnicastPacketsReceived = ssidStats[wlanStatsMap["UnicastPacketsReceived"]] and tostring(ssidStats[wlanStatsMap["UnicastPacketsReceived"]]) or "",
@@ -1769,63 +2198,10 @@ M.getMappings = function(commitapply)
       UnknownProtoPacketsReceived = nwCommon.getIntfStats(key, "rxerr", "")
     }
   end
-
-  local function commit()
-    if configChanged then
-      uciHelper.commit(wirelessBinding)
-      configChanged = false
-    end
-  end
-
-  local function revert()
-    if configChanged then
-      uciHelper.revert(wirelessBinding)
-      configChanged = false
-    end
-  end
-
   return {
-    wlan = {
-      getAll = getallWLANDevice,
-      get = getWLANDevice,
-      set = setWLANDevice,
-      commit = commit,
-      revert = revert
-    },
-    wps = {
-      get = getWPS,
-      getall = getallWPS,
-      set = setWPS,
-      commit = commit,
-      revert = revert
-    },
-    stats = {
-      getAll = getallWLANStats,
-      get = getWLANStats,
-    },
-    wepkey = {
-      entries = entriesWEPKey,
-      get = getWEPKey,
-      set = setWEPKey,
-      commit = commit,
-      revert = revert
-    },
-    psk = {
-      entries = entriesPreSharedKey,
-      get = getPreSharedKey,
-      set = setPreSharedKey,
-      commit = commit,
-      revert = revert,
-    },
-    X_Stats = {
-      get = getWifiStats,
-    },
-    assoc = {
-      entries = entriesAssociatedDevice,
-      get = getAssociatedDevice,
-   }
- }
-
+    getall = getallWLANStats,
+    get = getWLANStats,
+  }
 end
 
 return M

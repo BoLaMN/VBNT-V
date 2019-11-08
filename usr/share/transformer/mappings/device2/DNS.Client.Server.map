@@ -228,7 +228,7 @@ Device_DNS_Client_Server_i_.set = {
   DNSServer = function(mapping, param, value, key)
     if (getType(key) == "Static") then
       if value == keyMap[key].dnsServer then
-        return nil, "The DNS Server to be modified is same as the existing DNS server"
+        return true
       else
         local success, error = setDNSServer(value, keyMap[key].dnsServer, keyMap[key].interface, key)
         if not success then

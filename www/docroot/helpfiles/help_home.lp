@@ -5,6 +5,11 @@ lp.setpath("/www/snippets/")
 lp.include("header.lp")
 lp.include("help_menubar.lp")
   ngx.print('\
+');  
+local telstra_helper = require("telstra_helper")
+local symbolv1 = telstra_helper.symbolnamev1
+local symbolv2 = telstra_helper.symbolnamev2
+  ngx.print('\
 \
 <div class="container toplevel" style="width:830px">\
     <div class="row">\
@@ -15,7 +20,7 @@ lp.include("help_menubar.lp")
             <div class="span7 container">\
                 <div class="container span7">\
                     <br>\
-                    <p>Welcome to your Telstra T-Gateway Web Interface. The following pages will provide you an overview of what the various options in the T-Gateway Web Interface can do for you and your service.  The Web Interface is split up into the following section:</p>\
+                    <p>Welcome to your Telstra ');  ngx.print( symbolv1 ); ngx.print(' Web Interface. The following pages will provide you an overview of what the various options in the ');  ngx.print( symbolv1 ); ngx.print(' Web Interface can do for you and your service.  The Web Interface is split up into the following section:</p>\
                     <p>&nbsp;&nbsp;<b><u>- Main Navigation Menu</u></b></p>\
                     <p>&nbsp;&nbsp;<b><u>- Dynamic Status Notification Bar</u></b></p>\
                     <p>&nbsp;&nbsp;<b><u>- Main Configuration screen</u></b></p>\
@@ -25,7 +30,7 @@ lp.include("help_menubar.lp")
                     <div class="container span7">\
                         <ul>\
                             <a href="/helpfiles/help_home.lp"><legend> Home </legend> </a>\
-                            <ul><li>This area of the Gateway Web Interface will give you the status of your Broadband connection, Home Network and provide assurance steps, in the event of any issues</li></ul>\
+                            <ul><li>This area of the ');  ngx.print( symbolv1 ); ngx.print(' Web Interface will give you the status of your Broadband connection, Home Network and provide assurance steps, in the event of any issues</li></ul>\
                         </ul>\
                     </div>\
 \
@@ -98,7 +103,7 @@ lp.include("help_menubar.lp")
                     <div class="container span7">\
                     <ul>\
                         <a href="/helpfiles/help_usersetting.lp"><legend>User Settings</legend></a>\
-                        <ul><li>In this section you will be able to change/view settings that are related to user that is accessing the T-Gateway Web Management Interface</li></ul>\
+                        <ul><li>In this section you will be able to change/view settings that are related to user that is accessing the ');  ngx.print( symbolv1 ); ngx.print(' Web Management Interface</li></ul>\
                     </ul>\
                     </div>\
                    \

@@ -22,14 +22,6 @@ uci set web.mmpbxprofilemodal=rule
 uci set web.mmpbxprofilemodal.target=/modals/mmpbx-profile-modal.lp
 uci add_list web.mmpbxprofilemodal.roles=admin
 
-uci -q del_list web.ruleset_main.rules=mmpbxservicemodal
-uci add_list web.ruleset_main.rules=mmpbxservicemodal
-
-uci -q delete web.mmpbxservicemodal
-uci set web.mmpbxservicemodal=rule
-uci set web.mmpbxservicemodal.target=/modals/mmpbx-service-modal.lp
-uci add_list web.mmpbxservicemodal.roles=admin
-
 uci -q del_list web.ruleset_main.rules=mmpbxlogmodal
 uci add_list web.ruleset_main.rules=mmpbxlogmodal
 
@@ -45,6 +37,22 @@ uci -q delete web.mmpbxdectmodal
 uci set web.mmpbxdectmodal=rule
 uci set web.mmpbxdectmodal.target=/modals/mmpbx-dect-modal.lp
 uci add_list web.mmpbxdectmodal.roles=admin
+
+uci -q del_list web.ruleset_main.rules=mmpbxcontactsmodal
+uci add_list web.ruleset_main.rules=mmpbxcontactsmodal
+
+uci -q delete web.mmpbxcontactsmodal
+uci set web.mmpbxcontactsmodal=rule
+uci set web.mmpbxcontactsmodal.target=/modals/mmpbx-contacts-modal.lp
+uci add_list web.mmpbxcontactsmodal.roles=admin
+
+uci -q del_list web.ruleset_main.rules=mmpbxservicemodal
+uci add_list web.ruleset_main.rules=mmpbxservicemodal
+
+uci -q delete web.mmpbxservicemodal
+uci set web.mmpbxservicemodal=rule
+uci set web.mmpbxservicemodal.target=/modals/mmpbx-service-modal.lp
+uci add_list web.mmpbxservicemodal.roles=admin
 
 uci -q del_list web.ruleset_main.rules=mmpbxvoltemodal
 uci add_list web.ruleset_main.rules=mmpbxvoltemodal

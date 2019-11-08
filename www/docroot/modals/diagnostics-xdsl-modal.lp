@@ -188,7 +188,7 @@ end
     ');  
         -- dummy form so that refresh button knows which page to reload, keep it
       ngx.print('\
-    <form class="form-horizontal" method="post" action="modals/diagnostics-xdsl-modal.lp">\
+    <form class="form-horizontal" method="post" action="');  ngx.print( ngx.var.request_uri ); ngx.print('">\
 \
     <fieldset id="diagnostics-xdsl-tab">\
        <legend>DSL information</legend>\

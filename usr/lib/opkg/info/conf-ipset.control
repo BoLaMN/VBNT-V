@@ -1,6 +1,6 @@
 Package: conf-ipset
 Version: 1.0
-Depends: libc, libssp, ipset-helper-tch
+Depends: libc, libssp, librt, libpthread, ipset-helper-tch
 Source: feeds/custo/conf-ipset
 Section: conf-ipset
 Maintainer: Technicolor <linuxgw@technicolor.com>

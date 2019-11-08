@@ -39,6 +39,10 @@ local sys_upnp_redirect_i_ = {
         access = "readOnly",
         type = "int",
       },
+      remote_host = {
+        access = "readOnly",
+        type = "string",
+      },
       stop_time = {
         access = "readOnly",
         type = "int",
@@ -57,7 +61,7 @@ local sys_upnp_redirect_i_ = {
 
 local leasePath="/var/upnp.leases"
 local lease_cache = {}
-local gmatch, resolve = string.gmatch, resolve
+local gmatch = string.gmatch
 local uciHelper = mapper("ucihelper")
 local foreach_on_uci = uciHelper.foreach_on_uci
 local get_from_uci = uciHelper.get_from_uci
@@ -88,19 +92,22 @@ sys_upnp_redirect_i_.entries = function(mapping)
   lease_cache = {}
   local upnpkeys = {}
   for line in fd:lines() do
-    local proto, interface, src_dport, dest_ip, dest_port, stop_time, descr = string.match(line, '([UDTCP]+):(%S+):(%d+):([%d%s%.]+):(%d+):(%d+):([^\r^\n]*)')
-    local key = proto .. interface .. dest_port .. src_dport
-    upnpkeys[#upnpkeys+1] = key
-    lease_cache[key] = {
-      proto = proto,
-      interface = interface,
-      dest_port = dest_port,
-      dest_ip = dest_ip,
-      src_dport = src_dport,
-      stop_time = stop_time,
-      description = (descr ~= "(null)") and descr or "",
-      ip_interface = get_ipinterface(interface),
-    }
+    local proto, interface, src_dport, remote_host, dest_ip, dest_port, stop_time, descr = string.match(line, '([UDTCP]+):([^:]+):(%d+)[:%S]*:([%S+]+):([%d%s%.]+):(%d+):(%d+):([^\r^\n]*)')
+    if proto and interface and dest_port and src_dport and stop_time and descr then
+      local key = proto .. interface .. dest_port .. src_dport
+      upnpkeys[#upnpkeys+1] = key
+      lease_cache[key] = {
+        proto = proto,
+        interface = interface,
+        dest_port = dest_port,
+        dest_ip = dest_ip,
+        remote_host = (remote_host and remote_host ~= "*") and remote_host or "",
+        src_dport = src_dport,
+        stop_time = stop_time,
+        description = (descr ~= "(null)") and descr or "",
+        ip_interface = get_ipinterface(interface),
+      }
+    end
   end
   fd:close()
   return upnpkeys

@@ -42,7 +42,9 @@ local Device_PPP_Interface_i_IPCP_ = {
 }
 
 local nwmodel = require "transformer.shared.models.device2.network"
+local network = require("transformer.shared.common.network")
 local ubus = mapper("ubus").connect()
+local table = table
 
 local function get_ubusStatus(key)
   local model = nwmodel.load()
@@ -66,21 +68,12 @@ local function getRemoteIPAddress(mapping, param, key, ubusStatus)
   return ""
 end
 
-local function ifExists(table,value)
-  for _,v in pairs(table) do
-    if value == v then
-      return true
-    end
-  end
-  return false
-end
-
 local function getDNSServers(mapping, param, key, ubusStatus)
   ubusStatus = ubusStatus or get_ubusStatus(key)
   if ubusStatus and ubusStatus["dns-server"] then
     local dnsServers = {}
     table.foreach(ubusStatus["dns-server"], function(s)
-      if not ifExists(dnsServers, ubusStatus["dns-server"][s]) then
+      if not network.listContains(dnsServers, ubusStatus["dns-server"][s]) then
         dnsServers[#dnsServers+1] = ubusStatus["dns-server"][s]
       end
     end)

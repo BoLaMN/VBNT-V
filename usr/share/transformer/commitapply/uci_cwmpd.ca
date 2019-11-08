@@ -1,2 +1,2 @@
-^cwmpd sleep 1;/etc/init.d/cwmpd reload
+^cwmpd /etc/init.d/cwmpd reload
 

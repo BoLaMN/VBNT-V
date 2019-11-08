@@ -2055,12 +2055,22 @@ local sys_class_xdsl_ = {
         access = "readOnly",
         activeNotify = "canDeny",
         type = "unsignedInt",
-      }
+      },
+      UPBOKLEPb = {
+        access = "readOnly",
+        activeNotify = "canDeny",
+        type = "string",
+      },
+      UPBOKLERPb = {
+        access = "readOnly",
+        activeNotify = "canDeny",
+        type = "string",
+      },
     }
   }
 }
 
-local xdslctl = require('transformer.shared.xdslctl')
+local dsl_supported, xdslctl = pcall(require,"transformer.shared.xdslctl")
 local mapper, commitapply, register = mapper, commitapply, register
 local table, string, tostring = table, string, tostring
 local find = string.find
@@ -2212,11 +2222,15 @@ local uci_binding_bonding_support = { config = "xdsl", sectionname = "dsl0", opt
 local uci_binding_vpi = { config = "xtm", sectionname = "atm_Internet", option = "vpi" }
 local uci_binding_vci = { config = "xtm", sectionname = "atm_Internet", option = "vci" }
 
-local xtmctl = require("transformer.shared.xtmctl")
-local getBondingStatus = xtmctl.getBondingStatus
+local xtm_supported,xtmctl = pcall(require,"transformer.shared.xtmctl")
+local getBondingStatus = xtm_supported and xtmctl.getBondingStatus or ""
 
 local function getValue(param, val)
   return tostring(cache[param] and (val - cache[param]) or val)
+end
+
+local function isNot35bProfile(key)
+  return  (xdslctl.infoValue("vdsl2profile","","",key) or "") ~= "35b"
 end
 
 sys_class_xdsl_.get = {
@@ -2897,10 +2911,10 @@ sys_class_xdsl_.get = {
     return xdslctl.infoValue("HLOGMT", "us", "", key)
   end,
   DownstreamHLOGps = function (mapping, params, key)
-    return xdslctl.infoValue("HLOGps", "ds", "", key)
+    return isNot35bProfile(key) and xdslctl.infoValue("HLOGps", "ds", "", key) or "0"
   end,
   UpstreamHLOGps = function (mapping, params, key)
-    return xdslctl.infoValue("HLOGps", "us", "", key)
+    return isNot35bProfile(key) and xdslctl.infoValue("HLOGps", "us", "", key) or "0"
   end,
   DownstreamINMCC = function (mapping, params, key)
     return xdslctl.infoValue("INMCCds", "", "", key)
@@ -2986,10 +3000,10 @@ sys_class_xdsl_.get = {
     return xdslctl.infoValue("QLNMT", "us", "", key)
   end,
   DownstreamQLNps = function (mapping, params, key)
-    return xdslctl.infoValue("QLNps", "ds", "", key)
+    return isNot35bProfile(key) and xdslctl.infoValue("QLNps", "ds", "", key) or "0"
   end,
   UpstreamQLNps = function (mapping, params, key)
-    return xdslctl.infoValue("QLNps", "us", "", key)
+    return isNot35bProfile(key) and xdslctl.infoValue("QLNps", "us", "", key) or "0"
   end,
   DownstreamSATN = function (mapping, params, key)
     return xdslctl.infoValue("SATN", "ds", "", key)
@@ -3016,10 +3030,10 @@ sys_class_xdsl_.get = {
     return xdslctl.infoValue("SNRMpb", "us", "", key)
   end,
   DownstreamSNRps = function (mapping, params, key)
-    return xdslctl.infoValue("SNRps", "ds", "", key)
+    return isNot35bProfile(key) and xdslctl.infoValue("SNRps", "ds", "", key) or "0"
   end,
   UpstreamSNRps = function (mapping, params, key)
-    return xdslctl.infoValue("SNRps", "us", "", key)
+    return isNot35bProfile(key) and xdslctl.infoValue("SNRps", "us", "", key) or "0"
   end,
   StandardUsed = function (mapping, params, key)
     return xdslctl.infoValue("StandardUsed", "", "", key)
@@ -3113,10 +3127,10 @@ sys_class_xdsl_.get = {
     return xdslctl.infoValue("BITSps", "us", "", key)
   end,
   DownstreamHLINps = function (mapping, params, key)
-    return xdslctl.infoValue("HLINps", "ds", "", key)
+    return isNot35bProfile(key) and xdslctl.infoValue("HLINps", "ds", "", key) or "0"
   end,
   UpstreamHLINps = function (mapping, params, key)
-    return xdslctl.infoValue("HLINps", "ds", "", key)
+    return isNot35bProfile(key) and xdslctl.infoValue("HLINps", "us", "", key) or "0"
   end,
   RetrainReason = function (mapping, params, key)
     return xdslctl.infoValue("lrtr", "", "", key)
@@ -3515,7 +3529,13 @@ sys_class_xdsl_.get = {
   end,
   MINEFTR = function (mapping, params, key)
     return xdslctl.infoValue("MINEFTR", "", "", key)
-  end
+  end,
+  UPBOKLEPb = function (mapping, params, key)
+    return xdslctl.infoValue("UPBOKLEPb", "", "", key)
+  end,
+  UPBOKLERPb = function (mapping, params, key)
+    return xdslctl.infoValue("UPBOKLERPb", "", "", key)
+  end,
 }
 
 sys_class_xdsl_.getall = function(mapping, key)

@@ -1,9 +1,9 @@
 Package: ethswctl
-Version: 4.16L.05
-Depends: libc, libssp, libethswctl, libcmshelper
+Version: 5.02L.03
+Depends: libc, libssp, librt, libpthread, libethswctl, libcmshelper
 Source: feeds/technicolor/bcm_userspace
 Section: utils
 Maintainer: Technicolor <linuxgw@technicolor.com>
 Architecture: brcm63xx-tch
-Installed-Size: 24898
+Installed-Size: 29530
 Description:  Broadcom ethernet switch control

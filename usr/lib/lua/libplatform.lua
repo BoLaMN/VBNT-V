@@ -32,28 +32,28 @@ local boards = {
 			power_controls = {
 				{
 					linked_device = {
-						dev_desc = "1-2"
+						dev_desc = "3-2"
 					}
 				}
 			},
 			rf_controls = {
 				{
 					linked_device = {
-						dev_desc = "1-2"
+						dev_desc = "3-2"
 					}
 				}
 			},
 			sim_hotswap = {
 				{
 					linked_device = {
-						dev_desc = "1-2"
+						dev_desc = "3-2"
 					}
 				}
 			},
 			antenna_controls = {
 				{
 					linked_device = {
-						dev_desc = "1-2"
+						dev_desc = "3-2"
 					},
 					antenna = {
 						{
@@ -79,19 +79,19 @@ local boards = {
 	["VBNT-V"] = {
 		gpio_list = {
 			{pin = 72, value = 1},
-			{pin = 73, value = 1},
+			{pin = 73, value = 0},
 			{pin = 74, value = 0},
 			{pin = 96, value = 1},
 			{pin = 97, value = 1},
 			{pin = 98, value = 1},
-			{pin = 100, value = 1},
+			{pin = 100, value = 0},
 			{pin = 101, value = 0}
 		},
 		capabilities = {
 			voice = {
 				{
 					linked_device = {
-						dev_desc = "1-2"
+						dev_desc = "3-2"
 					},
 					interfaces = {
 						{
@@ -107,28 +107,28 @@ local boards = {
 			power_controls = {
 				{
 					linked_device = {
-						dev_desc = "1-2"
+						dev_desc = "3-2"
 					}
 				}
 			},
 			rf_controls = {
 				{
 					linked_device = {
-						dev_desc = "1-2"
+						dev_desc = "3-2"
 					}
 				}
 			},
 			sim_hotswap = {
 				{
 					linked_device = {
-						dev_desc = "1-2"
+						dev_desc = "3-2"
 					}
 				}
 			},
 			antenna_controls = {
 				{
 					linked_device = {
-						dev_desc = "1-2"
+						dev_desc = "3-2"
 					},
 					antenna = {
 						{
@@ -155,8 +155,8 @@ local boards = {
 			{pin = 0, value = 1},
 			{pin = 8, value = 1},
 			{pin = 9, value = 0},
-			{pin = 14, value = 1},
-			{pin = 54, value = 1},
+			{pin = 14, value = 0},
+			{pin = 54, value = 0},
 			{pin = 115, value = 1},
 			{pin = 120, value = 0},
 		},
@@ -270,6 +270,17 @@ boards["VBNT-J"].capabilities.rf_controls[1].rf_state = function()
 	return "disabled"
 end
 
+boards["VBNT-V"].capabilities.power_controls[1].power_on = function()
+	helper.write_file("/sys/class/gpio/gpio73/value", "1")
+	helper.sleep(0.5)
+	helper.write_file("/sys/class/gpio/gpio100/value", "1")
+	helper.sleep(0.5)
+end
+
+boards["VBNT-V"].capabilities.power_controls[1].power_off = function()
+	-- Not supported
+end
+
 boards["VBNT-V"].capabilities.power_controls[1].reset = function()
 	if helper.write_file("/sys/class/gpio/gpio73/value", "0") then
 		-- Assert the reset line for at least 100ms
@@ -310,6 +321,17 @@ boards["VBNT-V"].capabilities.rf_controls[1].rf_state = function()
 		return "enabled"
 	end
 	return "disabled"
+end
+
+boards["VBNT-Y"].capabilities.power_controls[1].power_on = function()
+	helper.write_file("/sys/class/gpio/gpio54/value", "1")
+	helper.sleep(0.5)
+	helper.write_file("/sys/class/gpio/gpio14/value", "1")
+	helper.sleep(0.5)
+end
+
+boards["VBNT-Y"].capabilities.power_controls[1].power_off = function()
+	-- Not supported.
 end
 
 boards["VBNT-Y"].capabilities.power_controls[1].reset = function()

@@ -452,13 +452,13 @@ end
 
 function Transformer:subscribe(uuid, path, addr, subscr_type, options)
   local eventhor = self.eventhor
-  local rc, errcode, errmsg = do_pcall(eventhor.addSubscription, eventhor, uuid, path, addr, subscr_type, options)
+  local rc, errcode, errmsg = do_transaction_pcall(eventhor.addSubscription, eventhor, uuid, path, addr, subscr_type, options)
   return rc, errcode, errmsg
 end
 
 function Transformer:unsubscribe(uuid, subscr_id)
   local eventhor = self.eventhor
-  local rc, errcode, errmsg = do_pcall(eventhor.removeSubscription, eventhor, uuid, subscr_id)
+  local rc, errcode, errmsg = do_transaction_pcall(eventhor.removeSubscription, eventhor, uuid, subscr_id)
   return rc, errcode, errmsg
 end
 

@@ -1,9 +1,9 @@
 Package: bcm_userspace-tch
-Version: 4.16L.05
-Depends: libc, libssp, bcmswconfig-tch
+Version: 5.02L.03
+Depends: libc, libssp, librt, libpthread
 Source: feeds/technicolor/bcm_userspace
 Section: utils
 Maintainer: Technicolor <linuxgw@technicolor.com>
 Architecture: brcm63xx-tch
-Installed-Size: 820
+Installed-Size: 5680
 Description:  Technicolor utilities for Broadcom 63xx platforms

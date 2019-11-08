@@ -99,23 +99,27 @@ function M.startup(user, binding)
     end
     f:write("config user '".. user .."'\n")
     f:close()
-    uci.set_on_uci(uci_binding[user]["NumberOfRepetitions"], 3)
     uci.set_on_uci(uci_binding[user]["Timeout"], 10000)
     uci.set_on_uci(uci_binding[user]["DataBlockSize"], 56)
     uci.set_on_uci(uci_binding[user]["DSCP"], 0)
+    uci.set_on_uci(uci_binding[user]["ProtocolVersion"], "IPv4")
     if user == "webui" then
-      uci.set_on_uci(uci_binding[user]["ipType"], "IPv4")
+      uci.set_on_uci(uci_binding[user]["NumberOfRepetitions"], 4)
+    else
+      uci.set_on_uci(uci_binding[user]["NumberOfRepetitions"], 3)
     end
   else
     local value = uci.get_from_uci({config = "ipping", sectionname = user})
     if value == '' then
       uci.set_on_uci({ config = "ipping", sectionname = user},"user")
-      uci.set_on_uci(uci_binding[user]["NumberOfRepetitions"], 3)
       uci.set_on_uci(uci_binding[user]["Timeout"], 10000)
       uci.set_on_uci(uci_binding[user]["DataBlockSize"], 56)
       uci.set_on_uci(uci_binding[user]["DSCP"], 0)
+      uci.set_on_uci(uci_binding[user]["ProtocolVersion"], "IPv4")
       if user == "webui" then
-        uci.set_on_uci(uci_binding[user]["ipType"], "IPv4")
+        uci.set_on_uci(uci_binding[user]["NumberOfRepetitions"], 4)
+      else
+        uci.set_on_uci(uci_binding[user]["NumberOfRepetitions"], 3)
       end
     end
   end
@@ -137,6 +141,7 @@ function M.uci_ipping_get(user, pname)
        Timeout = { config = config, sectionname = user, option = "timeout" },
        DataBlockSize = { config = config, sectionname = user, option = "size" },
        DSCP = { config = config, sectionname = user, option = "dscp" },
+       ProtocolVersion = { config = config, sectionname = user, option = "iptype" },
      }
   end
   if uci_binding[user][pname] then

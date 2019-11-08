@@ -240,30 +240,23 @@ local Multi_UploadDiagnostics_ = {
   }
 }
 
-local ipairs, mapper, math, register, string  = ipairs, mapper, math, register, string
+local ipairs, mapper, math, register = ipairs, mapper, math, register
 local uci_helper = mapper("ucihelper")
 local getFromUci = uci_helper.get_from_uci
 local tr143binding = { config = "tr143" }
 
-local function getSectionName(mapping)
-  if mapping.objectType.name:match("^InternetGatewayDevice") then
-    return "igd"
-  else
-    return "device2"
-  end
-end
-
 local helper = require("transformer.shared.tr143helper")
+local network = require("transformer.shared.common.network")
 
 Multi_UploadDiagnostics_.get = function(mapping, pname)
   local config = "UploadDiagnostics"
-  local user = getSectionName(mapping)
+  local user = network.getMappingType(mapping)
   return helper.tr143_get(config, user, pname)
 end
 
 Multi_UploadDiagnostics_.set = function(mapping, pname, pvalue)
   local config = "UploadDiagnostics"
-  local user = getSectionName(mapping)
+  local user = network.getMappingType(mapping)
   return helper.tr143_set(config, user, pname, pvalue, commitapply)
 end
 
@@ -331,12 +324,10 @@ local Multi_UploadDiagnostics_PerConnectionResult_i_ = {
   }
 }
 
-local PCRKeyToSectionName = {}
 
 Multi_UploadDiagnostics_PerConnectionResult_i_.get = function(mapping, pname, key)
   local value
-  local keyid = key:match("|(.*)")
-  tr143binding.sectionname = PCRKeyToSectionName[keyid]
+  tr143binding.sectionname = key
   tr143binding.option = pname
   value = getFromUci(tr143binding)
   return value or ""
@@ -346,12 +337,7 @@ Multi_UploadDiagnostics_PerConnectionResult_i_.entries = function(mapping)
   local entries = {}
   tr143binding.sectionname = "UploadDiagnosticsPCR"
   uci_helper.foreach_on_uci(tr143binding, function(s)
-    if not s._key then
-      s._key = uci_helper.generate_key_on_uci({ config = "tr143", sectionname = s[".name"] })
-      uci_helper.commit_keys(tr143binding)
-    end
-    entries [#entries + 1] = string.format("PCR|%s", s._key)
-    PCRKeyToSectionName[s._key] = s[".name"]
+    entries [#entries + 1] = s[".name"]
   end)
   return entries
 end
@@ -407,12 +393,9 @@ local Multi_UploadDiagnostics_IncrementalResult_i_ = {
 }
 
 
-local IRKeyToSectionName = {}
-
 Multi_UploadDiagnostics_IncrementalResult_i_.get = function(mapping, pname, key)
   local value
-  local keyid = key:match("|(.*)")
-  tr143binding.sectionname = IRKeyToSectionName[keyid]
+  tr143binding.sectionname = key
   tr143binding.option = pname
   value = getFromUci(tr143binding)
   return value or ""
@@ -422,12 +405,7 @@ Multi_UploadDiagnostics_IncrementalResult_i_.entries = function(mapping)
   local entries = {}
   tr143binding.sectionname = "UploadDiagnosticsIR"
   uci_helper.foreach_on_uci(tr143binding, function(s)
-    if not s._key then
-      s._key = uci_helper.generate_key_on_uci({ config = "tr143", sectionname = s[".name"] })
-      uci_helper.commit_keys(tr143binding)
-    end
-    entries [#entries + 1] = string.format("IR|%s", s._key)
-    IRKeyToSectionName[s._key] = s[".name"]
+    entries [#entries + 1] = s[".name"]
   end)
   return entries
 end

@@ -25,6 +25,10 @@ local bit = require("bit")
 local oredflags = bit.bor(uds.SOCK_NONBLOCK, uds.SOCK_CLOEXEC)
 local sk
 
+local function no_logger_reinit()
+  logger:warning("transformer disallows calling logger.init again")
+end
+
 -- enclose option parsing code in separate block so the
 -- code can be GC'd after execution
 do
@@ -84,6 +88,7 @@ do
   }
   config = do_config(config)
   logger.init("transformer", config.log_level, posix.LOG_PID + (config.log_stderr and posix.LOG_PERROR or 0))
+  logger.init = no_logger_reinit
   local api = require("transformer.api")
   local errmsg
   transformer, errmsg = api.init(config)
@@ -316,7 +321,13 @@ local function handle_SUB(sk, from, uuid, req)
   else
     -- send SUBSCRIBE response with subscription id and non-evented parameter paths
     msg:init_encode(SUBSCRIBE_RESP, max_size)
-    msg:encode(id, paths)
+    if paths and #paths > 0 then
+      for _, path in ipairs(paths) do
+        encode_wrapper(SUBSCRIBE_RESP, sk, from, id, path)
+      end
+    else
+      msg:encode(id)
+    end
   end
   msg:mark_last()
   sendto(sk, msg, from)

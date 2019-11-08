@@ -1,9 +1,9 @@
 Package: libatchannel
-Version: 0.1-5269da70d0e6adb175311c4fb5adac7a0bd94038
-Depends: libc, libssp, libcurl, libpthread
+Version: 0.1-7c78356ef5bc100d6be4cb856ad36046af0c9903
+Depends: libc, libssp, librt, libpthread, libcurl, libpthread
 Source: feeds/lte/libatchannel
 Section: libatchannel
 Maintainer: Technicolor <ltegw@technicolor.com>
 Architecture: brcm63xx-tch
-Installed-Size: 9295
+Installed-Size: 10095
 Description:  AT channel library

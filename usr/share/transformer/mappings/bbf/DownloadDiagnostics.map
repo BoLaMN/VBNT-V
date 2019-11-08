@@ -327,12 +327,9 @@ local Multi_DownloadDiagnostics_PerConnectionResult_i_ = {
   }
 }
 
-local PCRKeyToSectionName = {}
-
 Multi_DownloadDiagnostics_PerConnectionResult_i_.get = function(mapping, pname, key)
   local value
-  local keyid = key:match("|(.*)")
-  tr143binding.sectionname = PCRKeyToSectionName[keyid]
+  tr143binding.sectionname = key
   tr143binding.option = pname
   value = getFromUci(tr143binding)
   return value or ""
@@ -342,12 +339,7 @@ Multi_DownloadDiagnostics_PerConnectionResult_i_.entries = function(mapping)
   local entries = {}
   tr143binding.sectionname = "DownloadDiagnosticsPCR"
   uci_helper.foreach_on_uci(tr143binding, function(s)
-    if not s._key then
-      s._key = uci_helper.generate_key_on_uci({ config = "tr143", sectionname = s[".name"] })
-      uci_helper.commit_keys(tr143binding)
-    end
-    entries [#entries + 1] = string.format("PCR|%s", s._key)
-    PCRKeyToSectionName[s._key] = s[".name"]
+    entries [#entries + 1] = s[".name"]
   end)
   return entries
 end
@@ -402,12 +394,10 @@ local Multi_DownloadDiagnostics_IncrementalResult_i_ = {
   }
 }
 
-local IRKeyToSectionName = {}
 
 Multi_DownloadDiagnostics_IncrementalResult_i_.get = function(mapping, pname, key)
   local value
-  local keyid = key:match("|(.*)")
-  tr143binding.sectionname = IRKeyToSectionName[keyid]
+  tr143binding.sectionname = key
   tr143binding.option = pname
   value = getFromUci(tr143binding)
   return value or ""
@@ -417,12 +407,7 @@ Multi_DownloadDiagnostics_IncrementalResult_i_.entries = function(mapping)
   local entries = {}
   tr143binding.sectionname = "DownloadDiagnosticsIR"
   uci_helper.foreach_on_uci(tr143binding, function(s)
-    if not s._key then
-      s._key = uci_helper.generate_key_on_uci({ config = "tr143", sectionname = s[".name"] })
-      uci_helper.commit_keys(tr143binding)
-    end
-    entries [#entries + 1] = string.format("IR|%s", s._key)
-    IRKeyToSectionName[s._key] = s[".name"]
+    entries [#entries + 1] = s[".name"]
   end)
   return entries
 end

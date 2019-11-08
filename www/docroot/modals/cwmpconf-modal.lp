@@ -55,11 +55,27 @@ local function validateConnReqNone(value, object)
    end
    return nil
 end
+-- validate the user name and Url
+local function validateUserUrl(value, object)
+   if object.cwmp_state ~= "1" then
+      return false
+   else
+      return gVSLIR(value)
+   end
+end
+-- validate the password
+local function validatePass(value, object, key)
+   if object.cwmp_state ~= "1" then
+      return false
+   else
+      return gVP(gVSLIR)(value, object, key)
+   end
+end
 
 local mapvalid = {
-      cwmp_url                    = gVSLIR,
-      cwmp_acs_user               = gVSLIR,
-      cwmp_acs_pass               = gVP(gVSLIR),
+      cwmp_url                    = validateUserUrl,
+      cwmp_acs_user               = validateUserUrl,
+      cwmp_acs_pass               = validatePass,
       cwmp_state                  = post_helper.validateBoolean,
       cwmp_periodic               = gAV(gVWN, gVNIR(10, 300000)),
       connectionrequest_auth      = post_helper.getValidateInEnumSelect(conreqauth_select),
@@ -67,7 +83,11 @@ local mapvalid = {
       connectionrequest_pass      = gRV(validateConnReqNone, gVP(gVSLIR)),
       ip_preference               = post_helper.getValidateInEnumSelect(ip_preference_select),
 }
+local post_url = proxy.get(mapParams["cwmp_url"])[1].value
+local post_user = proxy.get(mapParams["cwmp_acs_user"])[1].value
+local post_pass = proxy.get(mapParams["cwmp_acs_pass"])[1].value
 
+local content, helpmsg = post_helper.handleQuery(mapParams, mapvalid)
 local conreqauthclass = {
    group = {
       class ="monitor-connectionrequest_auth monitor-1 monitor-2",
@@ -80,9 +100,13 @@ if ngx.var.request_method == "POST" then
       mapParams.connectionrequest_user = nil
       mapParams.connectionrequest_pass = nil
    end
+   if post_content["cwmp_state"] == "0" then
+      proxy.set({["uci.cwmpd.cwmpd_config.acs_url"] = post_url,
+                 ["uci.cwmpd.cwmpd_config.acs_user"] = post_user,
+                 ["uci.cwmpd.cwmpd_config.acs_pass"] = post_pass })
+      proxy.apply()
+   end
 end
-
-local content, helpmsg = post_helper.handleQuery(mapParams, mapvalid)
 
   ngx.print('\
 \
@@ -96,12 +120,34 @@ local content, helpmsg = post_helper.handleQuery(mapParams, mapvalid)
                       maxlength = "6",
                   }
               }
+              ngx.print(ui_helper.createMessages(message_helper.popMessages()))
+              local html = {}
+              local switch_class_enable = {
+                input = {
+                  class = "monitor-changes",
+                }
+              }
+              html[#html + 1] = ui_helper.createSwitch(T"Enabled", "cwmp_state", content["cwmp_state"],switch_class_enable)
+              local cwmpinput = {
+                group = {
+                  class ="monitor-cwmp_state monitor-1",
+                },
+                input = {
+                  maxlength= "255",
+                  class = "span2",
+                },
+              }
+              if content["cwmp_state"] == "0" then
+                 html[#html+1] = ui_helper.createInputText(T"ACS URL", "cwmp_url", post_url, cwmpinput, helpmsg["cwmp_url"])
+                 html[#html+1] = ui_helper.createInputText(T"ACS Username", "cwmp_acs_user", post_user, cwmpinput, helpmsg["cwmp_acs_user"])
+                 html[#html+1] = ui_helper.createInputPassword(T"ACS Password", "cwmp_acs_pass", post_pass, cwmpinput, helpmsg["cwmp_acs_pass"])
+              else
+                 html[#html+1] = ui_helper.createInputText(T"ACS URL", "cwmp_url", content["cwmp_url"], cwmpinput, helpmsg["cwmp_url"])
+                 html[#html+1] = ui_helper.createInputText(T"ACS Username", "cwmp_acs_user", content["cwmp_acs_user"], cwmpinput, helpmsg["cwmp_acs_user"])
+                 html[#html+1] = ui_helper.createInputPassword(T"ACS Password", "cwmp_acs_pass", content["cwmp_acs_pass"], cwmpinput, helpmsg["cwmp_acs_pass"])
+              end
+              ngx.print(html)
               ngx.print(
-                ui_helper.createMessages(message_helper.popMessages()),
-                ui_helper.createSwitch(T"Enabled", "cwmp_state", content["cwmp_state"]),
-                ui_helper.createInputText(T"ACS URL", "cwmp_url", content["cwmp_url"],{},helpmsg["cwmp_url"]),
-                ui_helper.createInputText(T"ACS Username", "cwmp_acs_user", content["cwmp_acs_user"],{},helpmsg["cwmp_acs_user"]),
-                ui_helper.createInputPassword(T"ACS Password", "cwmp_acs_pass", content["cwmp_acs_pass"],{},helpmsg["cwmp_acs_pass"]),
                 ui_helper.createInputText(T"Periodic Interval", "cwmp_periodic", content["cwmp_periodic"],numbersOnly,helpmsg["cwmp_periodic"]),
                 ui_helper.createInputSelect(T"Connection Request Auth", "connectionrequest_auth", conreqauth_select, content["connectionrequest_auth"],{select={class="monitor-changes"}}),
                 ui_helper.createInputText(T"Connection Request Username", "connectionrequest_user", content["connectionrequest_user"],conreqauthclass,helpmsg["connectionrequest_user"]),

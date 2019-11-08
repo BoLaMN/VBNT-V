@@ -53,13 +53,13 @@ local actions = {
 	{
 		name = "led_update",
 		handler = update_led,
-		interval = 10,
+		interval = 100,
 		counter = 0
 	},
 	{
 		name = "lte_wifi_coexistence",
 		handler = lte_wifi_coexistence_update,
-		interval = 10,
+		interval = 100,
 		counter = 0
 	}
 }
@@ -77,7 +77,7 @@ end
 
 function M.init(rt)
 	runtime = rt
-	timeout = 1000
+	timeout = 100
 
 	local status, m = pcall(require, "mobiled.plugins.leds")
 	leds = status and m or nil

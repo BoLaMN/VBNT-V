@@ -32,7 +32,7 @@ sys_conn_.entries = function()
   local count = 0
   ipv4Conn = {}
   ipv6Conn = {}
-  local fd = io.popen("cat /proc/net/nf_conntrack")
+  local fd = io.open("/proc/net/nf_conntrack")
   if fd then
     for line in fd:lines() do
       if line:match("^.*tcp.*ESTABLISHED") then
@@ -124,6 +124,10 @@ local sys_conn_host_i_ = {
         access = "readOnly",
         type = "string",
       },
+      MACAddress = {
+        access = "readOnly",
+        type = "string",
+      },
       NumberOfConnections = {
         access = "readOnly",
         type = "unsignedInt",
@@ -209,6 +213,9 @@ sys_conn_host_i_.get = {
     return devInfo[key].ipv6
   end,
   LinkLocalAddress = "",
+  MACAddress = function(mapping, param, key)
+    return key
+  end,
   NumberOfConnections = function(mapping, param ,key)
     return getNumberOfConnections("ipv4", key, ipv4Conn)
   end,

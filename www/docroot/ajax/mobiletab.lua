@@ -43,6 +43,16 @@ else
 			elseif sim_state == "not_present" then
 				status = T"SIM not present"
 			end
+
+			if status == "Connecting" then
+				result = utils.getContent(rpc_path .. "network.sessions.@1.ipv4_addr")
+				local ipv4_addr = result and result.ipv4_addr
+				result = utils.getContent(rpc_path .. "network.sessions.1.ipv6_addr")
+				local ipv6_addr = result and result.ipv6_addr
+				if ipv4_addr ~= "" or ipv6_addr ~= "" then
+					status = T"Connected"
+				end
+			end
 		end
 	end
 end

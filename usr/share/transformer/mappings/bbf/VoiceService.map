@@ -7,6 +7,9 @@ end
 local uci_helper = mapper("ucihelper")
 local transactions = {}
 local binding = {}
+local conn = mapper("ubus").connect()
+local table, type = table, type
+local voice_uplink_rate_limit
 
 local Multi_Services_VoiceService_i_ = {
   objectType = {
@@ -24,10 +27,19 @@ local Multi_Services_VoiceService_i_ = {
         access = "readWrite",
         type = "boolean",
       },
+      X_000E50_VoiceUplinkRateLimit = {
+        access = "readWrite",
+        type = "unsignedInt",
+      },
       X_FASTWEB_BoundIfName = {
         access = "readOnly",
         type = "string",
         description = "Used to identify the interface used for outgoing voice packet, return the interface name, if available.",
+      },
+      X_TELSTRA_ActiveCall = {
+        access = "readOnly",
+        type = "boolean",
+        default = "0",
       },
       -- VoiceProfileNumberOfEntries
       -- automatically created when Multi.Services.VoiceService.{i}.VoiceProfile.{i}. is loaded
@@ -61,12 +73,32 @@ Multi_Services_VoiceService_i_.get = {
        binding.default = "0"
        return uci_helper.get_from_uci(binding)
    end,
+
+   X_000E50_VoiceUplinkRateLimit = function (mapping, paramname, key)
+       binding.config = "mmpbxrvsipnet"
+       binding.sectionname = "global"
+       binding.option = "voice_uplink_rate_limit"
+       binding.default = "0"
+       return uci_helper.get_from_uci(binding)
+   end,
+
    X_FASTWEB_BoundIfName = function ()
        binding.config = "mmpbxrvsipnet"
        binding.sectionname = "sip_net"
        binding.option = "interface"
        binding.default = ""
        return uci_helper.get_from_uci(binding)
+   end,
+   X_TELSTRA_ActiveCall = function(config, name)
+       local calls = conn:call("mmpbx.call", "get", {})
+       if type(calls) == "table" then
+           for _,v in pairs(calls) do
+               if v.callState ~= nil then
+                   return "1"
+               end
+           end
+       end
+       return "0"
    end,
 }
 
@@ -76,21 +108,44 @@ Multi_Services_VoiceService_i_.set = {
        binding.config = "mmpbxbrcmfxonet"
        binding.sectionname = "fxo_profile"
        binding.option = "enabled"
-       uci_helper.set_on_uci(binding, paramvalue, commitapply)
-       transactions[binding.config] = true;
-	   local binding={config="mmpbxbrcmdectdev", sectionname="global", option="dect_audio_format_change"}
-	   uci_helper.set_on_uci(binding, paramvalue, commitapply)
-	   transactions[binding.config] = true
+       if paramvalue ~= uci_helper.get_from_uci(binding) then
+           uci_helper.set_on_uci(binding, paramvalue, commitapply)
+           transactions[binding.config] = true
+       end
+       local binding={config="mmpbxbrcmdectdev", sectionname="global", option="dect_audio_format_change"}
+       if paramvalue ~= uci_helper.get_from_uci(binding) then
+           uci_helper.set_on_uci(binding, paramvalue, commitapply)
+           transactions[binding.config] = true
+       end
   end,
   X_000E50_FXSState = function (mapping, paramname, paramvalue, key)
        binding.config = "mmpbxbrcmfxsdev"
        binding.sectionname = "fxs_dev_0"
-       binding.option = "relay_state"
-       uci_helper.set_on_uci(binding, paramvalue, commitapply)
+       binding.option = nil
+       local fxs_cfg = uci_helper.getall_from_uci(binding)
+       if fxs_cfg[".name"] and paramvalue ~= fxs_cfg.relay_state then
+           binding.option = "relay_state"
+           uci_helper.set_on_uci(binding, paramvalue, commitapply)
+           transactions[binding.config] = true
+       end
 
        binding.sectionname = "fxs_dev_1"
-       uci_helper.set_on_uci(binding, paramvalue, commitapply)
-       transactions[binding.config] = true;
+       binding.option = nil
+       fxs_cfg = uci_helper.getall_from_uci(binding)
+       if fxs_cfg[".name"] and paramvalue ~= fxs_cfg.relay_state then
+           binding.option = "relay_state"
+           uci_helper.set_on_uci(binding, paramvalue, commitapply)
+           transactions[binding.config] = true
+       end
+  end,
+  X_000E50_VoiceUplinkRateLimit = function (mapping, paramname, paramvalue, key)
+       binding.config = "mmpbxrvsipnet"
+       binding.sectionname = "global"
+       binding.option = "voice_uplink_rate_limit"
+       binding.default = "0"
+       if paramvalue ~= uci_helper.get_from_uci(binding) then
+          voice_uplink_rate_limit = paramvalue
+       end
   end,
 }
 
@@ -101,6 +156,10 @@ Multi_Services_VoiceService_i_.commit = function()
         uci_helper.commit(conf_binding)
     end
     transactions = {}
+    if voice_uplink_rate_limit ~= nil then
+        conn:call("mmpbxrvsipnet.voiceuplinkratelimit","set",{["voiceuplinkratelimit"] = voice_uplink_rate_limit})
+        voice_uplink_rate_limit = nil
+    end
 end
 
 Multi_Services_VoiceService_i_.revert = function()
@@ -110,6 +169,7 @@ Multi_Services_VoiceService_i_.revert = function()
         uci_helper.revert(config_binding)
     end
     transactions = {}
+    voice_uplink_rate_limit = nil
 end
 
 local duplicator = mapper("multiroot").duplicate

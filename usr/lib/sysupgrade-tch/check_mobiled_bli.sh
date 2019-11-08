@@ -54,7 +54,7 @@ case "$image_url" in
 	http*://*)
 		# HTTP URLs are assumed to be raw images in order to maintain backward
 		# compatibility.
-		curl -s -o "$temp_dir/output_fifo" "$image_url"
+		curl -s -o "$temp_dir/output_fifo" "${image_url//<REVISION>/$current_version}"
 	;;
 
 	tcp://*)

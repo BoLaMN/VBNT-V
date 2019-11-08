@@ -16,7 +16,7 @@ local firewall_defaults = {
     }
 }
 
-mapper("uci_1to1").registerMultiMap(firewall_defaults)
+mapper("uci_1to1").registerNamedMultiMap(firewall_defaults)
 
 -- uci.firewall.zone.{i}
 local firewall_zone = {
@@ -42,7 +42,7 @@ local firewall_forwarding = {
     }
 }
 
-mapper("uci_1to1").registerMultiMap(firewall_forwarding)
+mapper("uci_1to1").registerNamedMultiMap(firewall_forwarding)
 
 -- uci.firewall.redirect.{i}
 local firewall_redirect_options = {
@@ -62,7 +62,7 @@ local firewall_redirect = {
     lists = firewall_redirect_list
 }
 
-mapper("uci_1to1").registerMultiMap(firewall_redirect)
+mapper("uci_1to1").registerNamedMultiMap(firewall_redirect)
 
 -- add entries for the redirect groups that are identified in the config file
 local firewall_redirectsgroup = {
@@ -96,11 +96,11 @@ end)
 local firewall_rule_options = {
     "enabled", "name", "family", "src", "dest", "ipset", "extra", "limit", "limit_burst", "utc_time",
     "start_date", "stop_date", "start_time", "stop_time", "weekdays", "monthdays", "mark", "set_mark", "set_xmark",
-    "target", "proto","src_ip", "src_mac", "src_port", "dest_ip", "dest_port",
+    "target", "src_ip", "src_mac", "src_port", "dest_ip", "dest_port",
 
 }
 local firewall_rule_list = {
-    "icmp_type",
+    "icmp_type", "proto",
 }
 
 local firewall_rule = {
@@ -110,7 +110,7 @@ local firewall_rule = {
     lists = firewall_rule_list
 }
 
-mapper("uci_1to1").registerMultiMap(firewall_rule)
+mapper("uci_1to1").registerNamedMultiMap(firewall_rule)
 
 -- uci.firewall.helper.{i}
 local firewall_helper_options = {
@@ -123,7 +123,7 @@ local firewall_helper = {
     options = firewall_helper_options,
 }
 
-mapper("uci_1to1").registerMultiMap(firewall_helper)
+mapper("uci_1to1").registerNamedMultiMap(firewall_helper)
 
 -- add entries for the redirect groups that are identified in the config file
 local firewall_rulesgroup = {
@@ -154,11 +154,12 @@ local firewall_include = {
     config = config_firewall,
     type = "include",
     options = {
-        "enabled", "type", "path", "family", "reload",
-    }
+        "enabled", "type", "family", "reload",
+    },
+    readOnlyOptions = { "path" }
 }
 
-mapper("uci_1to1").registerMultiMap(firewall_include)
+mapper("uci_1to1").registerNamedMultiMap(firewall_include)
 
 -- uci.firewall.ipset.{i}
 local firewall_ipset = {
@@ -172,7 +173,7 @@ local firewall_ipset = {
         "match",
     }
 }
-mapper("uci_1to1").registerMultiMap(firewall_ipset)
+mapper("uci_1to1").registerNamedMultiMap(firewall_ipset)
 
 -- uci.firewall.dmz
 local firewall_dmz = {
@@ -194,4 +195,16 @@ local firewall_cone = {
     },
 }
 
-mapper("uci_1to1").registerMultiMap(firewall_cone)
+mapper("uci_1to1").registerNamedMultiMap(firewall_cone)
+
+-- uci.firewall.disabled_cone.{i}.
+
+local firewall_disabled_cone = {
+    config = config_firewall,
+    type = "disabled_cone",
+    options = {
+       "name", "src", "dest_port", "src_port", "dest_ip"
+    },
+}
+
+mapper("uci_1to1").registerNamedMultiMap(firewall_disabled_cone)

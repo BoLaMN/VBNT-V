@@ -467,6 +467,15 @@ local function createTableWithEmptyValues()
   addEmptyAdslMib( "ATTETRds", 0 )
   addEmptyAdslMib( "ATTETRus", 0 )
   addEmptyAdslMib( "MINEFTR", 0 )
+  addEmptyAdslMib( "UPBOKLEPb", " ")
+  addEmptyAdslMib( "UPBOKLERPb", " ")
+end
+
+--- Function to return converted us/ds values from AdslMib
+-- @param act     Function to call if conversion is needed. E.g adjustScale, decodeBooleanConfig.
+-- @param value   ds/us value from adslMib
+local function convertAdslValue(act, value)
+  return act and act(value) or tostring(value or "")
 end
 
 --- Function which stores info from AdslMib into another table.
@@ -481,10 +490,10 @@ end
 local function addAdslMibValue( adslmib, table, index, ds, us, act )
   if us then
     table[index] = {}
-    table[index]["ds"] = act and act(adslmib[ds]) or tostring(adslmib[ds])
-    table[index]["us"] = act and act(adslmib[us]) or tostring(adslmib[us])
+    table[index]["ds"] = convertAdslValue(act, adslmib[ds])
+    table[index]["us"] = convertAdslValue(act, adslmib[us])
   else
-    table[index] = act and act(adslmib[ds]) or tostring(adslmib[ds])
+    table[index] = convertAdslValue(act, adslmib[ds])
   end
 end
 
@@ -500,7 +509,7 @@ end
 local function getAdslMibInfo(lineid)
   local line = getLineNum(lineid)
   local diff = os.time() - lastUpdateTime[line]
-  if diff > 5 then
+  if diff > 5 or diff < 0 then
     tmp = luabcm.getAdslMib(line)
     lastUpdateTime[line] = os.time()
     if tostring(tmp) == "-1" then
@@ -661,6 +670,8 @@ local paramMap = {
   ["ETR"] = {"ETRds", "ETRus"},
   ["ATTETR"] = {"ATTETRds", "ATTETRus"},
   ["MINEFTR"] = {"MINEFTR"},
+  ["UPBOKLEPb"] = {"UPBOKLEPb"},
+  ["UPBOKLERPb"] = {"UPBOKLERPb"},
 }
 
 --- Retrieves the INFO values from the AdslMib.

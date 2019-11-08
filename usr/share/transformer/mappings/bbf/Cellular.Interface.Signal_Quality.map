@@ -39,6 +39,10 @@ local obj = {
 			LTE_Band = {
 				access = "readOnly",
 				type = "string"
+			},
+			PhyCellID = {
+				access = "readOnly",
+				type = "string"
 			}
 		}
 	}
@@ -53,21 +57,22 @@ local function getall(mapping, key)
 	local info = helper.getUbusData(conn, "mobiled.device", "get", { imei = key })
 	local dev_idx = tonumber(info.dev_idx) or 1
 
-        local nas_info = helper.getUbusData(conn, "mobiled.network", "serving_system", { dev_idx = dev_idx })
+	local nas_info = helper.getUbusData(conn, "mobiled.network", "serving_system", { dev_idx = dev_idx })
 	local result = {}
 	setmetatable(result, { __index = function() return "" end })
 	if nas_info.nas_state == 'registered' then
-            local data = helper.getUbusData(conn, "mobiled.radio", "signal_quality", { dev_idx = dev_idx })
-	    result.RSRQ = data.rsrq
-	    result.RSSI = data.rssi
-	    result.RSRP = data.rsrp
-	    result.ECIO = data.ecio
-	    result.SNR = data.sinr
-	    result.RSCP = data.rscp
-	    result.LTE_Bandwidth = data.lte_dl_bandwidth
-	    result.LTE_Band = data.lte_band
+		local data = helper.getUbusData(conn, "mobiled.radio", "signal_quality", { dev_idx = dev_idx })
+		result.RSRQ = data.rsrq
+		result.RSSI = data.rssi
+		result.RSRP = data.rsrp
+		result.ECIO = data.ecio
+		result.SNR = data.snr
+		result.RSCP = data.rscp
+		result.LTE_Bandwidth = data.lte_dl_bandwidth
+		result.LTE_Band = data.lte_band
+		result.PhyCellID = data.phy_cell_id
 	end
-        return result
+	return result
 end
 
 local function get(mapping, paramName, key)

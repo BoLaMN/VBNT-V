@@ -20,6 +20,10 @@ do_only_once()
     #BROADCOM
     if [ "$RADIO_TYPE" = "broadcom" ] ; then
         /lib/wireless/init_broadcom.sh
+        #This can fail
+        if [ "$?" != "0" ] ; then
+          exit 1
+        fi
     fi        
 
     #ATHEROS

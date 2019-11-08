@@ -1,6 +1,6 @@
 local InternetGatewayDevice_Services_Stats_= {
   objectType = {
-    name = "#ROOT.",
+    name = "InternetGatewayDevice.Services.X_000E50_Wifi.Stats.",
     access = "readOnly",
     description = "ONO-Wifi service statistics related parameters",
     minEntries = 0,
@@ -8,47 +8,47 @@ local InternetGatewayDevice_Services_Stats_= {
     parameters = {
       TxBytes = {
         access = "readOnly",
-        type = "int",
+        type = "unsignedLong",
         description = "Number of bytes transmitted from the CPE since last boot(RO)",
       },
       RxBytes = {
         access = "readOnly",
-        type = "int",
+        type = "unsignedLong",
         description = "Number of bytes received by the CPE since last boot (RO)",
       },
       TxPkts = {
         access = "readOnly",
-        type = "int",
+        type = "unsignedLong",
         description = "Number of packets transmitted from the CPE since last boot(RO)",
       },
       RxPkts = {
         access = "readOnly",
-        type = "int",
+        type = "unsignedLong",
         description = "Number of packets received by the CPE since last boot (RO)",
       },
       TxErrors = {
         access = "readOnly",
-        type = "int",
+        type = "unsignedInt",
         description = "Number of occurred errors in packets sent by the CPE(RO)",
       },
       RxErrors = {
         access = "readOnly",
-        type = "int",
+        type = "unsignedInt",
         description = "Number of occurred errors in packets received by the CPE(RO)",
       },
       TxDrops = {
         access = "readOnly",
-        type = "int",
+        type = "unsignedInt",
         description = "Number of packets dropped sent by the CPE (RO)",
       },
       RxDrops = {
         access = "readOnly",
-        type = "int",
+        type = "unsignedInt",
         description = "Number of packets dropped received by the CPE (RO)",
       },
       ClientsCounter = {
         access = "readOnly",
-        type = "int",
+        type = "unsignedInt",
         description = "Counter for all connected clients. (RO)",
       }
     }
@@ -57,7 +57,7 @@ local InternetGatewayDevice_Services_Stats_= {
 
 local InternetGatewayDevice_Services_Stats_SSID_ = {
   objectType = {
-    name = "#ROOT.",
+    name = "InternetGatewayDevice.Services.X_000E50_Wifi.Stats.SSID.",
     access = "readOnly",
     description = "ONO-Wifi SSID service statistics related parameters",
     minEntries = 1,
@@ -65,47 +65,47 @@ local InternetGatewayDevice_Services_Stats_SSID_ = {
     parameters = {
       TxBytes = {
         access = "readOnly",
-        type = "int",
+        type = "unsignedLong",
         description = "Number of bytes transmitted from the CPE since last boot(RO)",
       },
       RxBytes = {
         access = "readOnly",
-        type = "int",
+        type = "unsignedLong",
         description = "Number of bytes received by the CPE since last boot (RO)",
       },
       TxPkts = {
         access = "readOnly",
-        type = "int",
+        type = "unsignedLong",
         description = "Number of packets transmitted from the CPE since last boot(RO)",
       },
       RxPkts = {
         access = "readOnly",
-        type = "int",
+        type = "unsignedLong",
         description = "Number of packets received by the CPE since last boot (RO)",
       },
       TxErrors = {
         access = "readOnly",
-        type = "int",
+        type = "unsignedInt",
         description = "Number of occurred errors in packets sent by the CPE(RO)",
       },
       RxErrors = {
         access = "readOnly",
-        type = "int",
+        type = "unsignedInt",
         description = "Number of occurred errors in packets received by the CPE(RO)",
       },
       TxDrops = {
         access = "readOnly",
-        type = "int",
+        type = "unsignedInt",
         description = "Number of packets dropped sent by the CPE(RO)",
       },
       RxDrops = {
         access = "readOnly",
-        type = "int",
+        type = "unsignedInt",
         description = "Number of packets dropped received by the CPE (RO)",
       },
       ClientsCounter = {
         access = "readOnly",
-        type = "int",
+        type = "unsignedInt",
         description = "Counter for all connected clients. (RO)",
       }
     }
@@ -122,47 +122,47 @@ local InternetGatewayDevice_Services_Stats_SSID5_ = {
     parameters = {
       TxBytes = {
         access = "readOnly",
-        type = "int",
+        type = "unsignedLong",
         description = "Number of bytes transmitted from the CPE since last boot(RO)",
       },
       RxBytes = {
         access = "readOnly",
-        type = "int",
+        type = "unsignedLong",
         description = "Number of bytes received by the CPE since last boot (RO)",
       },
       TxPkts = {
         access = "readOnly",
-        type = "int",
+        type = "unsignedLong",
         description = "Number of packets transmitted from the CPE since last boot(RO)",
       },
       RxPkts = {
         access = "readOnly",
-        type = "int",
+        type = "unsignedLong",
         description = "Number of packets received by the CPE since last boot (RO)",
       },
       TxErrors = {
         access = "readOnly",
-        type = "int",
+        type = "unsignedInt",
         description = "Number of occurred errors in packets sent by the CPE(RO)",
       },
       RxErrors = {
         access = "readOnly",
-        type = "int",
+        type = "unsignedInt",
         description = "Number of occurred errors in packets received by the CPE(RO)",
       },
       TxDrops = {
         access = "readOnly",
-        type = "int",
+        type = "unsignedInt",
         description = "Number of packets dropped sent by the CPE(RO)",
       },
       RxDrops = {
         access = "readOnly",
-        type = "int",
+        type = "unsignedInt",
         description = "Number of packets dropped received by the CPE (RO)",
       },
       ClientsCounter = {
         access = "readOnly",
-        type = "int",
+        type = "unsignedInt",
         description = "Counter for all connected clients. (RO)",
       }
     }
@@ -171,7 +171,7 @@ local InternetGatewayDevice_Services_Stats_SSID5_ = {
 
 local InternetGatewayDevice_Services_Stats_EAPSSID_ = {
   objectType = {
-    name = "#ROOT.",
+    name = "InternetGatewayDevice.Services.X_000E50_Wifi.Stats.EAPSSID.",
     access = "readOnly",
     description = "ONO-Wifi EAPSSID service statistics related parameters",
     minEntries = 1,
@@ -179,47 +179,47 @@ local InternetGatewayDevice_Services_Stats_EAPSSID_ = {
     parameters = {
       TxBytes = {
         access = "readOnly",
-        type = "int",
+        type = "unsignedLong",
         description = "Number of bytes transmitted from the CPE since last boot(RO)",
       },
       RxBytes = {
         access = "readOnly",
-        type = "int",
+        type = "unsignedLong",
         description = "Number of bytes received by the CPE since last boot (RO)",
       },
       TxPkts = {
         access = "readOnly",
-        type = "int",
+        type = "unsignedLong",
         description = "Number of packets transmitted from the CPE since last boot(RO)",
       },
       RxPkts = {
         access = "readOnly",
-        type = "int",
+        type = "unsignedLong",
         description = "Number of packets received by the CPE since last boot (RO)",
       },
       TxErrors = {
         access = "readOnly",
-        type = "int",
+        type = "unsignedInt",
         description = "Number of occurred errors in packets sent by the CPE(RO)",
       },
       RxErrors = {
         access = "readOnly",
-        type = "int",
+        type = "unsignedInt",
         description = "Number of occurred errors in packets received by the CPE(RO)",
       },
       TxDrops = {
         access = "readOnly",
-        type = "int",
+        type = "unsignedInt",
         description = "Number of packets dropped sent by the CPE(RO)",
       },
       RxDrops = {
         access = "readOnly",
-        type = "int",
+        type = "unsignedInt",
         description = "Number of packets dropped received by the CPE (RO)",
       },
       ClientsCounter = {
         access = "readOnly",
-        type = "int",
+        type = "unsignedInt",
         description = "Counter for all connected clients. (RO)",
       }
     }
@@ -236,47 +236,47 @@ local InternetGatewayDevice_Services_Stats_EAPSSID5_ = {
     parameters = {
       TxBytes = {
         access = "readOnly",
-        type = "int",
+        type = "unsignedLong",
         description = "Number of bytes transmitted from the CPE since last boot(RO)",
       },
       RxBytes = {
         access = "readOnly",
-        type = "int",
+        type = "unsignedLong",
         description = "Number of bytes received by the CPE since last boot (RO)",
       },
       TxPkts = {
         access = "readOnly",
-        type = "int",
+        type = "unsignedLong",
         description = "Number of packets transmitted from the CPE since last boot(RO)",
       },
       RxPkts = {
         access = "readOnly",
-        type = "int",
+        type = "unsignedLong",
         description = "Number of packets received by the CPE since last boot (RO)",
       },
       TxErrors = {
         access = "readOnly",
-        type = "int",
+        type = "unsignedInt",
         description = "Number of occurred errors in packets sent by the CPE(RO)",
       },
       RxErrors = {
         access = "readOnly",
-        type = "int",
+        type = "unsignedInt",
         description = "Number of occurred errors in packets received by the CPE(RO)",
       },
       TxDrops = {
         access = "readOnly",
-        type = "int",
+        type = "unsignedInt",
         description = "Number of packets dropped sent by the CPE(RO)",
       },
       RxDrops = {
         access = "readOnly",
-        type = "int",
+        type = "unsignedInt",
         description = "Number of packets dropped received by the CPE (RO)",
       },
       ClientsCounter = {
         access = "readOnly",
-        type = "int",
+        type = "unsignedInt",
         description = "Counter for all connected clients. (RO)",
       }
     }
@@ -355,19 +355,6 @@ end
 
 register(InternetGatewayDevice_Services_Stats_SSID5_)
 register(InternetGatewayDevice_Services_Stats_EAPSSID5_)
-
-local duplicator = mapper("multiroot").duplicate
-local duplicates = duplicator(InternetGatewayDevice_Services_Stats_, "#ROOT", {"InternetGatewayDevice.Services.X_VFWifi.Stats", "InternetGatewayDevice.Services.X_000E50_Wifi.Stats"})
-for _, dupli in ipairs(duplicates) do
-  register(dupli)
-end
-
-duplicates = duplicator(InternetGatewayDevice_Services_Stats_SSID_, "#ROOT", {"InternetGatewayDevice.Services.X_VFWifi.Stats.SSID", "InternetGatewayDevice.Services.X_000E50_Wifi.Stats.SSID"})
-for _, dupli in ipairs(duplicates) do
-  register(dupli)
-end
-
-duplicates = duplicator(InternetGatewayDevice_Services_Stats_EAPSSID_, "#ROOT", {"InternetGatewayDevice.Services.X_VFWifi.Stats.EAPSSID", "InternetGatewayDevice.Services.X_000E50_Wifi.Stats.EAPSSID"})
-for _, dupli in ipairs(duplicates) do
-  register(dupli)
-end
+register(InternetGatewayDevice_Services_Stats_)
+register(InternetGatewayDevice_Services_Stats_SSID_)
+register(InternetGatewayDevice_Services_Stats_EAPSSID_)

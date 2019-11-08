@@ -29,12 +29,12 @@ function ScriptLoader:entry(requester, runtime, ...)
 	if not self.scripthandle.entry then
 		return true
 	end
-	runtime.log:notice("(%s) runs %s.entry(%s)", requester, self.scriptname, parameters(...))
+	runtime.log:info("(%s) runs %s.entry(%s)", requester, self.scriptname, parameters(...))
 	return self.scripthandle.entry(runtime, ...)
 end
 
 function ScriptLoader:poll(requester, runtime, event, ...)
-	runtime.log:notice("(%s) runs %s.check(%s, %s)", requester, self.scriptname, event.event, parameters(...))
+	runtime.log:info("(%s) runs %s.check(%s, %s)", requester, self.scriptname, event.event, parameters(...))
 	return self.scripthandle.check(runtime, event, ...)
 end
 
@@ -42,7 +42,7 @@ function ScriptLoader:exit(requester, runtime, ...)
 	if not self.scripthandle.exit then
 		return true
 	end
-	runtime.log:notice("(%s) runs %s.exit(%s)", requester, self.scriptname, parameters(...))
+	runtime.log:info("(%s) runs %s.exit(%s)", requester, self.scriptname, parameters(...))
 	return self.scripthandle.exit(runtime, ...)
 end
 

@@ -3,6 +3,7 @@
 /usr/lib/cwmpd/libuciplugin.so
 /usr/lib/cwmpd/transfers/upgrade.sh
 /usr/lib/cwmpd/transfers/handle_image.sh
+/usr/lib/cwmpd/transfers/common_functions.sh
 /usr/lib/cwmpd/transfers/target/gateway/start
 /usr/lib/cwmpd/transfers/target/mobiled/cleanup
 /usr/lib/cwmpd/transfers/vendorconfig.sh
@@ -19,6 +20,7 @@
 /lib/functions/firewall-cwmpd.sh
 /usr/lib/cwmpd/transfers/target/gateway/cleanup
 /usr/lib/libcwmpTransformerBackend.so
+/usr/lib/cwmpd/transfers/cwmpd_parameter_conversion.sh
 /usr/lib/cwmpd/transfers/target/mobiled/start
 /usr/lib/cwmpd/libtransferplugin.so
 /usr/lib/cwmpd/transfers/checkOngoingServices.lua

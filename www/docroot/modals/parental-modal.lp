@@ -12,6 +12,8 @@ local uinetwork = require("web.uinetwork_helper")
 local hosts_ac = require("parental_helper").get_hosts_ac()
 hosts_ac["All Devices"] = "All"
 local match, format = string.match, string.format
+local uniqueKey = post_helper.getRandomKey()
+local validateURL = post_helper.validateURL
 
 -- Shortcuts to validation helpers to make lines shorter
 local vB = post_helper.validateBoolean
@@ -39,7 +41,7 @@ local qry_valid = {
 
 local qry_data, qry_helpmsg = post_helper.handleQuery(qry_params, qry_valid)
 
-local uci_parental_path = "uci.parental.URLfilter."
+local uci_parental_path = "uci.parental.URLfilter.@."
 local parental_columns = {
     {
         header = T"Site",
@@ -129,16 +131,21 @@ local parental_options = {
     canEdit         = true,
     sorted          = sort_func,
     valid           = rulesDuplicateCheck,
+    objectName      = uniqueKey,
+    addNamedObject  = true,
 }
 
-local all_sites = T"All sites"
 local function validateSite(value, object, key)
-  -- block all sites, uci value should be empty
-  if value:lower() == all_sites:lower() then
-     object["site"] = ""
-  end
-  -- we currently no restriction for site
-  return true
+  if not value or value == "" then
+     return nil , T"InvalidURL"
+   end
+    return validateURL(getURLDomain(value))
+end
+
+function getURLDomain(site)
+  site = site:match("[%w]+://([^/ ]*)") or site:match("([^/ ]*)") or site
+  -- check if the site starts with www then remove it from URL.
+    return site:match("^www%.(%S+)") or site
 end
 
 function validateStringIsMAC(value, object, key)
@@ -192,7 +199,10 @@ local help_link = { href="/help/index.html?anchor=" .. format("%s", uri:match("/
 ); ngx.print('\
   </form>\
 </div>\
-\
+<script>\
+ var poperrorMsg = \'');  ngx.print(T"Same site cannot be added for multiple times"); ngx.print('\';\
+ var errorMsg = \'');  ngx.print(T"Please enter the valid URL"); ngx.print('\';\
+</script>\
 ');  ngx.print( ui_helper.createFooter() ); ngx.print('\
 \
 '); 
