@@ -1,5 +1,6 @@
 local M = {}
 local proxy = require("datamodel")
+local ipairs, pairs, tonumber = ipairs, pairs, tonumber
 
 local key = ("%03d"):rep(2)
 local fd = assert(io.open("/dev/urandom", "r"))
@@ -15,16 +16,27 @@ local function set_cwmpd_iface(interface, interface6)
 end
 
 -- helper function to set remote access interface
-local function set_ra_iface(x, interface)
+local function set_ra_iface(x, interface, interface6)
     x:set("web", "remote", "interface", interface)
+    x:set("web", "remote", "interface6", interface6)
     x:commit("web")
     os.execute("wget http://127.0.0.1:55555/ra?remote=reload_interface -O-")
 end
 
 -- helper function to set ddns interface
-local function set_ddns_iface(interface)
-    proxy.set("uci.ddns.service.@myddns_ipv4.interface", interface)
-    proxy.set("uci.ddns.service.@myddns_ipv4.ip_network", interface)
+local function set_ddns_iface(interface, interface6)
+    local ddns_ipv4_path = "uci.ddns.service.@myddns_ipv4."
+    local ddns_ipv6_path = "uci.ddns.service.@myddns_ipv6."
+    local ddns_ipv4 = proxy.get(ddns_ipv4_path)
+    local ddns_ipv6 = proxy.get(ddns_ipv6_path)
+    if ddns_ipv4 then
+        proxy.set("uci.ddns.service.@myddns_ipv4.interface", interface)
+        proxy.set("uci.ddns.service.@myddns_ipv4.ip_network", interface)
+    end
+    if ddns_ipv6 then
+        proxy.set("uci.ddns.service.@myddns_ipv6.interface", interface6)
+        proxy.set("uci.ddns.service.@myddns_ipv6.ip_network", interface6)
+    end
     proxy.apply()
 end
 
@@ -97,21 +109,26 @@ local function revert_provisioning_code(runtime)
     end
 end
 
-local function mobiled_timer(runtime, enabled, mobileiface)
+local function create_random_delay(runtime)
+    local uci = runtime.uci
+    local x = uci.cursor()
+    local autofailovermaxwait = x:get("wansensing", "global", "autofailovermaxwait")
+    autofailovermaxwait = tonumber(autofailovermaxwait) or 10
+    return math.random(1, autofailovermaxwait * 1000), autofailovermaxwait
+end
+
+local function mobiled_timer_cb(runtime, enabled, mobileiface)
     local uci = runtime.uci
     local x = uci.cursor()
     local conn = runtime.ubus
     local logger = runtime.logger
-
-    local autofailovermaxwait = x:get("wansensing", "global", "autofailovermaxwait")
-    autofailovermaxwait = tonumber(autofailovermaxwait) or 10
-    local random_delay = math.random(1, autofailovermaxwait * 1000)
+    local random_delay, autofailovermaxwait = create_random_delay(runtime)
 
     local timer = runtime.uloop.timer(function()
         runtime.mobiled_timer = nil
         local autofailover = x:get("wansensing", "global", "autofailover")
-        if autofailover == "1" or (autofailover == "0" and enabled == "0") then
-            logger:notice("mass failover protection, mobiled timer is timeout, interface '" .. mobileiface .."' " .. (enabled == "1" and "ifup" or "ifdown"))
+        if autofailover == "1" or (autofailover ~= "1" and enabled == "0") then
+            logger:notice("mass failover protection, mobiled data timer is timeout, interface '" .. mobileiface .."' " .. (enabled == "1" and "ifup" or "ifdown"))
             if enabled == "1" then
                 local mobiled_changed = false
                 x:foreach("mobiled", "device", function(s)
@@ -130,12 +147,104 @@ local function mobiled_timer(runtime, enabled, mobileiface)
             x:commit("network")
             conn:call("network", "reload", { })
         else
-            logger:notice("mass failover protection, mobiled timer is timeout, no operation due to autofailover disabled")
+            logger:notice("mass failover protection, mobiled data timer is timeout, no operation due to autofailover disabled")
         end
     end, random_delay)
-    logger:notice("mass failover protection, mobiled timer is set, will wait " .. random_delay / 1000 .. " seconds (random in the range [0," .. autofailovermaxwait .. "]) before interface '" .. mobileiface .."' " .. (enabled == "1" and "ifup" or "ifdown"))
+    logger:notice("mass failover protection, mobiled data timer is set, will wait " .. random_delay / 1000 .. " seconds (random in the range [0," .. autofailovermaxwait .. "]) before interface '" .. mobileiface .."' " .. (enabled == "1" and "ifup" or "ifdown"))
 
     return timer
+end
+
+local function isVoLTECalling(runtime)
+    local uci = runtime.uci
+    local x = uci.cursor()
+    local conn = runtime.ubus
+    local mobilenet_profiles = {}
+    x:foreach("mmpbxmobilenet", "profile", function(s)
+        if s["enabled"] == "1" then
+            mobilenet_profiles[s[".name"]] = true
+        end
+    end)
+    local content = conn:call("mmpbx.call", "get", {})
+    if content then
+        for _,v in pairs(content) do
+            if mobilenet_profiles[v.profile] then
+                return true
+            end
+        end
+    end
+    return false
+end
+
+local function get_mobiled_session(runtime, session_name)
+    local uci = runtime.uci
+    local x = uci.cursor()
+    local session = {}
+    x:foreach("mobiled_sessions", "session", function(s)
+        if s.name == session_name then
+            session.session_id = tonumber(s.session_id)
+            session.profile = s.profile
+            return false -- break
+        end
+    end)
+    return session
+end
+
+local function mobilenet_profile_enabled(runtime)
+    local uci = runtime.uci
+    local x = uci.cursor()
+    local result = false
+    x:foreach("mmpbxmobilenet", "profile", function(s)
+        if s["enabled"] == "1" then
+            result = true
+            return false -- break
+        end
+    end)
+    return result
+end
+
+local function mobiled_ims_timer_cb(runtime, enabled, ims_session)
+    if enabled == "1" then
+        return nil
+    end
+    local uci = runtime.uci
+    local x = uci.cursor()
+    local conn = runtime.ubus
+    local logger = runtime.logger
+    local random_delay, autofailovermaxwait = create_random_delay(runtime)
+
+    local timer = runtime.uloop.timer(function()
+        if random_delay then
+            logger:notice("mass failover protection, mobiled ims timer is timeout, ims pdn session will be deactivated")
+            random_delay = nil
+        end
+        if runtime.mobiled_ims_timer then
+            if isVoLTECalling(runtime) then
+                -- wait for 5 seconds then check again
+                logger:notice("4G voice call is ongoing, mobiled ims timer is reset, will try to deactivate in 5 seconds")
+                runtime.mobiled_ims_timer:set(5000)
+            else
+                -- deactivate IMS PDN
+                conn:send("mobiled", {event = "session_deactivate", dev_idx = 1, session_id = ims_session.session_id})
+                logger:notice("ubus send mobiled '{\"event\":\"session_deactivate\", \"dev_idx\":1, \"session_id\":" .. ims_session.session_id .. "}'")
+                runtime.mobiled_ims_timer:cancel()
+                runtime.mobiled_ims_timer = nil
+            end
+        else
+            logger:notice("mass failover protection, mobiled ims timer is canceled")
+        end
+    end,random_delay)
+    logger:notice("mass failover protection, mobiled ims timer is set, will wait " .. random_delay / 1000 .. " seconds (random in the range [0," .. autofailovermaxwait .. "]) before ims pdn session deactivate")
+
+    return timer
+end
+
+local function mobiled_ims_timer_cancel(runtime)
+    if runtime.mobiled_ims_timer then
+        runtime.mobiled_ims_timer:cancel()
+        runtime.mobiled_ims_timer = nil
+        logger:notice("mass failover protection, mobiled ims timer is canceled")
+    end
 end
 
 --- Helper function to enbled/disable mobile interface
@@ -172,13 +281,13 @@ function M.mobiled_enable(runtime, enabled, mobileiface)
 
     if config then
         if not runtime.mobiled_timer then
-            runtime.mobiled_timer = mobiled_timer(runtime, enabled, mobileiface)
+            runtime.mobiled_timer = mobiled_timer_cb(runtime, enabled, mobileiface)
             runtime.mobiled_enabled = enabled
         else
             if enabled ~= runtime.mobiled_enabled then
                 runtime.mobiled_timer:cancel()
-                logger:notice("mass failover protection, mobiled timer is canceled, and will be reset")
-                runtime.mobiled_timer = mobiled_timer(runtime, enabled, mobileiface)
+                logger:notice("mass failover protection, mobiled data timer is canceled, and will be reset")
+                runtime.mobiled_timer = mobiled_timer_cb(runtime, enabled, mobileiface)
                 runtime.mobiled_enabled = enabled
             end
         end
@@ -187,7 +296,31 @@ function M.mobiled_enable(runtime, enabled, mobileiface)
             runtime.mobiled_timer:cancel()
             runtime.mobiled_timer = nil
             runtime.mobiled_enabled = nil
-            logger:notice("mass failover protection, mobiled timer is canceled")
+            logger:notice("mass failover protection, mobiled data timer is canceled")
+        end
+    end
+
+    local ims_session = get_mobiled_session(runtime, "internal_ims_pdn")
+    if ims_session.session_id and ims_session.profile then
+        local data = conn:call("mobiled.network", "sessions", {session_id = ims_session.session_id}) or {}
+        ims_session.activated = data.activated
+        if enabled == "1" then
+            mobiled_ims_timer_cancel(runtime)
+            if ims_session.activated == false then
+                if mobilenet_profile_enabled(runtime) then
+                    -- activate IMS PDN without randomised delay as specification required
+                    conn:send("mobiled", {event = "session_activate", dev_idx = 1, session_id = ims_session.session_id, profile_id = ims_session.profile})
+                    logger:notice("ubus send mobiled '{\"event\":\"session_activate\", \"dev_idx\":1, \"session_id\":" .. ims_session.session_id .. ", \"profile_id\":\"" .. ims_session.profile .. "\"}'")
+                end
+            end
+        else
+            if ims_session.activated == true then
+                if not runtime.mobiled_ims_timer then
+                    runtime.mobiled_ims_timer = mobiled_ims_timer_cb(runtime, enabled, ims_session)
+                end
+            else
+                mobiled_ims_timer_cancel(runtime)
+            end
         end
     end
 
@@ -215,7 +348,7 @@ function M.mobiled_enable(runtime, enabled, mobileiface)
 
         -- ddns over mobile
         if ddnsiface ~= mobileiface4 and mobileifaceIsUp == "1" then
-            set_ddns_iface(mobileiface4)
+            set_ddns_iface(mobileiface4, mobileiface6)
         end
 
         -- upnpd over mobile
@@ -223,8 +356,8 @@ function M.mobiled_enable(runtime, enabled, mobileiface)
             set_upnpd_iface(mobileiface4)
         end
 
-        if raiface ~= mobileiface and mobileifaceIsUp == "1" then
-            set_ra_iface(x, mobileiface)
+        if raiface ~= mobileiface4 and mobileifaceIsUp == "1" then
+            set_ra_iface(x, mobileiface4, mobileiface6)
         end
 
         -- voip over mobile
@@ -239,14 +372,14 @@ function M.mobiled_enable(runtime, enabled, mobileiface)
     else
         -- TR069 over fixed network
         if cwmpdiface == mobileiface4 and mobileifaceIsUp ~= "1" then
-            x:set("cwmpd", "cwmpd_config", "ip_preference", "v4_only")
+            x:set("cwmpd", "cwmpd_config", "ip_preference", "prefer_v6")
             x:commit("cwmpd")
             set_cwmpd_iface("wan", "wan6")
         end
 
         -- ddns over fixed network
         if ddnsiface == mobileiface4 and mobileifaceIsUp ~= "1" then
-            set_ddns_iface("wan")
+            set_ddns_iface("wan", "wan6")
         end
 
         -- upnpd over fixed network
@@ -254,8 +387,8 @@ function M.mobiled_enable(runtime, enabled, mobileiface)
             set_upnpd_iface("wan")
         end
 
-        if raiface == mobileiface and mobileifaceIsUp ~= "1" then
-            set_ra_iface(x, "wan")
+        if raiface == mobileiface4 and mobileifaceIsUp ~= "1" then
+            set_ra_iface(x, "wan", "wan6")
         end
 
         -- voip over fixed network

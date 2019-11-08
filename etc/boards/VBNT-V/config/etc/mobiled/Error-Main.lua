@@ -7,14 +7,13 @@ M.SenseEventSet = {
 	"firmware_upgrade_start"
 }
 
-function M.check(runtime, event, dev_idx)
+function M.check(_, event, _)
 	if event.event == "device_disconnected" then
 		return "DeviceRemove"
 	elseif event.event == "sim_initialized" or event.event == "sim_removed" then
 		return "SimInit"
 	elseif event.event == "firmware_upgrade_start" then
-		device:firmware_upgrade(device.info.firmware_upgrade.path)
-		return "Error"
+		return "FirmwareUpgrade"
 	end
 	return "Error"
 end

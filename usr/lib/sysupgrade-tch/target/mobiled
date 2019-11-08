@@ -23,6 +23,7 @@ local function get_numeric_option(option_name, default_value)
 end
 
 local device_index = get_numeric_option("dev_idx", 1)
+local max_start_attempts = get_numeric_option("max_start_attempts", 1)
 local max_start_duration = get_numeric_option("max_start_duration", 30) * 1000
 local max_upgrade_duration = get_numeric_option("max_upgrade_duration", 30 * 60) * 1000
 
@@ -55,10 +56,18 @@ end
 local exit_status = 1
 local error_message = default_error_message
 
-local start_timer = uloop.timer(function()
-	exit_status = 1
-	error_message = failed_to_start_message or default_error_message
-	uloop.cancel()
+local start_attempts = 1
+local start_timer
+start_timer = uloop.timer(function()
+	if start_attempts >= max_start_attempts then
+		exit_status = 1
+		error_message = failed_to_start_message or default_error_message
+		uloop.cancel()
+	else
+		start_attempts = start_attempts + 1
+		connection:call("mobiled.device", "firmware_upgrade", {dev_idx = device_index, path = upgrade_url})
+		start_timer:set(max_start_duration)
+	end
 end, max_start_duration)
 
 local upgrade_timer = uloop.timer(function()

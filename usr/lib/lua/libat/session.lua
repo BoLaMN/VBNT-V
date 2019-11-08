@@ -102,7 +102,7 @@ function M.get_ip_info(device, info, session_id)
 	local ret = device:send_multiline_command("AT+CGPADDR", "+CGPADDR:")
 	if ret then
 		for _, line in pairs(ret) do
-			local context, addresses = line:match('+CGPADDR:%s?(%d+),"(.-)"$')
+			local context, addresses = line:match('+CGPADDR:%s?(%d+),"?(.-)"?$')
 			if tonumber(context) == cid then
 				for address in addresses:gmatch("[^,]+") do
 					if address:match("^%d+%.%d+%.%d+%.%d+$") then
@@ -116,7 +116,7 @@ function M.get_ip_info(device, info, session_id)
 							local all_zeroes = true
 							for msb, lsb in network:gmatch("(%d+)%.(%d+)%.") do
 								local value = tonumber(msb) * 256 + tonumber(lsb)
-								ipv6_addr = ipv6_addr .. string.format("%x:", value)
+								ipv6_addr = ipv6_addr .. format("%x:", value)
 								all_zeroes = all_zeroes and value == 0
 							end
 							if not all_zeroes then

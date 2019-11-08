@@ -62,8 +62,8 @@
 /usr/bin/sha256sum
 /bin/date
 /usr/bin/wc
-/usr/bin/[
 /usr/bin/nslookup
+/usr/bin/[
 /bin/base64
 /usr/bin/pgrep
 /bin/umount

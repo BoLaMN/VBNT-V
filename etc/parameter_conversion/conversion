@@ -6,6 +6,8 @@ inline_sh_cmd /usr/lib/cwmpd/transfers/rollback_check.sh %%OLDCONFIG%%
 copy_file /etc/hosts
 copy_file /etc/hosts_ext
 
+copy_file /etc/config/bulkdata
+
 uci_set cwmpd.cwmpd_config.connectionrequest_port
 uci_set cwmpd.cwmpd_config.periodicinform_interval
 uci_set cwmpd.cwmpd_config.ssl_verifypeer
@@ -165,8 +167,4 @@ inline_sh_cmd lua /usr/bin/convlasdb /etc/lasdb.db
 uci_set wol.config.src_dport
 uci_set wol.config.enabled
 
-uci_set wansensing.global.autofailover
 uci_set wansensing.global.autofailovermaxwait
-uci_set wansensing.global.supervision_mode
-
-uci_set wifi_doctor_agent.config.cs_url

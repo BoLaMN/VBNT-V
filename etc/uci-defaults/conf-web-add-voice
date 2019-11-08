@@ -46,4 +46,12 @@ uci set web.mmpbxdectmodal=rule
 uci set web.mmpbxdectmodal.target=/modals/mmpbx-dect-modal.lp
 uci add_list web.mmpbxdectmodal.roles=admin
 
+uci -q del_list web.ruleset_main.rules=mmpbxvoltemodal
+uci add_list web.ruleset_main.rules=mmpbxvoltemodal
+
+uci -q delete web.mmpbxvoltemodal
+uci set web.mmpbxvoltemodal=rule
+uci set web.mmpbxvoltemodal.target=/modals/mmpbx-volte-modal.lp
+uci add_list web.mmpbxvoltemodal.roles=admin
+
 uci commit web

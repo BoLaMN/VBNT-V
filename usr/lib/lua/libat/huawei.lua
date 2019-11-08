@@ -1,10 +1,11 @@
-local string, tonumber, table, pairs = string, tonumber, table, pairs
 local firmware_upgrade = require("libat.firmware_upgrade")
 local helper = require("mobiled.scripthelpers")
 local session_helper = require("libat.session")
 local voice = require("libat.voice")
 local attty = require("libat.tty")
 local sim = require("libat.sim")
+
+local tinsert = table.insert
 
 -- Apparently there is no reliable way of retrieving this from the module/dongle
 local hardcoded_device_capabilities = {
@@ -23,9 +24,9 @@ Mapper.__index = Mapper
 local M = {}
 
 local function parse_nwtime(data)
-	local localtime, timezone, daylight_saving_time = string.match(data, "%^NWTIME:%s?(%d+/%d+/%d+,%d+:%d+:%d+)([+-]%d+),(%d+)")
+	local localtime, timezone, daylight_saving_time = data:match("%^NWTIME:%s?(%d+/%d+/%d+,%d+:%d+:%d+)([+-]%d+),(%d+)")
 	if localtime then
-		local year, month, day, hour, min, sec = string.match(localtime, "(%d+)/(%d+)/(%d+),(%d+):(%d+):(%d+)")
+		local year, month, day, hour, min, sec = localtime:match("(%d+)/(%d+)/(%d+),(%d+):(%d+):(%d+)")
 		if year then
 			year = tonumber(year)+2000
 			localtime = os.time({day=day,month=month,year=tostring(year),hour=hour,min=min,sec=sec})
@@ -118,10 +119,10 @@ function Mapper:stop_data_session(device, session_id)
 end
 
 local function parse_dsflowrpt(device, data)
-	local connection_duration, ul_speed, dl_speed, bytes_sent, bytes_received, max_ul_speed, max_dl_speed = string.match(data, '%^DSFLOWRPT:%s?(%x+),(%x+),(%x+),(%x+),(%x+),(%x+),(%x+)')
+	local connection_duration, ul_speed, dl_speed, bytes_sent, bytes_received, max_ul_speed, max_dl_speed = data:match('%^DSFLOWRPT:%s?(%x+),(%x+),(%x+),(%x+),(%x+),(%x+),(%x+)')
 
-	if device.buffer.session_info and device.buffer.session_info.duration and tonumber(connection_duration) == 0 then
-		device.runtime.log:info("Wrong info in ^DSFLOWRPT indication. Turning it off.")
+	if device.buffer.session_info and device.buffer.session_info.duration and tonumber(connection_duration, 16) == 0 then
+		device.runtime.log:notice("Wrong info in ^DSFLOWRPT indication. Turning it off.")
 		device:send_command('AT^DSFLOWRPT=0')
 		device.buffer.session_info = {}
 		device.buffer.network_info = {}
@@ -147,11 +148,11 @@ local function parse_dsflowrpt(device, data)
 end
 
 local function parse_ndisstat(device, data)
-	local state, reject_cause, ip_type = string.match(data, '%^NDISSTAT:%s*(%d+),(.-),.-,"(.-)"')
+	local state, reject_cause, ip_type = data:match('%^NDISSTAT:%s*(%d+),(.-),.-,"(.-)"')
 	if state == '0' then
 		local pdp_type
 		if ip_type then
-			pdp_type = string.lower(ip_type)
+			pdp_type = ip_type:lower()
 		end
 		-- Unknown reject cause
 		if reject_cause == '0' then
@@ -165,7 +166,7 @@ local function parse_ndisstat(device, data)
 end
 
 local function parse_nwname(device, data)
-	local longname, shortname = string.match(data, '%^NWNAME:%s*"(.-)","(.-)"')
+	local longname, shortname = data:match('%^NWNAME:%s*"(.-)","(.-)"')
 	if not device.buffer.network_info then
 		device.buffer.network_info = {}
 	end
@@ -227,7 +228,7 @@ local device_errors = {
 }
 
 local function parse_fotastate(device, data, unsolicited)
-	local state = tonumber(string.match(data, '%^FOTASTATE:%s*(%d+)'))
+	local state = tonumber(data:match('%^FOTASTATE:%s*(%d+)'))
 	local status
 	if state == 10 then
 		status = "not_running"
@@ -236,7 +237,7 @@ local function parse_fotastate(device, data, unsolicited)
 		status = "checking_version"
 	elseif state == 12 then
 		status = "upgrade_available"
-		local version = string.match(data, '%^FOTASTATE:%s*%d+,(.-),')
+		local version = data:match('%^FOTASTATE:%s*%d+,(.-),')
 		if version then
 			device.buffer.firmware_upgrade_info.target_version = version
 		end
@@ -253,7 +254,7 @@ local function parse_fotastate(device, data, unsolicited)
 		status = "done"
 	elseif state == 13 or state == 20 or state == 80 then
 		status = "failed"
-		local device_error = tonumber(string.match(data, '%^FOTASTATE:%s*%d+,(%d+)'))
+		local device_error = tonumber(data:match('%^FOTASTATE:%s*%d+,(%d+)'))
 		device.buffer.firmware_upgrade_info.error_code = device_errors[device_error] or firmware_upgrade.error_codes.unknown_error
 		device.buffer.firmware_upgrade_info.device_error = device_error
 	end
@@ -274,7 +275,7 @@ local function parse_fotastate(device, data, unsolicited)
 end
 
 local function parse_ltersrp(device, data)
-	local rsrp, rsrq = string.match(data, '%^LTERSRP:%s*([%d-]+),([%d-]+)')
+	local rsrp, rsrq = data:match('%^LTERSRP:%s*([%d-]+),([%d-]+)')
 	device.buffer.radio_signal_info.rsrp = tonumber(rsrp)
 	device.buffer.radio_signal_info.rsrq = tonumber(rsrq)
 end
@@ -294,7 +295,7 @@ function Mapper:get_sim_info(device, info) --luacheck: no unused args
 	if not device.buffer.sim_info.iccid then
 		local ret = device:send_singleline_command('AT^ICCID?', "^ICCID:", 100)
 		if ret then
-			local iccid = string.match(ret, '%^ICCID:%s?(.+)')
+			local iccid = ret:match('%^ICCID:%s?(.+)')
 			if sim.check_iccid(iccid) then
 				device.buffer.sim_info.iccid = iccid
 			end
@@ -307,16 +308,16 @@ function Mapper:get_radio_signal_info(device, info)
 
 	local ret, err = device:send_singleline_command('AT^HCSQ?', "^HCSQ:", 100)
 	if ret then
-		local type = string.match(ret, '%^HCSQ:%s?"([A-Z]+)"')
+		local type = ret:match('%^HCSQ:%s?"([A-Z]+)"')
 
-		local rssi = tonumber(string.match(ret, '%^HCSQ:%s?"[A-Z]+",(%d+)'))
+		local rssi = tonumber(ret:match('%^HCSQ:%s?"[A-Z]+",(%d+)'))
 		if(rssi and rssi > 0 and rssi <= 96) then
 			info.rssi = (rssi-120)
 		end
 
 		if type == "LTE" then
 			info.radio_interface = "lte"
-			local rsrp, snr, rsrq = string.match(ret, '%^HCSQ:%s?"[A-Z]+",%d+,(%d+),(%d+),(%d+)')
+			local rsrp, snr, rsrq = ret:match('%^HCSQ:%s?"[A-Z]+",%d+,(%d+),(%d+),(%d+)')
 			rsrp = tonumber(rsrp)
 			if(rsrp and rsrp > 0 and rsrp <= 97) then
 				info.rsrp = (rsrp-140)
@@ -331,7 +332,7 @@ function Mapper:get_radio_signal_info(device, info)
 			end
 		elseif type == "WCDMA" then
 			info.radio_interface = "umts"
-			local rscp, ecio = string.match(ret, '%^HCSQ:%s?"[A-Z]+",%d+,(%d+),(%d+)')
+			local rscp, ecio = ret:match('%^HCSQ:%s?"[A-Z]+",%d+,(%d+),(%d+)')
 			rscp = tonumber(rscp)
 			if(rscp and rscp > 0) then
 				info.rscp = ((rscp*0.5)-120)
@@ -342,12 +343,12 @@ function Mapper:get_radio_signal_info(device, info)
 			end
 		end
 	elseif err ~= "blacklisted" then
-		table.insert(device.command_blacklist, 'AT%^HCSQ%?')
+		tinsert(device.command_blacklist, 'AT%^HCSQ%?')
 	end
 
 	ret = device:send_singleline_command('AT^SYSINFOEX', "^SYSINFOEX:")
 	if ret then
-		info.radio_bearer_type = string.match(ret, '%^SYSINFOEX:%s?%d*,%d*,%d*,%d*,%d*,%d*,".-",%d+,"(.-)"')
+		info.radio_bearer_type = ret:match('%^SYSINFOEX:%s?%d*,%d*,%d*,%d*,%d*,%d*,".-",%d+,"(.-)"')
 		if info.radio_bearer_type == "NO SERVICE" or info.radio_bearer_type == "LTE" then
 			info.radio_bearer_type = nil
 		end
@@ -357,14 +358,14 @@ end
 function Mapper:get_pin_info(device, info)
 	local ret = device:send_singleline_command('AT^CPIN?', "^CPIN:")
 	if ret then
-		info.unblock_retries_left, info.unlock_retries_left = string.match(ret, '%^CPIN:.-,%d*,(%d+),(%d+),%d+,%d+')
+		info.unblock_retries_left, info.unlock_retries_left = ret:match('%^CPIN:.-,%d*,(%d+),(%d+),%d+,%d+')
 	end
 end
 
 function Mapper:get_ip_info(device, info, session_id)
 	local ret = device:send_singleline_command(string.format('AT^DHCPV6=%d', (session_id + 1)), "^DHCPV6:")
 	if ret then
-		local dns1, dns2 = string.match(ret, "%^DHCPV6:%s*.-,.-,.-,.-,(.-),(.-),")
+		local dns1, dns2 = ret:match("%^DHCPV6:%s*.-,.-,.-,.-,(.-),(.-),")
 		if dns1 ~= "::" then info.ipv6_dns1 = dns1 end
 		if dns2 ~= "::" then info.ipv6_dns2 = dns2 end
 	end
@@ -374,17 +375,17 @@ local function match_ndisstat(data)
 	if not data then
 		return
 	end
-	local stat4, stat6 = string.match(data, '%^NDISSTATQRY:%s?(%d),,,"IPV4",(%d),,,"IPV6"')
+	local stat4, stat6 = data:match('%^NDISSTATQRY:%s?(%d),,,"IPV4",(%d),,,"IPV6"')
 	if not stat4 then
-		stat4 = string.match(data, '%^NDISSTATQRY:%s?(%d),,,"IPV4"')
+		stat4 = data:match('%^NDISSTATQRY:%s?(%d),,,"IPV4"')
 		if not stat4 then
-			stat4 = string.match(data, '%^NDISSTATQRY:%s?%d,(%d),,,"IPV4"')
+			stat4 = data:match('%^NDISSTATQRY:%s?%d,(%d),,,"IPV4"')
 		end
 	end
 	if not stat6 then
-		stat6 = string.match(data, '%^NDISSTATQRY:%s?(%d),,,"IPV6"')
+		stat6 = data:match('%^NDISSTATQRY:%s?(%d),,,"IPV6"')
 		if not stat6 then
-			stat6 = string.match(data, '%^NDISSTATQRY:%s?%d,(%d),,,"IPV6"')
+			stat6 = data:match('%^NDISSTATQRY:%s?%d,(%d),,,"IPV6"')
 		end
 	end
 	return stat4, stat6
@@ -442,32 +443,32 @@ function Mapper:get_device_capabilities(device, info)
 	local ret = device:send_singleline_command('AT^SYSCFGEX=?', "^SYSCFGEX:")
 	if ret then
 		local i = 0
-		for section in string.gmatch(ret, '%(([A-Z0-9a-z ",/_]-)%)') do
+		for section in ret:gmatch('%(([A-Z0-9a-z ",/_]-)%)') do
 			if i == 0 then
-				for word in string.gmatch(section, '([^,]+)') do
-					local mode = string.match(word, '"(%d+)"')
+				for word in section:gmatch('([^,]+)') do
+					local mode = word:match('"(%d+)"')
 					if mode == "00" then
-						table.insert(radio_interfaces, { radio_interface = "auto" })
+						tinsert(radio_interfaces, { radio_interface = "auto" })
 					elseif mode == "01" then
-						table.insert(radio_interfaces, { radio_interface = "gsm" })
+						tinsert(radio_interfaces, { radio_interface = "gsm" })
 					elseif mode == "02" then
-						table.insert(radio_interfaces, { radio_interface = "umts" })
+						tinsert(radio_interfaces, { radio_interface = "umts" })
 					elseif mode == "03" then
-						table.insert(radio_interfaces, { radio_interface = "lte" })
+						tinsert(radio_interfaces, { radio_interface = "lte" })
 					elseif mode == "04" or mode == "05" or mode == "07" then
-						table.insert(radio_interfaces, { radio_interface = "cdma" })
+						tinsert(radio_interfaces, { radio_interface = "cdma" })
 					end
 				end
 			elseif (radio_type_supported(radio_interfaces, "gsm") and i == 4) or (not radio_type_supported(radio_interfaces, "gsm") and i == 3) then
 				local bands = {}
-				for word in string.gmatch(section, 'LTE BC(%d+)') do
-					table.insert(bands, word)
+				for word in section:gmatch('LTE BC(%d+)') do
+					tinsert(bands, word)
 				end
-				for word in string.gmatch(section, 'LTE_B(%d+)') do
-					table.insert(bands, word)
+				for word in section:gmatch('LTE_B(%d+)') do
+					tinsert(bands, word)
 				end
-				for word in string.gmatch(section, 'LTE(%d+)') do
-					table.insert(bands, word)
+				for word in section:gmatch('LTE(%d+)') do
+					tinsert(bands, word)
 				end
 				for _, interface in pairs(radio_interfaces) do
 					if interface.radio_interface == "lte" then
@@ -480,15 +481,15 @@ function Mapper:get_device_capabilities(device, info)
 	else
 		ret = device:send_singleline_command('AT^SYSCFG=?', "^SYSCFG:")
 		if ret then
-			local section = string.match(ret, '%(([A-Z0-9a-z ",/_]-)%)')
-			for word in string.gmatch(section, '([^,]+)') do
-				local mode = string.match(word, '(%d+)')
+			local section = ret:match('%(([A-Z0-9a-z ",/_]-)%)')
+			for word in section:gmatch('([^,]+)') do
+				local mode = word:match('(%d+)')
 				if mode == "2" then
-					table.insert(radio_interfaces, { radio_interface = "auto" })
+					tinsert(radio_interfaces, { radio_interface = "auto" })
 				elseif mode == "13" then
-					table.insert(radio_interfaces, { radio_interface = "gsm" })
+					tinsert(radio_interfaces, { radio_interface = "gsm" })
 				elseif mode == "14" then
-					table.insert(radio_interfaces, { radio_interface = "umts" })
+					tinsert(radio_interfaces, { radio_interface = "umts" })
 				end
 			end
 		end
@@ -511,7 +512,7 @@ function Mapper:get_network_info(device, info)
 	helper.merge_tables(info, device.buffer.network_info)
 	local ret = device:send_singleline_command('AT^SYSINFOEX', "^SYSINFOEX:")
 	if ret then
-		local srv_status, srv_domain, roaming_state = string.match(ret, "%^SYSINFOEX:%s?(%d),(%d),(%d)")
+		local srv_status, srv_domain, roaming_state = ret:match("%^SYSINFOEX:%s?(%d),(%d),(%d)")
 		if srv_domain == "1" or srv_domain == "3" then
 			info.cs_state = "attached"
 		end
@@ -543,11 +544,11 @@ local function get_supported_voice_interfaces(device)
 		if voice_support then
 			local ret = device:send_singleline_command('AT^DDSETEX=?', "^DDSETEX:")
 			if ret then
-				ret = string.match(ret, '%^DDSETEX:%s?%((.-)%)$')
+				ret = ret:match('%^DDSETEX:%s?%((.-)%)$')
 				if ret then
 					local voice_interfaces = {}
-					for port in string.gmatch(ret, '([^,]+)') do
-						table.insert(voice_interfaces, tonumber(port))
+					for port in ret:gmatch('([^,]+)') do
+						tinsert(voice_interfaces, tonumber(port))
 					end
 					return voice_interfaces
 				end
@@ -560,25 +561,37 @@ end
 function Mapper:get_device_info(device, info)
 	local ret, err = device:send_singleline_command('AT+XTAMR=0', "+XTAMR:")
 	if ret then
-		local temperature = tonumber(string.match(ret, '+XTAMR:%s?%d+,(%d+)'))
+		local temperature = tonumber(ret:match('+XTAMR:%s?%d+,(%d+)'))
 		if temperature then
 			info.temperature = temperature / 1000
 		end
 	elseif err ~= "blacklisted" then
-		table.insert(device.command_blacklist, 'AT%+XTAMR=0')
+		tinsert(device.command_blacklist, 'AT%+XTAMR=0')
+	end
+
+	if not info.temperature then
+		ret, err = device:send_singleline_command('AT^CHIPTEMP?', "^CHIPTEMP:")
+		if ret then
+			local temperature = tonumber(ret:match('%^CHIPTEMP:%s?([%d-]+)'))
+			if temperature then
+				info.temperature = temperature / 10
+			end
+		elseif err ~= "blacklisted" then
+			tinsert(device.command_blacklist, 'AT%^CHIPTEMP')
+		end
 	end
 
 	if not device.buffer.device_info.hardware_version then
 		ret = device:send_singleline_command('AT^HWVER', "^HWVER:")
-		if ret then device.buffer.device_info.hardware_version = string.match(ret, '%^HWVER:%s?"(.-)"') end
+		if ret then device.buffer.device_info.hardware_version = ret:match('%^HWVER:%s?"(.-)"') end
 	end
 
 	if not device.buffer.device_info.imei_svn then
 		ret, err = device:send_singleline_command('AT^IMEISV?', "^IMEISV:")
 		if ret then
-			device.buffer.device_info.imei_svn = string.match(ret, '%^IMEISV:%s?(.-)$')
+			device.buffer.device_info.imei_svn = ret:match('%^IMEISV:%s?(.-)$')
 		elseif err ~= "blacklisted" then
-			table.insert(device.command_blacklist, 'AT%^IMEISV')
+			tinsert(device.command_blacklist, 'AT%^IMEISV')
 		end
 	end
 
@@ -598,11 +611,11 @@ function Mapper:get_device_info(device, info)
 				if huawei_interface then
 					local vp = attty.find_tty_interfaces(device.desc, { protocol = huawei_interface.protocol })
 					if type(vp) == "table" and #vp >= 1 then
-						table.insert(voice_interfaces, { type = "serial", device = vp[1]})
+						tinsert(voice_interfaces, { type = "serial", device = vp[1]})
 					else
 						vp = attty.find_tty_interfaces(device.desc, { number = huawei_interface.number })
 						if type(vp) == "table" and #vp >= 1 then
-							table.insert(voice_interfaces, { type = "serial", device = vp[1]})
+							tinsert(voice_interfaces, { type = "serial", device = vp[1]})
 						end
 					end
 				end
@@ -865,12 +878,15 @@ function Mapper:unsolicited(device, data, sms_data) --luacheck: no unused args
 			end
 
 			if event then
-				device:send_event("mobiled.voice", { event = "call_state_changed",
+				device:send_event("mobiled.voice", {
+					event = "call_state_changed",
 					call_id = device.calls[call_id].mmpbx_call_id,
-					dev_idx = device.dev_idx, call_state = device.calls[call_id].call_state,
+					dev_idx = device.dev_idx,
+					call_state = device.calls[call_id].call_state,
 					reason = device.calls[call_id].release_reason,
 					remote_party = remote_party,
-					number_format = number_format })
+					number_format = number_format
+				})
 			end
 			-- Remove call info when released
 			if call_status == 4 then
@@ -890,35 +906,35 @@ end
 
 function Mapper:debug(device)
 	local ret = device:send_singleline_command('AT^SYSCFGEX?', '^SYSCFGEX:')
-	if ret then table.insert(device.debug.device_state, ret) end
+	if ret then tinsert(device.debug.device_state, ret) end
 	ret = device:send_singleline_command('AT^SYSCFG?', '^SYSCFG:')
-	if ret then table.insert(device.debug.device_state, ret) end
+	if ret then tinsert(device.debug.device_state, ret) end
 	ret = device:send_singleline_command('AT^SYSCFG=?', '^SYSCFG:')
-	if ret then table.insert(device.debug.device_state, ret) end
+	if ret then tinsert(device.debug.device_state, ret) end
 	ret = device:send_singleline_command('AT+CFUN?', '+CFUN:')
-	if ret then table.insert(device.debug.device_state, ret) end
+	if ret then tinsert(device.debug.device_state, ret) end
 	ret = device:send_singleline_command('AT^SYSCFGEX=?', '^SYSCFGEX:')
-	if ret then table.insert(device.debug.device_state, ret) end
+	if ret then tinsert(device.debug.device_state, ret) end
 	ret = device:send_singleline_command('AT^DIALMODE?', '^DIALMODE:')
-	if ret then table.insert(device.debug.device_state, ret) end
+	if ret then tinsert(device.debug.device_state, ret) end
 	ret = device:send_singleline_command('AT^SYSINFO', '^SYSINFO:')
-	if ret then table.insert(device.debug.device_state, ret) end
+	if ret then tinsert(device.debug.device_state, ret) end
 	ret = device:send_singleline_command('AT^SYSINFOEX', '^SYSINFOEX:')
-	if ret then table.insert(device.debug.device_state, ret) end
+	if ret then tinsert(device.debug.device_state, ret) end
 	ret = device:send_singleline_command('AT^DHCP?', '^DHCP:')
-	if ret then table.insert(device.debug.device_state, ret) end
+	if ret then tinsert(device.debug.device_state, ret) end
 	ret = device:send_singleline_command('AT^CPULOAD?', '^CPULOAD:')
-	if ret then table.insert(device.debug.device_state, ret) end
+	if ret then tinsert(device.debug.device_state, ret) end
 	ret = device:send_singleline_command('AT^FOTACFG?', '^FOTACFG:')
-	if ret then table.insert(device.debug.device_state, ret) end
+	if ret then tinsert(device.debug.device_state, ret) end
 	ret = device:send_singleline_command('AT^FOTASTATE?', '^FOTASTATE:')
-	if ret then table.insert(device.debug.device_state, ret) end
+	if ret then tinsert(device.debug.device_state, ret) end
 	ret = device:send_singleline_command('AT^FOTAMODE?', '^FOTAMODE:')
-	if ret then table.insert(device.debug.device_state, ret) end
+	if ret then tinsert(device.debug.device_state, ret) end
 	ret = device:send_multiline_command('AT^NDISSTATQRY?', '^NDISSTATQRY:')
 	if ret then
 		for _, line in pairs(ret) do
-			table.insert(device.debug.device_state, line)
+			tinsert(device.debug.device_state, line)
 		end
 	end
 	return true
@@ -954,8 +970,8 @@ function Mapper:firmware_upgrade(device, path)
 	end
 
 	local parts = {}
-	for part in string.gmatch(path, '([^,]+)') do
-		table.insert(parts, part)
+	for part in path:gmatch('([^,]+)') do
+		tinsert(parts, part)
 	end
 
 	local apn = parts[1]
@@ -998,8 +1014,7 @@ function Mapper:network_scan(device, start)
 end
 
 function Mapper:end_call(device, call_id) --luacheck: no unused args
-	device:send_command("AT+CHUP")
-	return true
+	return device:send_command("AT+CHUP")
 end
 
 function Mapper:call_info(device, call_id)
@@ -1008,14 +1023,14 @@ function Mapper:call_info(device, call_id)
 	if call_id and device.calls[call_id] then
 		local ret = device:send_singleline_command(string.format("AT^CDUR=%d", call_id), "^CDUR:")
 		if ret then
-			device.calls[call_id].duration = string.match(ret, "%^CDUR:%s?%d+,(%d+)")
+			device.calls[call_id].duration = ret:match("%^CDUR:%s?%d+,(%d+)")
 		end
 	else
 		for _, call in pairs(device.calls) do
 			if call.call_id then
 				local ret = device:send_singleline_command(string.format("AT^CDUR=%d", call.call_id), "^CDUR:")
 				if ret then
-					call.duration = string.match(ret, "%^CDUR:%s?%d+,(%d+)")
+					call.duration = ret:match("%^CDUR:%s?%d+,(%d+)")
 				end
 			end
 		end
@@ -1043,7 +1058,7 @@ function Mapper:supplementary_service(device, service, action, params, forwardin
 		elseif action == "query" then
 			ret = device:send_singleline_command("AT+CCWA=1,2,1", "+CCWA:", 60000)
 			if ret then
-				local status = string.match(ret, "+CCWA:%s?(%d)")
+				local status = ret:match("+CCWA:%s?(%d)")
 				if status == "1" then
 					return { status = "activated" }
 				end
@@ -1065,7 +1080,7 @@ function Mapper:supplementary_service(device, service, action, params, forwardin
 				enabled = false
 			}
 			if ret then
-				local enabled, status = string.match(ret, "+CLIP:%s?(%d),(%d)")
+				local enabled, status = ret:match("+CLIP:%s?(%d),(%d)")
 				if enabled == "1" then
 					info.enabled = true
 				end
@@ -1092,7 +1107,7 @@ function Mapper:supplementary_service(device, service, action, params, forwardin
 				enabled = false
 			}
 			if ret then
-				local enabled, status = string.match(ret, "+CLIR:%s?(%d),(%d)")
+				local enabled, status = ret:match("+CLIR:%s?(%d),(%d)")
 				if enabled == "1" then
 					info.enabled = true
 				end
@@ -1123,7 +1138,7 @@ function Mapper:supplementary_service(device, service, action, params, forwardin
 				enabled = false
 			}
 			if ret then
-				local enabled, status = string.match(ret, "+COLP:%s?(%d),(%d)")
+				local enabled, status = ret:match("+COLP:%s?(%d),(%d)")
 				if enabled == "1" then
 					info.enabled = true
 				end
@@ -1162,7 +1177,7 @@ function Mapper:supplementary_service(device, service, action, params, forwardin
 				enabled = false
 			}
 			if ret then
-				local enabled = string.match(ret, '+CCFC:%s?(%d)')
+				local enabled = ret:match('+CCFC:%s?(%d)')
 				if enabled == "1" then
 					info.enabled = true
 				end
@@ -1208,6 +1223,7 @@ function M.create(runtime, device) --luacheck: no unused args
 			supplementary_service = "override",
 			multi_call = "override",
 			dial = "override",
+			end_call = "override",
 			destroy_device = "runfirst"
 		}
 	}
@@ -1245,13 +1261,13 @@ function M.create(runtime, device) --luacheck: no unused args
 
 	if modem_ports then
 		for _, port in pairs(modem_ports) do
-			table.insert(device.interfaces, { port = port, type = "modem" })
+			tinsert(device.interfaces, { port = port, type = "modem" })
 		end
 	end
 
 	if pcui_ports then
 		for _, port in pairs(pcui_ports) do
-			table.insert(device.interfaces, { port = port, type = "pcui" })
+			tinsert(device.interfaces, { port = port, type = "pcui" })
 		end
 	end
 

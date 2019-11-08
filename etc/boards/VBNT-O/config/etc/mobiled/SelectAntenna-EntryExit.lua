@@ -1,15 +1,8 @@
 local M = {}
 
-function M.entry(runtime, dev_idx)
-	runtime.log:notice("SelectAntenna-> Entry Function")
-	return true
-end
-
-function M.exit(runtime, transition, dev_idx)
+function M.exit(runtime, _, dev_idx)
 	local mobiled = runtime.mobiled
 	local log = runtime.log
-
-	log:notice("SelectAntenna-> Exit Function")
 
 	local device, errMsg = mobiled.get_device(dev_idx)
 	if not device then

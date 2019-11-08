@@ -74,8 +74,7 @@ function M.check(runtime, event, dev_idx)
 	elseif event.event == "platform_config_changed" then
 		return "PlatformConfigure"
 	elseif event.event == "firmware_upgrade_start" then
-		device:firmware_upgrade(device.info.firmware_upgrade.path)
-		return "Idle"
+		return "FirmwareUpgrade"
 	elseif event.event == "qualtest_start" then
 		return "QualTest"
 	elseif event.event == "antenna_change_detected" then

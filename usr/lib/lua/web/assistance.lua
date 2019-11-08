@@ -60,6 +60,7 @@ local function loadState(name)
         password="";
         mode="0";
         ifname = "";
+        ifname6 = "";
     }
     local f = io.open(stateFile:format(name), 'r')
     if f then
@@ -98,6 +99,18 @@ local function getInterfaceIP(ifname)
     local info = dm.get(format('rpc.network.interface.@%s.ipaddr', ifname))
     if info and info[1] and (info[1].param=='ipaddr') then
         return info[1].value
+    end
+end
+
+--- Get the IPv6 address of the named interface
+-- \param ifname (string) the interface (wan6, lan, ...)
+-- \returns the ipv6 address string or nil if not found
+local function getInterfaceIPv6(ifname)
+    if ifname and ifname ~= "" then
+        local info = dm.get(format('rpc.network.interface.@%s.ip6addr', ifname))
+        if info and info[1] and (info[1].param=='ip6addr') then
+            return info[1].value and string.match(info[1].value, "^%S+")
+        end
     end
 end
 
@@ -144,6 +157,19 @@ function Assistant:URL()
     end
 end
 
+--- Get the full URL with IPv6 address for the remote assistance
+-- @return [string] the URL
+-- @return nil if not enabled or no IPv6 address on the interface.
+function Assistant:URL6()
+    if self:enabled() then
+        local ipv6 = getInterfaceIPv6(self._interface6)
+        local port = self._port
+        if ipv6 and port then
+            return format("https://[%s]:%d", ipv6, port)
+        end
+    end
+end
+
 --- Get the password for the assistant to use
 -- This is only relevant if the assistent is enabled
 -- There is no need to show password when random password is not enabled
@@ -184,7 +210,15 @@ local function checkUpdate(assistant, permanent, password)
     elseif pswcfg~=password then
          return true
     end
-    return assistant._permanent~=(permanent or false)
+    if assistant._permanent~=(permanent or false) then
+      return true
+    end
+    if assistant._wanip ~= (getInterfaceIP(assistant._interface) or '') then
+        return true
+    end
+    if assistant._wanipv6 ~= getInterfaceIPv6(assistant._interface6) then
+        return true
+    end
 end
 
 --- update assistant cfg
@@ -215,6 +249,7 @@ local function updatecfg(assistant, bPermanent, password)
         config.password='_DUMMY_PASSWORD_'
     end
     config.ifname = assistant._interface
+    config.ifname6 = assistant._interface6
     writeState(assistant._name, config, true)
     return true
 end
@@ -387,15 +422,18 @@ function assistant_enable(self)
         end
         self._port = port
         self._wanip = getInterfaceIP(self._interface) or ''
+        self._wanipv6 = getInterfaceIPv6(self._interface6)
         self:activity()
         writeState(self._name, {
             wanip=self._wanip;
+            wanipv6=self._wanipv6;
             wanport=tostring(port);
             lanport=self._lanport;
             enabled="1";
             password=pwd or '';
             mode = self._permanent and "1" or "0";
-            ifname = self._interface
+            ifname = self._interface;
+            ifname6 = self._interface6
         })
         return true
     end
@@ -500,6 +538,7 @@ local function newAssistant(config, sessionmgr)
         _user = config.user;
         _timeout = timeout*60; --convert minutes to seconds
         _interface = config.interface;
+        _interface6 = config.interface6;
         _lanport = control.mgrport(config.sessionmgr);
         _fromPort = fromPort;
         _toPort = toPort;

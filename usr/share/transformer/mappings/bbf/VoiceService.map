@@ -78,6 +78,9 @@ Multi_Services_VoiceService_i_.set = {
        binding.option = "enabled"
        uci_helper.set_on_uci(binding, paramvalue, commitapply)
        transactions[binding.config] = true;
+	   local binding={config="mmpbxbrcmdectdev", sectionname="global", option="dect_audio_format_change"}
+	   uci_helper.set_on_uci(binding, paramvalue, commitapply)
+	   transactions[binding.config] = true
   end,
   X_000E50_FXSState = function (mapping, paramname, paramvalue, key)
        binding.config = "mmpbxbrcmfxsdev"

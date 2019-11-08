@@ -3,7 +3,6 @@
 --! @brief The platform module giving access to platform specific methods
 ---------------------------------
 
-local pairs = pairs
 local runtime, plugin
 
 local M = {}

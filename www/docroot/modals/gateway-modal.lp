@@ -236,6 +236,14 @@ local function resetreboot(path, value)
   end)
   ngx.exit(ngx.HTTP_OK)
 end
+local mmpbxPhonebookFlushKeepDefaultPath = "rpc.mmpbx.phonebook.flush.keepDefault"
+
+local mmpbxPhonebookFlushKeepAllPath = "rpc.mmpbx.phonebook.flush.keepAll"
+
+local cui = {
+  upgradefw = "uci.web.uiconfig.@uidefault.upgradefw",
+}
+content_helper.getExactContent(cui)
 
 -- Handle fwupgrade/configimport/configexport specific GET/POSTs.
 if ngx.req.get_method() == "POST" then
@@ -245,6 +253,9 @@ if ngx.req.get_method() == "POST" then
     return import_config()
   end
   if action == "upgradefw" then
+    if not post_helper.isUpgradeAllowed(cui.upgradefw, currentuserrole) then
+      ngx.exit(ngx.HTTP_UNAUTHORIZED)
+    end
     return upgradefw()
   end
   -- now process non-file POSTs
@@ -255,7 +266,12 @@ if ngx.req.get_method() == "POST" then
   if action == "system_reset" then
     proxy.set("rpc.mmpbxbrcmdect.registration.clear", "all")
     ngx.sleep(8)
-    proxy.set(mmpbxPhonebookFlushKeepDefaultPath, "1")
+    local retain_mode = ngx.req.get_post_args().retain
+    if retain_mode == "default" then
+      proxy.set(mmpbxPhonebookFlushKeepDefaultPath, "1")
+    elseif retain_mode == "all" then
+      proxy.set(mmpbxPhonebookFlushKeepAllPath, "1")
+    end
     return resetreboot("rpc.system.reset", "1")
   end
   if action == "system_reboot" then
@@ -268,7 +284,7 @@ elseif ngx.req.get_method() == "GET" then
   }
   content_helper.getExactContent(content)
 
-  if action == "upgradefwstatus" then
+  if action == "upgradefwstatus" and post_helper.isUpgradeAllowed(cui.upgradefw, currentuserrole) then
     return upgradefwstatus()
   end
   if action == "getbanksize" then
@@ -293,6 +309,11 @@ local content = {
   fwversion_prefix = "uci.versioncusto.override.fwversion_prefix",
   fwversion_suffix = "uci.versioncusto.override.fwversion_suffix",
   fwversion_override = "uci.versioncusto.override.fwversion_override",
+}
+
+local retain_contact_mode_map = {
+    { "0", T'Default Contact&nbsp'},
+    { "1", T'All Contact'},
 }
 
 
@@ -373,11 +394,6 @@ local system_valid = {
     return true
   end,
 }
-
-local cui = {
-  upgradefw = "uci.web.uiconfig.@uidefault.upgradefw",
-}
-content_helper.getExactContent(cui)
 
 local system_data,system_helpmsg = post_helper.handleQuery(system_params, system_valid)
 
@@ -611,6 +627,20 @@ local help_link = { href="/help/index.html?anchor=" .. format("%s", uri:match("/
             class = "monitor-system_network_timezone monitor-0"
         }
     }
+    local retain_mmpbx_contacts_attr = {
+        input = {
+            class = "monitor-changes no-save",
+            id = "retain_mmpbx_contacts_id"
+        },
+    }
+    local retain_contact_mode_attr = {
+        group = {
+            class ="monitor-retain_mmpbx_contacts monitor-1",
+        },
+        input = {
+            class = "no-save",
+        },
+    }
 
     local html = {}
     html[#html + 1] = ui_helper.createLabel(T"Product Vendor", content["vendor"], basic)
@@ -637,6 +667,9 @@ local help_link = { href="/help/index.html?anchor=" .. format("%s", uri:match("/
     html = {}
     html[#html + 1] = ui_helper.createButton(T"Restart Device", T"Restart", "icon-refresh", wait_for_reboot)
     html[#html + 1] = ui_helper.createButton(T"Factory Defaults", T"Reset", "icon-bolt", wait_for_reset)
+if ngx.ctx.session:hasAccess("/modals/mmpbx-contacts-modal.lp") then
+    html[#html + 1] = ui_helper.createCheckboxSwitch(T"Retain Contacts", "retain_mmpbx_contacts", "false", retain_mmpbx_contacts_attr)
+end
     html[#html + 1] = string.format('<div class="control-group controls">')
     html[#html + 1] = ui_helper.createAlertBlock(T"Restarting, please wait...", rebooting)
     html[#html + 1] = ui_helper.createAlertBlock(T"Resetting to factory defaults, please wait...", resetting)
@@ -680,7 +713,7 @@ html = {}
         html[#html + 1] = ui_helper.createAlertBlock(T"Importing failed; please try again.", importing_fail)
         html[#html + 1] = ui_helper.createAlertBlock(T"Importing failed; Invalid file used: expected file with extension bin.  Please use correct file.", importing_wrong_ext_fail)
         html[#html + 1] = ui_helper.createAlertBlock(T"Importing failed; Invalid file used: file too large.  Please use correct.  Please use correct file..", importing_too_big_fail)
-        if cui.upgradefw == "1" then
+        if post_helper.isUpgradeAllowed(cui.upgradefw, currentuserrole) then
           html[#html + 1] = '</form><form class="form-horizontal" id="form-upgradefw" method="post" action="modals/gateway-modal.lp?action=upgradefw" enctype="multipart/form-data">'
           html[#html + 1] = '<div class="control-group">'
           html[#html + 1] = format('<label class="control-label">%s</label>', T"Upgrade firmware")
@@ -752,11 +785,28 @@ html = {}
     $("#reset-changes").removeClass("hide");\
   });\
 \
+  function resetWithRetainValue(msg, msg_dst, action, retain_value) {\
+    msg_dst.after(msg);\
+    msg.removeClass("hide");\
+    msg[0].scrollIntoView();\
+    $.post(\
+      target,\
+      { action: action, retain: retain_value, CSRFtoken: $("meta[name=CSRFtoken]").attr("content") },\
+      wait_for_webserver_down,\
+      "json"\
+    );\
+    return false;\
+  }\
+\
   $("#reset-confirm").click(function() {\
     $("#confirming-msg").addClass("hide");\
     $("#reset-changes").addClass("hide");\
     $("#btn-system-reset").addClass("hide");\
-    return resetreboot($("#resetting-msg"), $("#btn-system-reset"), "system_reset");\
+    var retain_contact_mode = "default"\
+    if ($("#retain_mmpbx_contacts_id").prop("checked")) {\
+        retain_contact_mode = "all";\
+    }\
+    return resetWithRetainValue($("#resetting-msg"), $("#btn-system-reset"), "system_reset", retain_contact_mode);\
   });\
 \
   $("#reset-cancel").click(function() {\

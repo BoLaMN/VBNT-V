@@ -5,5 +5,5 @@ Source: package/kernel/linux
 License: GPLv2
 Section: kernel
 Architecture: brcm63xx-tch
-Installed-Size: 9664
+Installed-Size: 9645
 Description:  Kernel modules for USB-to-Ethernet convertors

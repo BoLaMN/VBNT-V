@@ -5,7 +5,7 @@ Source: feeds/technicolor/firewall-ext-tch
 Section: Firewall
 Maintainer: Technicolor <linuxgw@technicolor.com>
 Architecture: brcm63xx-tch
-Installed-Size: 1609
+Installed-Size: 1616
 Description:  Installs Technicolor firewall extensions:
  - full cone NAT behavior for selected UDP ports
  - selective helper bindings

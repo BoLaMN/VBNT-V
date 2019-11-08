@@ -14,7 +14,7 @@ function M.get_params()
     gettext.language(ngx.header['Content-Language'])
     return {
        card_title = T"Mobile",
-       modal_title = T"Mobile"
+       modal_title = T"Mobile",
     }
 end
 return M

@@ -5,5 +5,5 @@ Source: feeds/custo/conf-dlna
 Section: conf-dlna
 Maintainer: Technicolor <linuxgw@technicolor.com>
 Architecture: brcm63xx-tch
-Installed-Size: 482
+Installed-Size: 481
 Description:  Configuration for DLNA.

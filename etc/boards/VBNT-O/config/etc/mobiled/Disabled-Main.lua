@@ -29,7 +29,7 @@ function M.check(runtime, event, dev_idx)
 	elseif event.event == "qualtest_start" then
 		return "QualTest"
 	elseif event.event == "sim_initialized" then
-		runtime.log:info("Enabling device due to SIM card initialization")
+		runtime.log:notice("Enabling device due to SIM card initialization")
 		runtime.config.set_device_enable(device, 1)
 		return "DeviceConfigure"
 	end

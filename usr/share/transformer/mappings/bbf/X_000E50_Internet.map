@@ -74,13 +74,49 @@ local function get_on_option(binding, param)
   return ucihelper.get_from_uci(binding)
 end
 
+-- Convert a device ('eth4'/'eth5') to an interface name ('wan6'/'wwan') which is already 'up' (using UBUS)
+local function device_to_upintf(device)
+  local namespaces = ubus_connect:objects()
+  for _, interface in pairs(namespaces) do
+    local name = string.match(interface, "^network%.interface%.(.*)")
+    if (name) then
+      local info = ubus_connect:call(interface, "status", { })
+      if (info and info['up'] and (info['device'] == device or info['l3_device'] == device )) then
+        return name
+      end
+    end
+  end
+  return ""
+end
+
+-- Check whether the Link encap of an interface is 'UNSPEC' using 'ifconfig'
+-- e.g.
+--   464-wan6_4 Link encap:UNSPEC  HWaddr 00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00
+local function encap_unspec(intf)
+ local cmd="ifconfig " .. intf
+ local fd = io.popen(cmd)
+ local line = fd:read("*l")
+
+ fd:close()
+ if string.find(line, "UNSPEC") ~= nil then
+    return true
+ end
+ return false
+end
+
 Multi_Services_X_000E50_Internet_.get = {
     WANConnection = function(mapping, paramname, key)
       local device = loadRoutes(true) or loadDefaultRoute6()
+      local intf
       if not device then
         return ""
+      elseif encap_unspec(device) then
+        -- To encap UNSPEC we treat it as 464 interface. Then Get default route from v6 table and find the interface name from (v6)interface which is up
+        device = loadDefaultRoute6()
+        intf = device_to_upintf(device)
+      else
+        intf = dev2interface(device)
       end
-      local intf = dev2interface(device)
       if not intf then
         return ""
       end
@@ -101,6 +137,10 @@ Multi_Services_X_000E50_Internet_.get = {
       local device = loadRoutes(true) or loadDefaultRoute6()
       if not device then
         return ""
+      elseif encap_unspec(device) then
+        -- To encap UNSPEC we treat it as 464 interface. Then Get default route from v6 table and find the interface name from (v6)interface which is up
+        device = loadDefaultRoute6()
+        return device_to_upintf(device)
       end
       return dev2interface(device) or ""
     end,

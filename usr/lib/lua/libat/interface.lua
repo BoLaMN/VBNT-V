@@ -36,7 +36,7 @@ function Interface:open(tracelevel)
 	local port = self.port
 	local log = self.runtime.log
 
-	log:info("Opening " .. port)
+	log:notice("Opening " .. port)
 	local channel = retry_open(port)
 	if channel then
 		log:info("Using AT channel " .. self.port)
@@ -44,7 +44,7 @@ function Interface:open(tracelevel)
 		self.channel = channel
 		self.mode = "normal"
 
-		log:notice("Setting AT channel trace level to " .. tracelevel)
+		log:info("Setting AT channel trace level to " .. tracelevel)
 		atchannel.set_tracelevel(channel, tracelevel)
 
 		-- Disable echo and enable verbose result codes
@@ -76,7 +76,7 @@ end
 
 function Interface:close()
 	if self.channel then
-		self.runtime.log:info("Closing " .. self.port)
+		self.runtime.log:notice("Closing " .. self.port)
 		atchannel.close(self.channel)
 		self.channel = nil
 	end
@@ -86,7 +86,7 @@ function Interface:probe()
 	local available = nil
 	local channel = self.channel or retry_open(self.port)
 	if channel then
-		self.runtime.log:info("Probing " .. self.port)
+		self.runtime.log:notice("Probing " .. self.port)
 		if probe_channel(channel) then
 			available = true
 		end

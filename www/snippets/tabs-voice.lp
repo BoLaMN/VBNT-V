@@ -10,17 +10,30 @@ if ngx.ctx.session:getrole()=="guest" then
    items = {
        {"mmpbx-info-modal.lp", T"Information"},
        {"mmpbx-global-modal.lp", T"Global"},
+       {"mmpbx-contacts-modal.lp", T"Phone Book"},
        {"mmpbx-profile-modal.lp", T"Phone Numbers"},
        {"mmpbx-service-modal.lp", T"Service"},
+       {"mmpbx-volte-modal.lp", T"VoLTE"},
        {"mmpbx-log-modal.lp", T"Call Log"},
        {"mmpbx-dect-modal.lp", T"DECT"},
    }
 else
    items = {
        {"mmpbx-info-modal.lp", T"Information"},
+       {"mmpbx-contacts-modal.lp", T"Phone Book"},
+       {"mmpbx-volte-modal.lp", T"VoLTE"},
        {"mmpbx-log-modal.lp", T"Call Log"},
        {"mmpbx-dect-modal.lp", T"DECT"},
    }
+end
+
+local tabs = {}
+local session = ngx.ctx.session
+
+for _,v in pairs(items) do
+    if session:hasAccess("/modals/" .. v[1]) then
+       tabs[#tabs+1] = v
+    end
 end
 
 local html = {}
@@ -32,7 +45,7 @@ end
 
 html[#html+1] = '<div class="loading-wrapper hide"><img src="/img/spinner.gif" /></div>'
 
-for _,v in ipairs(items) do
+for _,v in ipairs(tabs) do
     local active = ""
     if uri == ("/modals/" .. v[1]) then
         active = "active"

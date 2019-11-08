@@ -6,8 +6,6 @@ function M.entry(runtime, dev_idx)
 	local mobiled = runtime.mobiled
 	local log = runtime.log
 
-	log:notice("DeviceInit-> Entry Function")
-
 	local device, errMsg = mobiled.get_device(dev_idx)
 	if not device then
 		if errMsg then log:error(errMsg) end
@@ -36,10 +34,6 @@ function M.entry(runtime, dev_idx)
 		return false
 	end
 
-	return true
-end
-
-function M.exit(runtime, transition, dev_idx)
 	return true
 end
 

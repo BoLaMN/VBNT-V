@@ -40,8 +40,8 @@ config mmbrcmglobalprovisionmap 'global_provision'
     option cid1_dtas_tone_id       '0'
     option vmwi_dtas_tone_id       '0'
     option cid2_dtas_tone_id       '1'
-    option cid1_dtas_level         '22'
-    option cid2_dtas_level         '22'
+    option cid1_dtas_level         '24'
+    option cid2_dtas_level         '24'
     option fxo_clip2_ack_tone_level '12'
 
 
@@ -88,7 +88,7 @@ config mmbrcmglobalprovisionmap 'global_provision'
 #/*               Endpoint Global FSK map                     */
 #/*******************************************************************/
 config mmbrcmfsk 'fsk'
-    option db_level                 '135'
+    option db_level                 '193'
     option mark_frq                 '1200'
     option space_frq                '2200'
     option seizes                   '300'

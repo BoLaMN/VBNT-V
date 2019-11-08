@@ -28,6 +28,11 @@ function M.check(runtime, event, dev_idx)
 		return "Error"
 	end
 
+	if not device:configure(config) then
+		log:warning("Failed to configure device")
+		return "DeviceConfigure"
+	end
+
 	-- In case the device already auto-attached, we need to detach and configure the auto attach context
 	if not mobiled.configure_attach_context(device, mobiled.get_attach_context(device)) then
 		log:warning("Failed to configure attach context")
@@ -55,10 +60,6 @@ function M.check(runtime, event, dev_idx)
 		end
 	end
 
-	if not device:configure(config) then
-		log:warning("Failed to configure device")
-		return "DeviceConfigure"
-	end
 	return "SimInit"
 end
 

@@ -39,9 +39,9 @@ local help_link = { href="/help/index.html?anchor=" .. string.format("%s", uri:m
 		<div class="row-fluid">\
 			<div class="span6" id="plot-container">\
 				<select id="plot-period" class="no-save">\
-					<option value="5m" selected>');  ngx.print( T"Last five minutes" ); ngx.print('</option>\
-					<option value="20m">');  ngx.print( T"Last twenty minutes" ); ngx.print('</option>\
-					<option value="1h">');  ngx.print( T"Last hour" ); ngx.print('</option>\
+					<option value="last_five_minutes" selected>');  ngx.print( T"Last five minutes" ); ngx.print('</option>\
+					<option value="last_twenty_minutes">');  ngx.print( T"Last twenty minutes" ); ngx.print('</option>\
+					<option value="last_hour">');  ngx.print( T"Last hour" ); ngx.print('</option>\
 				</select>\
 				<div id="plot-tooltip"></div>\
 				<div id="plot" style="height: 300px;"></div>\
@@ -64,7 +64,7 @@ local help_link = { href="/help/index.html?anchor=" .. string.format("%s", uri:m
 							tinsert(html, ui_helper.createLabel(T"Network Status:", "", options))
 							options = {span = {class = "span5", id = "service_state-value"}}
 							tinsert(html, ui_helper.createLabel(T"Service Status:", "", options))
-							options = {span = {class = "span5", id = "description-value"}}
+							options = {span = {class = "span5", id = "network_desc-value"}}
 							tinsert(html, ui_helper.createLabel(T"Operator:", "", options))
 							options = {span = {class = "span5", id = "mcc-value"}}
 							tinsert(html, ui_helper.createLabel(T"MCC:", "", options))
@@ -153,7 +153,7 @@ local help_link = { href="/help/index.html?anchor=" .. string.format("%s", uri:m
 				color:  "#4C0B5F",\
 				data: []\
 			},\
-                        rscp : {\
+			rscp : {\
 				label: "RSCP (dBm)",\
 				color: "#7FFF00",\
 				data: []\
@@ -174,36 +174,35 @@ local help_link = { href="/help/index.html?anchor=" .. string.format("%s", uri:m
 			var params = [{ name: "data_period", value: period},\
 						  tch.elementCSRFtoken()];\
 \
-			if(this.last_uptime !== undefined) {\
-				params.push({ name: "last_uptime", value: this.last_uptime });\
+			if(this.since_uptime !== undefined) {\
+				params.push({ name: "since_uptime", value: this.since_uptime });\
 			}\
 \
 			var self = this;\
 			$.post("/ajax/radioparameters.lua", params, function(data) {\
 				if (data !== null && typeof data === \'object\') {\
-					self.period_seconds = data.period_seconds;\
-					var starting_uptime = parseInt(data.starting_uptime);\
+					self.period_seconds = data.history.period_seconds;\
+					var starting_uptime = parseInt(data.history.starting_uptime);\
 					if (!isNaN(starting_uptime)) {\
 						self.removeOldData(starting_uptime);\
 					}\
-					for (var i = 0; i < data.data.length; i++) {\
-						var line = data.data[i];\
+					for (var i = 0; i < data.history.data.length; i++) {\
+						var line = data.history.data[i];\
 						for (var key in self.data) {\
 							var val = line[key];\
 							if(val !== "") {\
-								self.data[key].data.push({uptime: line.uptime, value: val});\
+								self.data[key].data.push({uptime: parseInt(line.uptime), value: val});\
 							}\
 						}\
 					}\
-					if(data.data.length) {\
-						self.updateParameters(data.data[data.data.length-1]);\
-					}\
+\
+					self.updateParameters(data.current);\
 \
 					var fullRefresh = false;\
-					if(self.last_uptime === undefined) {\
+					if(self.since_uptime === undefined) {\
 						fullRefresh = true;\
 					}\
-					self.last_uptime = data.uptime;\
+					self.since_uptime = data.history.current_uptime;\
 					var plotData = self.getPlotData();\
 \
 					if(fullRefresh) {\
@@ -259,7 +258,7 @@ local help_link = { href="/help/index.html?anchor=" .. string.format("%s", uri:m
 				var length = this.data[key].data.length;\
 				if (length) {\
 					for (var i = 0; i < length; i++) {\
-						res.push([this.period_seconds - (this.last_uptime - this.data[key].data[i].uptime), this.data[key].data[i].value]);\
+						res.push([this.period_seconds - (this.since_uptime - this.data[key].data[i].uptime), this.data[key].data[i].value]);\
 					}\
 					plotData.push({ data : res, label : this.data[key].label, color : this.data[key].color });\
 				}\
@@ -305,7 +304,7 @@ local help_link = { href="/help/index.html?anchor=" .. string.format("%s", uri:m
 								data[key] = "');  ngx.print( utils.nas_state_map["not_registered_searching"] ); ngx.print('";\
 							} else if(data[key] == "registration_denied") {\
 								data[key] = "');  ngx.print( utils.nas_state_map["registration_denied"] ); ngx.print('";\
-							} \
+							}\
 						}\
 						if(key == "rrc_state") {\
 							if(data[key] == "idle") {\

@@ -4,7 +4,6 @@
 ---------------------------------
 
 local runtime, cb
-local type = type
 
 local M = {}
 
@@ -28,8 +27,7 @@ function M.start()
 end
 
 function M.send_event(id, data)
-	local json = require("dkjson")
-	local ret = json.encode (data, { indent = false })
+	local ret = require("dkjson").encode(data, { indent = false })
 	if ret then
 		local helper = require('mobiled.scripthelpers')
 		local command = "ubus send " .. id .. " '" .. ret .. "'"

@@ -16,15 +16,13 @@ function Mapper:get_device_capabilities(device, info)
 			{ radio_interface = "umts" },
 			{ radio_interface = "auto" }
 		}
-	end
-end
-
-function Mapper:get_pin_info(device, info, type)
-	if type == "pin1" then
-		local ret = device:send_singleline_command('AT+ZPINPUK=?', '+ZPINPUK:')
-		if ret then
-			info.unlock_retries_left, info.unblock_retries_left = match(ret, '+ZPINPUK:%s*(%d+),(%d+)')
-		end
+	elseif device.pid == "1282" then
+		info.radio_interfaces = {
+			{ radio_interface = "gsm" },
+			{ radio_interface = "umts" },
+			{ radio_interface = "lte" },
+			{ radio_interface = "auto" }
+		}
 	end
 end
 
@@ -108,13 +106,19 @@ function M.create(runtime, device) --luacheck: no unused args
 		}
 	}
 
-	local control_ports = attty.find_tty_interfaces(device.desc, { number = 0x1 })
-	control_ports = control_ports or attty.find_tty_interfaces(device.desc, { class = 0x2, subclass = 0x2, protocol = 0x1, number = 0x2 })
+	local control_ports, modem_ports
+	if device.pid == "1282" then
+		control_ports = attty.find_tty_interfaces(device.desc, { number = 0x2 })
+		modem_ports = attty.find_tty_interfaces(device.desc, { number = 0x1 })
+	else
+		control_ports = attty.find_tty_interfaces(device.desc, { number = 0x1 })
+		control_ports = control_ports or attty.find_tty_interfaces(device.desc, { class = 0x2, subclass = 0x2, protocol = 0x1, number = 0x2 })
 
-	local modem_ports = attty.find_tty_interfaces(device.desc, { number = 0x3 })
-	modem_ports = modem_ports or attty.find_tty_interfaces(device.desc, { class = 0x2, subclass = 0x2, protocol = 0x1, number = 0x0 })
-	modem_ports = modem_ports or attty.find_tty_interfaces(device.desc, { class = 0xff, subclass = 0xff, protocol = 0xff, number = 0x2 })
-	modem_ports = modem_ports or attty.find_tty_interfaces(device.desc, { class = 0xff, subclass = 0xff, protocol = 0xff, number = 0x0 })
+		modem_ports = attty.find_tty_interfaces(device.desc, { number = 0x3 })
+		modem_ports = modem_ports or attty.find_tty_interfaces(device.desc, { class = 0x2, subclass = 0x2, protocol = 0x1, number = 0x0 })
+		modem_ports = modem_ports or attty.find_tty_interfaces(device.desc, { class = 0xff, subclass = 0xff, protocol = 0xff, number = 0x2 })
+		modem_ports = modem_ports or attty.find_tty_interfaces(device.desc, { class = 0xff, subclass = 0xff, protocol = 0xff, number = 0x0 })
+	end
 
 	device.default_interface_type = "control"
 

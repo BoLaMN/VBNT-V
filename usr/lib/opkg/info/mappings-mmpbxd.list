@@ -35,6 +35,7 @@
 /usr/share/transformer/mappings/uci/mmpbxbrcmfxsdev.map
 /usr/share/transformer/mappings/bbf/VoiceService.Capabilities.map
 /usr/share/transformer/mappings/bbf/VoiceService.PhyInterface.map
+/usr/share/transformer/mappings/bbf/Services.X_TELSTRA_VOLTE.map
 /usr/share/transformer/mappings/rpc/mmpbx.mmpbxrvsipnet.map
 /usr/share/transformer/commitapply/VoiceService.VoiceProfile.ca
 /usr/share/transformer/mappings/rpc/mmpbx.phonebook.map

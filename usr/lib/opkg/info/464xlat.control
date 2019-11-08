@@ -6,5 +6,5 @@ License: GPL-2.0
 Section: net
 Maintainer: Steven Barth <cyrus@openwrt.org>
 Architecture: brcm63xx-tch
-Installed-Size: 3609
+Installed-Size: 3623
 Description:  464xlat CLAT support

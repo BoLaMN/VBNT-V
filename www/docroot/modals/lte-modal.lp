@@ -1,7 +1,7 @@
 --pretranslated: do not change this file
  
 local string, table, pairs = string, table, pairs
-local ngx, tonumber, ipairs, setmetatable, tinsert, gmatch = ngx, tonumber, ipairs, setmetatable, table.insert, string.gmatch
+local ngx, tonumber, ipairs, setmetatable, tinsert = ngx, tonumber, ipairs, setmetatable, table.insert
 local floor, format = math.floor, string.format
 -- Enable localization
 gettext.textdomain('webui-mobiled')
@@ -17,17 +17,10 @@ local proxy = require("datamodel")
 local gVCS = post_helper.getValidateCheckboxSwitch()
 local gVIES = post_helper.getValidateInEnumSelect
 
-local checkbox_map = setmetatable({
+local label_map = setmetatable({
     ["0"]= T'Off',
     ["1"]= T'On',
 }, untaint_mt)
-
-local content_wan = {
-    wan_ip = "rpc.network.interface.@wan.ipaddr",
-    wan6_ip = "rpc.network.interface.@wan6.ipaddr",
-}
-content_helper.getExactContent(content_wan)
-local wan_down = content_wan.wan_ip == "" and content_wan.wan6_ip == ""
 
 local function validate_in_enum_or_empty(enum)
 	local choices = setmetatable({}, untaint_mt)
@@ -44,23 +37,11 @@ local function validate_in_enum_or_empty(enum)
 end
 
 local function validate_interface_enabled(value, object, key)
-	if not wan_down then
-		object[key] = nil
-		return true
+	local valid, msg = gVCS(value, object, key)
+	if valid and object.autofailover then
+		object.autofailover = object.interface_enabled
 	end
-	return gVCS(value, object, key)
-end
-
-local function validate_earfcn(value)
-	local errmsg = T"The EARFCN needs to be a number between 0 and 65535\nUse commas to separate multiple EARFCN values."
-	for part in gmatch(value, '([^,]+)') do
-		part = part:gsub("^%s*(.-)%s*$", "%1")
-		local num = tonumber(part, 10)
-		if not num or num < 0 or num > 65535 then
-			return nil, errmsg
-		end
-	end
-	return true
+	return valid, msg
 end
 
 local function get_profile_select(device)
@@ -138,7 +119,7 @@ local function get_platform_data()
 end
 
 local function get_antenna_selection_section(page, html)
-	if page.platform.capabilities.antenna_controls then
+	if page.platform.capabilities.antenna_controls and page.platform.info.antenna_controls then
 		local advanced = {
 			group = {
 				class = "advanced hide"
@@ -156,127 +137,6 @@ local function get_antenna_selection_section(page, html)
 			end
 		end
 	end
-end
-
-local function revert_provisioning_code()
-	local provision_code_path = "uci.env.var.provisioning_code"
-	local provisioning_code = {
-		default_pcode = "uci.env.var._provisioning_code",
-		curr_pcode = provision_code_path,
-	}
-	content_helper.getExactContent(provisioning_code)
-	if provisioning_code.default_pcode ~= provisioning_code.curr_pcode then
-		proxy.set(provision_code_path, provisioning_code.default_pcode)
-		--proxy apply will do in the caller
-	end
-end
-
-local function set_cwmpd_iface(mobile_enabled, mobile_interface, default_interface)
-	local cwmpd_interface_path = "uci.cwmpd.cwmpd_config.interface"
-	local cwmpd_interface6_path = "uci.cwmpd.cwmpd_config.interface6"
-	local cwmpd_ip_preference_path = "uci.cwmpd.cwmpd_config.ip_preference"
-	local uci_content = {
-		cwmpd_interface = cwmpd_interface_path,
-	}
-	content_helper.getExactContent(uci_content)
-	if mobile_enabled then
-		if uci_content["cwmpd_interface"] ~= mobile_interface .."_4" then
-			revert_provisioning_code()
-			proxy.set(cwmpd_ip_preference_path, "v6_only")
-			proxy.set(cwmpd_interface_path, mobile_interface .. "_4")
-			proxy.set(cwmpd_interface6_path, mobile_interface .. "_6")
-		end
-	else
-		if uci_content["cwmpd_interface"] ~= default_interface then
-			proxy.set(cwmpd_ip_preference_path, "v4_only")
-			proxy.set(cwmpd_interface_path, default_interface)
-			proxy.set(cwmpd_interface6_path, default_interface .. "6")
-		end
-	end
-end
-local function set_ddns_iface(mobile_enabled, mobile_interface, default_interface)
-    local ddns_interface_path = "uci.ddns.service.@myddns_ipv4.interface"
-	local ddns_ip_network_path = "uci.ddns.service.@myddns_ipv4.ip_network"
-	local uci_content = {
-		ddns_interface = ddns_interface_path,
-	}
-	content_helper.getExactContent(uci_content)
-	if mobile_enabled then
-		if uci_content["ddns_interface"] ~= mobile_interface .."_4" then
-			proxy.set(ddns_interface_path, mobile_interface .. "_4")
-			proxy.set(ddns_ip_network_path, mobile_interface .. "_4")
-		end
-	else
-		if uci_content["ddns_interface"] ~= default_interface then
-			proxy.set(ddns_interface_path, default_interface)
-			proxy.set(ddns_ip_network_path, default_interface)
-		end
-	end
-end
-
-local function set_upnpd_iface(mobile_enabled, mobile_interface, default_interface)
-    local upnpd_interface_path = "uci.upnpd.config.external_iface"
-	local uci_content = {
-		upnpd_interface = upnpd_interface_path,
-	}
-	content_helper.getExactContent(uci_content)
-	if mobile_enabled then
-		if uci_content["upnpd_interface"] ~= mobile_interface .."_4" then
-			proxy.set(upnpd_interface_path, mobile_interface .. "_4")
-		end
-	else
-		if uci_content["upnpd_interface"] ~= default_interface then
-			proxy.set(upnpd_interface_path, default_interface)
-		end
-	end
-end
-local function set_wifi_doctor(mobile_enabled)
-	local wifi_doctor_path = "uci.wifi_doctor_agent.config.enabled"
-	local wifi_doctor_url_path = "uci.wifi_doctor_agent.config.cs_url"
-	local uci_content = {
-		wifi_doctor_enabled = wifi_doctor_path,
-		wifi_doctor_url = wifi_doctor_url_path,
-	}
-	content_helper.getExactContent(uci_content)
-	if mobile_enabled then
-		if uci_content.wifi_doctor_enabled == "1" then
-			proxy.set(wifi_doctor_path, "0")
-		end
-	else
-		if uci_content.wifi_doctor_enabled == "0" and uci_content.wifi_doctor_url ~= "" then
-			proxy.set(wifi_doctor_path, "1")
-		end
-	end
-end
-
-local function set_ra_iface(mobile_enabled, mobile_interface, default_interface)
-	local ra_helper = require("assistance_helper")
-	local path = proxy.get("uci.web.assistance.")[1].path
-	local ra_interface_path = path .. "interface"
-	local _, _, secname = string.find(path, "web%.assistance%.@([^%.]*)%.")
-	if mobile_enabled then
-		proxy.set(ra_interface_path, mobile_interface)
-		ra_helper.change_interface(secname, mobile_interface)
-	else
-		proxy.set(ra_interface_path, default_interface)
-		ra_helper.change_interface(secname, default_interface)
-	end
-end
-
-local function process_services_on_failover(content, mobile_interface, default_interface)
-	if content.autofailover == "0" then
-		local uci_content = {
-			mobile_interface_enable = "uci.network.interface.@" .. mobile_interface .. ".enabled",
-		}
-		content_helper.getExactContent(uci_content)
-		local mobile_enabled = content.interface_enabled == "1" and uci_content.mobile_interface_enable == "1"
-		set_cwmpd_iface(mobile_enabled, mobile_interface, default_interface)
-		set_ddns_iface(mobile_enabled, mobile_interface, default_interface)
-		set_upnpd_iface(mobile_enabled, mobile_interface, default_interface)
-		set_wifi_doctor(mobile_enabled)
-		set_ra_iface(mobile_enabled, mobile_interface, default_interface)
-	end
-	proxy.apply()
 end
 
 local function get_network_interface_section(page, html)
@@ -297,17 +157,6 @@ local function get_network_interface_section(page, html)
 			values = page.profiles_select,
 			attr = { select = { class="span2" } }
 		},
-	}
-	if wan_down and page.content["autofailover"] ~= "1"  then
-		interfaces_columns[#interfaces_columns + 1] =
-		{
-			header = T"Connect",
-			name = "enabled",
-			param = "enabled",
-			type = "checkboxswitch"
-		}
-	else
-		interfaces_columns[#interfaces_columns + 1] =
 		{
 			header = T"Connect",
 			name = "enabled",
@@ -315,8 +164,8 @@ local function get_network_interface_section(page, html)
 			readonly = true,
 			type = "label"
 		}
+	}
 
-	end
 	local interfaces_options = {
 		tableid = "lte_interfaces",
 		basepath = "uci.network.interface.@.",
@@ -325,7 +174,6 @@ local function get_network_interface_section(page, html)
 	}
 
 	local interfaces_valid = {
-		enabled = gVCS,
 		profile = gVIES(page.profiles_select),
 	}
 	local function interfaces_filter(data)
@@ -338,6 +186,9 @@ local function get_network_interface_section(page, html)
 		return false
 	end
 	local function onModify(index, content)
+		if page.device.info.manufacturer == "Quectel" then
+			return true
+		end
 		for _, v in pairs(page.profiles_select) do
 			if content["profile"] == v[1] then
 				local radio_pref = proxy.get("uci.mobiled.device_defaults.radio_pref")[1].value
@@ -360,23 +211,8 @@ local function get_network_interface_section(page, html)
 	interfaces_options.onModify = onModify
 	local interfaces_data, interfaces_helpmsg = post_helper.handleTableQuery(interfaces_columns, interfaces_options, interfaces_filter, nil, interfaces_valid)
 
-	if (not interfaces_helpmsg or not next(interfaces_helpmsg)) and ngx.req.get_method() == "POST" then
-		local post_args = ngx.req.get_post_args()
-		if post_args.action == "TABLE-MODIFY" then
-			process_services_on_failover(page.content, "wwan", "wan")
-		end
-	end
-
-	if wan_down and page.content["autofailover"] ~= "1" then
-		for _, intf in pairs(interfaces_data) do
-			if string.format("%s", intf[3]) == "" then
-				intf[3] = "1"
-			end
-		end
-	else
-		for _, intf in pairs(interfaces_data) do
-			intf[3] = checkbox_map[intf[3]] or "On"
-		end
+	for _, intf in pairs(interfaces_data) do
+		intf[3] = label_map[intf[3]] or "On"
 	end
 
 	local apn_warning = {
@@ -406,7 +242,7 @@ local function get_network_interface_section(page, html)
 		--to find the not used linked_profile, since there is only one lte interface, so no need to loop
 		for _, v in pairs(page.profiles_select) do
 			if v[2] == "telstra.hybrid" then
-				tinsert(html, ui_helper.createAlertBlock(T"You must select the <strong>telstra.hybrid</strong> profile for your backup service to work.", apn_warning))
+--				tinsert(html, ui_helper.createAlertBlock(T"You must select the <strong>telstra.hybrid</strong> profile for your backup service to work.", apn_warning))
 			end
 		end
 		tinsert(html, ui_helper.createAlertBlock(T"The device does not support the authentication of the selected profile.", authentication_warning))
@@ -436,16 +272,16 @@ local function get_device_info_section(page, html)
 		tinsert(section, ui_helper.createLabel(T"Model" .. ":", page.device.info.model, advanced))
 	end
 	if page.device.info.software_version ~= "" then
-		tinsert(section, ui_helper.createLabel(T"Firmware version" .. ":", page.device.info.software_version, advanced))
+		tinsert(section, ui_helper.createLabel(T"Firmware Version" .. ":", page.device.info.software_version, advanced))
 	end
 	if page.device.info.hardware_version ~= "" then
-		tinsert(section, ui_helper.createLabel(T"Hardware version" .. ":", page.device.info.hardware_version, advanced))
+		tinsert(section, ui_helper.createLabel(T"Hardware Version" .. ":", page.device.info.hardware_version, advanced))
 	end
 	if page.device.info.temperature ~= "" then
 		tinsert(section, ui_helper.createLabel(T"Temperature" .. ":", page.device.info.temperature.." ".."°C", advanced))
 	end
 	if page.device.info.power_mode ~= "" then
-		tinsert(section, ui_helper.createLabel(T"Power mode" .. ":", utils.power_mode_map[page.device.info.power_mode], advanced))
+		tinsert(section, ui_helper.createLabel(T"Power Mode" .. ":", utils.power_mode_map[page.device.info.power_mode], advanced))
 	end
 
 	if utils.Len(section) > 0 then
@@ -540,15 +376,10 @@ local function get_page(platform, device)
 	content_helper.getExactContent(content_wansensing)
 	if content_wansensing.autofailover ~= "readonly" then
 		p.mapParams.autofailover = "uci.wansensing.global.autofailover"
-		p.mapValid.autofailover = gVCS
 	end
 
 	if type(device) == "table" then
 		p.mapParams["interface_enabled"] = device.uci_path .. "enabled"
-		if string.match(device.capabilities.arfcn_selection_support, "lte") then
-			p.mapParams["earfcn"] = device.uci_path .. "earfcn"
-			p.mapValid["earfcn"] = validate_earfcn
-		end
 	end
 
 	if type(platform) == "table" then
@@ -564,14 +395,6 @@ local function get_page(platform, device)
 
 	local helpmsg
 	p.content, helpmsg = post_helper.handleQuery(p.mapParams, p.mapValid)
-
-	--if the network is enabled for wwan_4, the device is disabled, and autofailover is disabled, we should maintain the cwmpd as wwan_4
-	if (not helpmsg or not next(helpmsg)) and ngx.req.get_method() == "POST" then
-		local post_args = ngx.req.get_post_args()
-		if post_args.action == "SAVE" then
-			process_services_on_failover(p.content, "wwan", "wan")
-		end
-	end
 
 	setmetatable(p.content, { __index = function() return "" end })
 
@@ -638,55 +461,13 @@ local page = get_page(get_platform_data(), mobiled.devices[1])
 			local lp = require("web.lp")
 			lp.setpath("/www/snippets/")
 			lp.include("tabs-mobiled.lp")
-			if not page then
-					ngx.print(ui_helper.createAlertBlock(utils.string_map["no_device"]))
-					ngx.print("</form></div>")
-					ngx.print(ui_helper.createFooter())
-					ngx.exit(ngx.HTTP_OK)
-			end
-			if not page.device then
-				if page.platform and page.platform.capabilities.module_power_control ~= "true" then
-					ngx.print(ui_helper.createAlertBlock(utils.string_map["no_device"]))
-					ngx.print("</form></div>")
-					ngx.print(ui_helper.createFooter())
-					ngx.exit(ngx.HTTP_OK)
-				else
-					local html = {}
-					tinsert(html, "<fieldset><legend>" .. T"General Status And Settings" .. "</legend>")
-					tinsert(html, ui_helper.createMessages(message_helper.popMessages()))
-					local interface_enable_switch_class, interface_enable_label_class
-					if page.content["autofailover"] ~= "" then
-						if wan_down then
-							interface_enable_label_class = {
-								group = {
-									class ="monitor-autofailover monitor-1",
-								}
-							}
-							interface_enable_switch_class = {
-								group = {
-									class ="monitor-autofailover monitor-0",
-								}
-							}
-						end
-						tinsert(html, ui_helper.createLabel(T"Enabled" .. ":", checkbox_map[page.content["interface_enabled"]], interface_enable_label_class))
-					end
-					if wan_down then
-						tinsert(html, ui_helper.createCheckboxSwitch(T"Enabled" .. ":", "interface_enabled", page.content["interface_enabled"], interface_enable_switch_class))
-					end
-					if page.content["autofailover"] ~= "" then
-						local autofailover_class = {
-							input = {
-								class = "monitor-changes",
-							}
-						}
-						tinsert(html, ui_helper.createCheckboxSwitch(T"Auto Failover" .. ":", "autofailover", page.content["autofailover"], autofailover_class))
-					end
-					tinsert(html, "</fieldset>")
-					ngx.print(html)
-					ngx.print("</form></div>")
-					ngx.print(ui_helper.createFooter())
-					ngx.exit(ngx.HTTP_OK)
-				end
+
+			if not page or not page.device then
+				ngx.print(ui_helper.createAlertBlock(utils.string_map["no_device"]))
+				ngx.print("</form></div>")
+				ngx.print(ui_helper.createFooter())
+				message_helper.popMessages()
+				ngx.exit(ngx.HTTP_OK)
 			end
 
 			local html = {}
@@ -700,45 +481,14 @@ local page = get_page(get_platform_data(), mobiled.devices[1])
 			}
 			tinsert(html, "<fieldset><legend>" .. T"Device Status And Settings" .. "</legend>")
 			tinsert(html, ui_helper.createMessages(message_helper.popMessages()))
-			local interface_enable_switch_class, interface_enable_label_class
-			if page.content["autofailover"] ~= "" then
-				if wan_down then
-					interface_enable_label_class = {
-						group = {
-							class ="monitor-autofailover monitor-1",
-						}
-					}
-					interface_enable_switch_class = {
-						group = {
-							class ="monitor-autofailover monitor-0",
-						}
-					}
-				end
-				tinsert(html, ui_helper.createLabel(T"Enabled", checkbox_map[page.content["interface_enabled"]], interface_enable_label_class))
-			end
-			if wan_down then
-				tinsert(html, ui_helper.createCheckboxSwitch(T"Enabled", "interface_enabled", page.content["interface_enabled"], interface_enable_switch_class))
-			end
+			tinsert(html, ui_helper.createCheckboxSwitch(T"Enabled", "interface_enabled", page.content["interface_enabled"]))
 			if utils.mobiled_state_map[page.device.status.display_status] ~= "" then
 				tinsert(html, ui_helper.createLabel(T"Device Status" .. ":", utils.mobiled_state_map[page.device.status.display_status]))
 			end
 			if utils.radio_tech_map[page.device.leds.radio] ~= "" then
 				tinsert(html, ui_helper.createLabel(T"Access Technology" .. ":", utils.radio_tech_map[page.device.leds.radio]))
 			end
-
-			if string.match(page.device.capabilities.arfcn_selection_support, "lte") then
-				tinsert(html, ui_helper.createInputText(T"EARFCN" .. ":", "earfcn", page.content["earfcn"], advanced))
-			end
-
 			get_antenna_selection_section(page, html)
-			if page.content["autofailover"] ~= "" then
-				local autofailover_class = {
-					input = {
-						class = "monitor-changes",
-					}
-				}
-				tinsert(html, ui_helper.createCheckboxSwitch(T"Auto Failover", "autofailover", page.content["autofailover"], autofailover_class))
-			end
 			tinsert(html, "</fieldset>")
 			ngx.print(html)
 		  ngx.print('\

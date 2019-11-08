@@ -5,5 +5,5 @@ Source: package/kernel/linux
 License: GPLv2
 Section: kernel
 Architecture: brcm63xx-tch
-Installed-Size: 38958
+Installed-Size: 38907
 Description:  Broadcom Wireless EMF driver

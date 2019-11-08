@@ -23,12 +23,19 @@ config label 'DNS'
 config label 'Management'
 	option trafficid '6'
 
+config label 'Geolocation'
+	option trafficid '6'
+
 config label 'DHCP'
 	option trafficid '7'
 
 config label 'BFD'
 	option trafficid '7'
 
+config label 'VoWiFi'
+	option trafficid '8'
+	option dscp '36'
+	
 config label 'Voice'
 	option trafficid '8'
 
@@ -172,6 +179,7 @@ config device 'wl1'
 #IMPORTANT NOTE: Make sure that the order in which the rules are defined is from Lowest Priority to Highest Priority!
 
 config reclassify
+	option order '0'
 	option target 'dscp_Zero'
 	list srcif 'lan'
 	list srcif 'Guest1'
@@ -181,6 +189,7 @@ config reclassify
 	list dstif 'wan6'
 
 config reclassify
+	option order '0'
 	option target 'dscp_Zero'
 	list dscp '!EF'
 	list dstif 'wan'
@@ -265,6 +274,206 @@ config classify
 	list srcif 'loopback'
 	option proto 'tcp'
 
+config reclassify
+	option order '1'
+	option target 'VoWiFi'
+	option dsthost '203.38.195.108'
+	
+config reclassify
+	option order '1'
+	option target 'VoWiFi'
+	option dsthost '203.38.195.25'
+	
+config reclassify
+	option order '1'
+	option target 'VoWiFi'
+	option dsthost '144.135.83.104'
+
+config reclassify
+	option order '1'
+	option target 'VoWiFi'
+	option dsthost '144.135.83.125'
+
+config reclassify
+	option order '1'
+	option target 'VoWiFi'
+	option dsthost '149.135.136.135'
+
+config reclassify
+	option order '1'
+	option target 'VoWiFi'
+	option dsthost '149.135.138.120'
+
+config reclassify
+	option order '1'
+	option target 'VoWiFi'
+	option dsthost '149.135.140.7'
+
+config reclassify
+	option order '1'
+	option target 'VoWiFi'
+	option dsthost '144.135.83.235'
+	
+config reclassify
+	option order '1'
+	option target 'VoWiFi'
+	option dsthost '144.135.83.107'
+
+config reclassify
+	option order '1'
+	option target 'VoWiFi'
+	option dsthost '149.135.136.48'
+	
+config reclassify
+	option order '1'
+	option target 'VoWiFi'
+	option dsthost '2001:8004:FF00:09C9:7:E1C0::1'
+
+config reclassify
+	option order '1'
+	option target 'VoWiFi'
+	option dsthost '2001:8004:FF00:09C9:7:E1C0::2'
+	
+config reclassify
+	option order '1'
+	option target 'VoWiFi'
+	option dsthost '2001:8004:0:AE04:7:E1C0::1'
+
+config reclassify
+	option order '1'
+	option target 'VoWiFi'
+	option dsthost '2001:8004:0:AE04:7:E1C0::2'
+
+config reclassify
+	option order '1'
+	option target 'VoWiFi'
+	option dsthost '2001:8004:0:AE04:7:E1C0::3'
+
+config reclassify
+	option order '1'
+	option target 'VoWiFi'
+	option dsthost '2001:8004:0:E04:7:E1C0::1'
+
+config reclassify
+	option order '1'
+	option target 'VoWiFi'
+	option dsthost '2001:8004:0:E04:7:E1C0::2'
+
+config reclassify
+	option order '1'
+	option target 'VoWiFi'
+	option dsthost '2001:8004:0:6E04:7:E1C0::1'
+
+config reclassify
+	option order '1'
+	option target 'VoWiFi'
+	option dsthost '2001:8004:0:8E04:7:E1C0::1'
+
+config reclassify
+	option order '1'
+	option target 'VoWiFi'
+	option dsthost '2001:8004:0:EE04:7:E1C0::1'
+
+config reclassify
+	option order '1'
+	option target 'VoWiFi'
+	option srchost '203.38.195.108'
+	
+config reclassify
+	option order '1'
+	option target 'VoWiFi'
+	option srchost '203.38.195.25'
+	
+config reclassify
+	option order '1'
+	option target 'VoWiFi'
+	option srchost '144.135.83.104'
+
+config reclassify
+	option order '1'
+	option target 'VoWiFi'
+	option srchost '144.135.83.125'
+
+config reclassify
+	option order '1'
+	option target 'VoWiFi'
+	option srchost '149.135.136.135'
+
+config reclassify
+	option order '1'
+	option target 'VoWiFi'
+	option srchost '149.135.138.120'
+
+config reclassify
+	option order '1'
+	option target 'VoWiFi'
+	option srchost '149.135.140.7'
+
+config reclassify
+	option order '1'
+	option target 'VoWiFi'
+	option srchost '144.135.83.235'
+	
+config reclassify
+	option order '1'
+	option target 'VoWiFi'
+	option srchost '144.135.83.107'
+
+config reclassify
+	option order '1'
+	option target 'VoWiFi'
+	option srchost '149.135.136.48'
+	
+config reclassify
+	option order '1'
+	option target 'VoWiFi'
+	option srchost '2001:8004:FF00:09C9:7:E1C0::1'
+
+config reclassify
+	option order '1'
+	option target 'VoWiFi'
+	option srchost '2001:8004:FF00:09C9:7:E1C0::2'
+	
+config reclassify
+	option order '1'
+	option target 'VoWiFi'
+	option srchost '2001:8004:0:AE04:7:E1C0::1'
+
+config reclassify
+	option order '1'
+	option target 'VoWiFi'
+	option srchost '2001:8004:0:AE04:7:E1C0::2'
+
+config reclassify
+	option order '1'
+	option target 'VoWiFi'
+	option srchost '2001:8004:0:AE04:7:E1C0::3'
+
+config reclassify
+	option order '1'
+	option target 'VoWiFi'
+	option srchost '2001:8004:0:E04:7:E1C0::1'
+
+config reclassify
+	option order '1'
+	option target 'VoWiFi'
+	option srchost '2001:8004:0:E04:7:E1C0::2'
+
+config reclassify
+	option order '1'
+	option target 'VoWiFi'
+	option srchost '2001:8004:0:6E04:7:E1C0::1'
+
+config reclassify
+	option order '1'
+	option target 'VoWiFi'
+	option srchost '2001:8004:0:8E04:7:E1C0::1'
+
+config reclassify
+	option order '1'
+	option target 'VoWiFi'
+	option srchost '2001:8004:0:EE04:7:E1C0::1'
+
 config classify
 	option target 'Voice'
 	list srcif 'loopback'
@@ -274,10 +483,18 @@ config classify
 	option target 'BFD'
 	option dstports '3785'
 	option proto 'udp'
-	
+
+config host
+       option target 'BFD'
+       option path '/usr/sbin/bfdecho'
+	   
 config host
 	option target 'DNSGW'
 	option path '/usr/bin/dnsget'
+
+config host
+	option target 'Geolocation'
+	option path '/usr/bin/geolocation'
 
 config classify
 	option target 'DHCP'

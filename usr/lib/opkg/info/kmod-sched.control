@@ -5,5 +5,5 @@ Source: package/kernel/linux
 License: GPLv2
 Section: kernel
 Architecture: brcm63xx-tch
-Installed-Size: 24583
+Installed-Size: 24615
 Description:  Extra kernel schedulers modules for IP traffic

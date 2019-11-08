@@ -6,5 +6,5 @@ License: GPL-2.0
 Section: net
 Maintainer: Christian Schoenebeck <christian.schoenebeck@gmail.com>
 Architecture: all
-Installed-Size: 2432
+Installed-Size: 2431
 Description:  Dynamic DNS Client scripts extension for No-IP.com

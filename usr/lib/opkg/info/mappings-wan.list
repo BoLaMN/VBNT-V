@@ -20,8 +20,8 @@
 /usr/share/transformer/mappings/device2/Bridging.Bridge.Port.Stats.map
 /usr/share/transformer/mappings/device2/Services.X_TESSARES_MPTCP.PM.Overflow.Dynamic.map
 /usr/share/transformer/commitapply/uci_firewall.ca
-/usr/share/transformer/mappings/igd/WANDevice.WANConnectionDevice.map
 /usr/share/transformer/mappings/igd/WANDevice.WANConnectionDevice.X_0876FF_WANIPv6Connection.map
+/usr/share/transformer/mappings/igd/WANDevice.WANConnectionDevice.map
 /usr/share/transformer/mappings/device2/Routing.Router.IPv6Forwarding.map
 /usr/share/transformer/mappings/uci/ipset.map
 /usr/share/transformer/mappings/device2/DNS.map
@@ -34,8 +34,8 @@
 /usr/lib/lua/transformer/shared/ddns.lua
 /usr/bin/dsldiaginvoker
 /usr/lib/lua/transformer/shared/firewall_helper.lua
-/usr/share/transformer/mappings/rpc/network.firewall.userrule.map
 /usr/share/transformer/mappings/device2/DHCPv4.Client.map
+/usr/share/transformer/mappings/rpc/network.firewall.userrule.map
 /usr/share/transformer/mappings/bbf/WANDevice.WANDSLInterfaceConfig.Stats.map
 /usr/share/transformer/mappings/uci/wansensing.map
 /usr/share/transformer/mappings/device2/GRE.Tunnel.Interface.map
@@ -48,10 +48,10 @@
 /usr/lib/lua/transformer/shared/wanconnection.lua
 /usr/share/transformer/commitapply/dev2_DHCPv4_Client.ca
 /usr/share/transformer/mappings/device2/Firewall.Level.map
-/usr/share/transformer/mappings/rpc/xdsl.map
 /usr/share/transformer/mappings/device2/Services.X_HotspotService.GUI.map
-/usr/share/transformer/mappings/rpc/wansensing.map
+/usr/share/transformer/mappings/rpc/xdsl.map
 /usr/share/transformer/mappings/device2/Bridging.Bridge.VLAN.map
+/usr/share/transformer/mappings/rpc/wansensing.map
 /usr/share/transformer/mappings/rpc/network.firewall.pinholerule.map
 /usr/share/transformer/mappings/uci/wanatmf5loopback.map
 /usr/share/transformer/mappings/device2/ATM.Diagnostics.F5Loopback.map
@@ -104,8 +104,8 @@
 /usr/share/transformer/commitapply/igd_WANDSLInterfaceConfigStandard.ca
 /usr/share/transformer/commitapply/dev2_power.ca
 /usr/share/transformer/mappings/device2/DSL.Line.map
-/usr/share/transformer/mappings/rpc/network.nat.map
 /usr/share/transformer/mappings/device2/GRE.map
+/usr/share/transformer/mappings/rpc/network.nat.map
 /usr/share/transformer/mappings/device2/PPP.Interface.PPPoE.map
 /usr/share/transformer/commitapply/igd_WANIPConnection.ca
 /usr/share/transformer/mappings/device2/PTM.map
@@ -144,8 +144,8 @@
 /usr/share/transformer/mappings/device2/DHCPv4.map
 /usr/share/transformer/mappings/igd/WANDevice.WANConnectionDevice.WANPPPConnection.map
 /usr/share/transformer/commitapply/dev2_PPP_Interface.ca
-/usr/share/transformer/mappings/device2/IPv6rd.InterfaceSetting.map
 /usr/share/transformer/mappings/device2/Services.X_TESSARES_MPTCP.Stats.Server.map
+/usr/share/transformer/mappings/device2/IPv6rd.InterfaceSetting.map
 /usr/share/transformer/mappings/device2/Services.X_WANBackup.GUI.map
 /usr/share/transformer/mappings/device2/Ethernet.VLANTermination.Stats.map
 /usr/share/transformer/mappings/device2/PTM.Link.Stats.map
@@ -174,8 +174,8 @@
 /usr/share/transformer/mappings/bbf/Firewall.map
 /usr/share/transformer/mappings/igd/X_0876FF_Firewall.map
 /usr/share/transformer/mappings/device2/ATM.Link.QoS.map
-/usr/share/transformer/mappings/device2/DSL.Stats.map
 /usr/share/transformer/mappings/device2/FAST.TestParams.map
+/usr/share/transformer/mappings/device2/DSL.Stats.map
 /usr/share/transformer/mappings/device2/Services.X_TESSARES_MPTCP.Scheduler.map
 /usr/share/transformer/mappings/uci/mproxy.map
 /usr/lib/lua/transformer/shared/devicehelper.lua

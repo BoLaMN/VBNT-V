@@ -150,7 +150,7 @@ check_failure_command=`echo ${check_success_command} | sed 's/success/failure/g'
 # Loop, waiting for components to report success or failure.
 # Wait on components which report inprogress.
 # If nothing changes for more than $timeout seconds, assume it's wedged and abort.
-timeout=900 # seconds
+timeout=1200 # seconds
 while [ 1 ] ; do
 	component_count=0 # Used to count how many components we are checking and upgrading
 	sum_of_pcts=0 # Used to compute the completion percentage to display
@@ -254,7 +254,10 @@ done
 #   another $max_boot_attempts-1 times (for a total of $max_boot_attempts) before giving up and reverting.
 if [ "${status}" = "failure" ] ; then
 	echo firmware-upgrade-ext: One or more components could not be flashed. > /dev/console
-	max_boot_attempts=3
+	max_boot_attempts=$(uci -q get system.fwupgrade.maxbootattempts)
+	if [ -z "${max_boot_attempts}" ] ; then
+		max_boot_attempts=3
+	fi
 	# Retrieve and increment the number of failed boot attempts so far.
 	boot_failure_count=$(uci -q get system.fwupgrade.bootfailurecount)
 	# If it's not set, assume this is the first.
@@ -265,22 +268,30 @@ if [ "${status}" = "failure" ] ; then
 	fi
 	# Save it back to non-volatile memory.
 	uci set system.fwupgrade.bootfailurecount="${boot_failure_count}"
+	# Remember that this bank failed to upgrade.
+	uci set system.fwupgrade.failedtoupgrade="1"
 	uci commit system
-	if [ "$(cat /proc/banktable/passiveversion)" == "Unknown" ] ; then
-		logger -s -t "firmware-upgrade-ext" "Nothing in the other bank.  Trying to boot this bank again (${boot_failure_count})." > /dev/console 2>&1
-		# Try to boot this bank again
-		reboot
-	elif [ ${boot_failure_count} -lt ${max_boot_attempts} ] ; then
+	if [ ${boot_failure_count} -lt ${max_boot_attempts} ] ; then
 		logger -s -t "firmware-upgrade-ext" "Attempt ${boot_failure_count} of ${max_boot_attempts} to boot this bank failed.  Trying again." > /dev/console 2>&1
 		# Try to boot this bank again
 		reboot
-	else
+	elif [ "$(cat /proc/banktable/passiveversion)" == "Unknown" ] ; then
+		if [ "$(uci -q get system.fwupgrade.keeprebootingonlybank)" != 0 ] ; then
+			logger -s -t "firmware-upgrade-ext" "Nothing in the other bank.  Trying to boot this bank again." > /dev/console 2>&1
+			# Try to boot this bank again
+			reboot
+		else
+			logger -s -t "firmware-upgrade-ext" "Nothing in the other bank.  Giving up." > /dev/console 2>&1
+		fi
+	elif [ "$(uci -q get system.fwupgrade.switchbacktofailedbank)" != 0 ] || [ "$(uci -c /overlay/${other_bank}/etc/config -q get system.fwupgrade.failedtoupgrade)" != 1 ] ; then
 		logger -s -t "firmware-upgrade-ext" "Giving up trying to boot this bank after ${max_boot_attempts} attempts.  Reverting to the other bank." > /dev/console 2>&1
 		# Reset the boot failure count
 		uci set system.fwupgrade.bootfailurecount="0"
 		uci commit system
 		# Boot the other bank
 		switchover
+	else
+		logger -s -t "firmware-upgrade-ext" "Giving up trying to boot this bank after ${max_boot_attempts} attempts.  Not reverting to other bank because it already failed to upgrade." > /dev/console 2>&1
 	fi
 else
 	# Send a success message to syslog and the console

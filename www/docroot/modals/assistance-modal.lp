@@ -12,6 +12,7 @@ local _, _, secname = string.find(path, "web%.assistance%.@([^%.]*)%.")
 local assistant = assistance.getAssistant(secname)
 local timeout = proxy.get(path .. "timeout")[1].value
 local interface = proxy.get(path .. "interface")[1].value
+local interface6 = proxy.get(path .. "interface6")[1].value
 local gVChkbox = post_helper.getValidateCheckboxSwitch()
 local bridged = require("bridgedmode_helper")
 local format = string.format
@@ -167,13 +168,23 @@ ngx.print(ui_helper.createMessages(message_helper.popMessages()))
 
   html[#html + 1] = ui_helper.createCheckboxSwitch(T"Enabled", "ra_enabled", content["ra_enabled"], ra_enable_class)
   if assistant:enabled() then
-     local wanip = proxy.get("rpc.network.interface.@" .. interface .. ".ipaddr")[1].value
-     local url =""
-     if wanip ~= "" then
-         url=string.format("https://%s:%s/", wanip, assistant:port())
+     local data = proxy.get("rpc.network.interface.@" .. interface .. ".ipaddr")
+     local wanipv4 = data and data[1] and data[1].value or ""
+     local wanipv6 = ""
+     if interface6 ~= "" then
+        data = proxy.get("rpc.network.interface.@" .. interface6 .. ".ip6addr")
+        wanipv6 = data and data[1] and data[1].value and string.match(data[1].value, "^%S+") or ""
+     end
+     local url = ""
+     local urls = {}
+     local port = assistant:port()
+     if port ~= nil and port ~= "" then
+        urls[#urls + 1] = wanipv4 ~= "" and string.format("https://%s:%s/", wanipv4, port) or nil
+        urls[#urls + 1] = wanipv6 ~= "" and string.format("https://[%s]:%s/", wanipv6, port) or nil
+        url = table.concat(urls, "<br>")
      end
      html[#html + 1] = ui_helper.createLabel(T"Mode", mode_map2[content["mode"]])
-     html[#html + 1] = ui_helper.createLabel(T"URL", url)
+     html[#html + 1] = ui_helper.createLabel(T"URL", url, {span = { class = "span6" }})
   else
      html[#html + 1] = ui_helper.createInputRadio(T"Mode", "mode", mode_map, content["mode"],ra_cfg_class)
      html[#html + 1] = ui_helper.createLabel(T"Mode", mode_map2[content["mode"]],ra_class)

@@ -117,7 +117,7 @@ Multi_X_000E50_WANSensing_.set = {
     uci_helper.set_on_uci(binding, value, commitapply)
     transactions[binding.config] = true
 
-    binding_mobiled.sectionname = "device_defaults"
+    binding_mobiled.sectionname = "device_customer_defaults"
     binding_mobiled.option = "maximum_attach_delay"
     local dev = uci_helper.getall_from_uci(binding_mobiled)
     if not dev['.name'] then

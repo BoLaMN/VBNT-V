@@ -5,5 +5,5 @@ Source: package/kernel/linux
 License: GPLv2
 Section: kernel
 Architecture: brcm63xx-tch
-Installed-Size: 23376
+Installed-Size: 23162
 Description:  Kernel support for USB Mass Storage devices

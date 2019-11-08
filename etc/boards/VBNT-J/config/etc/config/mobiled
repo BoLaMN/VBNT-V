@@ -35,7 +35,7 @@ config detector
     list allowed_ports '1-2'
 
 config mobiled 'globals'
-    option tracelevel '5'
+    option tracelevel '4'
     option max_devices '1'
     option pdn_retry_timer '720'
     option initmode 'PlatformConfigure'

@@ -16,12 +16,9 @@ local items = {
 	{"lte-modal.lp", T"Configuration"},
 	{"lte-sim.lp", T"SIM"},
 	{"lte-doctor.lp", T"Diagnostics"},
-	{"lte-profiles.lp", T"Profiles"}
+	{"lte-profiles.lp", T"Profiles"},
+	{"lte-sms.lp", T"SMS"}
 }
-
-if device_capabilities.sms_reading == "true" then
-	table.insert(items, {"lte-sms.lp", T"SMS"})
-end
 
 local uri = ngx.var.uri
 if ngx.var.args and string.len(ngx.var.args) > 0 then

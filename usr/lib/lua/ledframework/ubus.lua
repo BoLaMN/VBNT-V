@@ -356,77 +356,46 @@ function M.start(cb)
     end
 
     events['mmpbx.profile.status'] = function(msg)
-        if msg~=nil then
-           if msg.enabled=="1" then
-              if (msg.name == "sip_profile_1") and (msg.sip.newest.registered == "Unregistered") then
-                 cb('profile_line1_unusable_true')
-              end
-              if (msg.name == "sip_profile_2") and (msg.sip.newest.registered == "Unregistered") then
-                 cb('profile_line2_unusable_true')
-              end
-              if (msg.name == "sip_profile_1") and (msg.sip.newest.registered == "Registered") then
-                 cb('profile_line1_unusable_false')
-              end
-              if (msg.name == "sip_profile_2") and (msg.sip.newest.registered == "Registered") then
-                 cb('profile_line2_unusable_false')
-              end
-              if (msg.sip.newest.registered == "Unregistered") then
-                 cb('profile_register_unregistered')
-              elseif (msg.sip.newest.registered == "Registered") then
-                 cb('profile_register_registered')
-              elseif (msg.sip.newest.registered == "Registering") then
-                 cb('profile_register_registering')
-              end
-           end
+        if msg ~= nil and msg.enabled == "1" then
+            if (msg.sip.newest.registered == "Unregistered") then
+               cb('profile_register_unregistered')
+            elseif (msg.sip.newest.registered == "Registered") then
+               cb('profile_register_registered')
+            elseif (msg.sip.newest.registered == "Registering") then
+               cb('profile_register_registering')
+            end
         end
     end
+
     events['mmpbx.voiceled.status'] = function(msg)
         if msg ~= nil then
-            if msg.fxs_dev_0 == "true" then
-                cb('profile_line1_usable_true')
-            else
-                cb('profile_line1_usable_false')
-            end
-            if msg.fxs_dev_1 == "true" then
-                cb('profile_line2_usable_true')
-            else
-                cb('profile_line2_usable_false')
-            end
-
-            if (msg.fxs_dev_0 ~= "" and msg.fxs_dev_1 ~= "") then
-               if (msg.fxs_dev_0 == "true" and msg.fxs_dev_1 == "true") then
-                   cb('fxs_profiles_usable_true')
-               else
-                   cb('fxs_profiles_usable_false')
-               end
-            elseif (msg.fxs_dev_0 == "" and msg.fxs_dev_1 ~= "") then
-                if (msg.fxs_dev_1 == "true") then
-                    cb('fxs_profiles_usable_true')
-                else
-                    cb('fxs_profiles_usable_false')
-                end
-            elseif (msg.fxs_dev_1 == "" and msg.fxs_dev_0 ~= "") then
-                if (msg.fxs_dev_0 == "true") then
-                    cb('fxs_profiles_usable_true')
-                else
-                    cb('fxs_profiles_usable_false')
-                end
-            end
-
-            cursor:load("mmpbxmobilenet")
-            cursor:foreach("mmpbxmobilenet", "profile", function(s)
+            local sip_profile_usable = false
+            local mmpbx_profiles = conn:call("mmpbx.profile", "get", {})
+            cursor:load("mmpbxrvsipnet")
+            cursor:foreach("mmpbxrvsipnet", "profile", function(s)
                 if s['enabled'] == "1" then
-                    if (msg.fxs_dev_0 == "OK-ON" or msg.fxs_dev_1 == "OK-ON") then
-                        cb('profile_register_registered')
-                    elseif (msg.fxs_dev_0 == "OK-EMERGENCY" or msg.fxs_dev_1 == "OK-EMERGENCY") then
-                        cb('profile_register_emergency')
-                    elseif (msg.fxs_dev_0 == "IDLE" or msg.fxs_dev_1 == "IDLE") then
-                        cb('profile_register_registering')
-                    else
-                        cb('profile_register_unregistered')
+                    sip_profile_usable = (mmpbx_profiles and mmpbx_profiles[s['.name']] and mmpbx_profiles[s['.name']].usable == "true") or false
+                    if sip_profile_usable then
+                        return false -- break
                     end
                 end
             end)
+            if sip_profile_usable == false then
+                cursor:load("mmpbxmobilenet")
+                cursor:foreach("mmpbxmobilenet", "profile", function(s)
+                    if s['enabled'] == "1" then
+                        if (msg.fxs_dev_0 == "OK-ON" or msg.fxs_dev_1 == "OK-ON") then
+                            cb('profile_register_registered')
+                        elseif (msg.fxs_dev_0 == "OK-EMERGENCY" or msg.fxs_dev_1 == "OK-EMERGENCY") then
+                            cb('profile_register_emergency')
+                        elseif (msg.fxs_dev_0 == "IDLE" or msg.fxs_dev_1 == "IDLE") then
+                            cb('profile_register_registering')
+                        else
+                            cb('profile_register_unregistered')
+                        end
+                    end
+                end)
+            end
         end
     end
 

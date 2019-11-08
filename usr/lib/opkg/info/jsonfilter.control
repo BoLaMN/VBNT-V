@@ -6,5 +6,5 @@ License: ISC
 Section: base
 Maintainer: Jo-Philipp Wich <jow@openwrt.org>
 Architecture: brcm63xx-tch
-Installed-Size: 7856
+Installed-Size: 7857
 Description:  OpenWrt JSON filter utility

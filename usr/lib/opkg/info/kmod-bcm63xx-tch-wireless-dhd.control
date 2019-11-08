@@ -5,5 +5,5 @@ Source: package/kernel/linux
 License: GPLv2
 Section: kernel
 Architecture: brcm63xx-tch
-Installed-Size: 2323207
+Installed-Size: 2323368
 Description:  Broadcom Wireless driver (offloaded)

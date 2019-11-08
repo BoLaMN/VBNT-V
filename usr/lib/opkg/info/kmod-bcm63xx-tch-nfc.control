@@ -5,5 +5,5 @@ Source: package/kernel/linux
 License: GPLv2
 Section: kernel
 Architecture: brcm63xx-tch
-Installed-Size: 4691
+Installed-Size: 4684
 Description:  Broadcom NFC i2c driver

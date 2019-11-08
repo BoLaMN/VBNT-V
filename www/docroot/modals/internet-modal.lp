@@ -11,6 +11,7 @@ local ui_helper = require("web.ui_helper")
 local message_helper = require("web.uimessage_helper")
 local post_helper = require("web.post_helper")
 local gVIES = post_helper.getValidateInEnumSelect
+local currentuserrole = ngx.ctx.session:getrole()
 
 function processOperations(operations)
     if type(operations) ~= "table" then
@@ -144,7 +145,11 @@ ngx.print(ui_helper.createMessages(message_helper.popMessages()))
         html[#html+1] = ui_helper.createButton("WAN Connection", "Connect", "icon-cog", connect_button)
     end
     if mode_active == "dhcp" then
+      if currentuserrole == "guest" then
+        html[#html+1] = ui_helper.createInputSelect(T"WAN Supervision", "supervision_mode", supervision_modes, content["supervision_mode"])
+	  else
         html[#html+1] = ui_helper.createLabel(T"WAN Supervision", content["supervision_mode"], basic)
+	  end
     end
 
     ngx.print(html)

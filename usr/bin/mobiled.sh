@@ -1,8 +1,11 @@
 #!/bin/sh
 
-TRACELEVEL=$(uci -q get mobiled.globals.tracelevel)
-if [ -n "$TRACELEVEL" -a $TRACELEVEL -gt 5 ]; then
-	exec "/usr/bin/mobiled" > /var/log/mobiled.log 2>&1
-else
-	exec "/usr/bin/mobiled" 2> /var/log/mobiled.log
+if [ -s /var/log/mobiled.log ]; then
+	logger -t mobiled "Mobiled crashlog:"
+	while IFS= read -r line; do
+		logger -t mobiled "$line"
+	done < /var/log/mobiled.log
+	rm /var/log/mobiled.log
 fi
+
+exec "/usr/bin/mobiled" 2> /var/log/mobiled.log

@@ -5,5 +5,5 @@ Source: package/kernel/linux
 License: GPLv2
 Section: kernel
 Architecture: brcm63xx-tch
-Installed-Size: 13530
+Installed-Size: 13488
 Description:  Kernel modules for I2C support

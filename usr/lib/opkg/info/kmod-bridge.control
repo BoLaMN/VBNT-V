@@ -5,5 +5,5 @@ Source: package/kernel/linux
 License: GPLv2
 Section: kernel
 Architecture: brcm63xx-tch
-Installed-Size: 185
+Installed-Size: 188
 Description:  Kernel module for Ethernet bridging.

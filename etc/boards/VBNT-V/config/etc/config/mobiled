@@ -5,7 +5,6 @@ config device_defaults 'device_defaults'
     option network_selection 'auto'
     option radio_pref 'lte'
     option detach_mode 'none'
-	option volte_enabled '0'
 
 config device_customer_defaults 'device_customer_defaults'
     option minimum_attach_delay '0'
@@ -19,12 +18,20 @@ config profile
     option id '1'
     option visible '1'
     option editable '0'
+    option name 'default'
+    option apn ''
+    option pdptype 'ipv6'
+
+config profile
+    option id '2'
+    option visible '1'
+    option editable '0'
     option name 'telstra.hybrid'
     option apn 'telstra.hybrid'
     option pdptype 'ipv4v6'
 
 config profile
-    option id '2'
+    option id '3'
     option visible '1'
     option editable '0'
     option name 'telstra.internet'
@@ -42,7 +49,7 @@ config mobiled 'globals'
     option initmode 'PlatformConfigure'
 
 config firmware_upgrade 'firmware_upgrade'
-    option max_start_attempts 5
+    option max_start_attempts '20'
     option default_error_message 'Unknown error'
     option timeout_message 'Upgrade timeout'
     option failed_to_start_message '1001 (user-defined) Non-responsive LTE module'

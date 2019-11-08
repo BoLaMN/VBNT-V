@@ -5,7 +5,7 @@ Source: package/network/utils/iptables
 License: GPL-2.0
 Section: net
 Architecture: brcm63xx-tch
-Installed-Size: 11370
+Installed-Size: 11462
 Description:  iptables extensions for matching/changing IP packet options.
  
  Matches:

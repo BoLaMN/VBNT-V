@@ -17,7 +17,7 @@ local dhcp_dnsmasq = {
         "tftp_root", "rebind_protection", "rebind_localhost"
     },
     lists = {
-        "addnhosts", "bogusnxdomain", "interface", "notinterface", "server","rebind_domain",
+        "addnhosts", "bogusnxdomain", "interface", "notinterface", "server","rebind_domain", "hostname"
     }
 }
 

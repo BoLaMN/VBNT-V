@@ -1,5 +1,4 @@
 local commitapply = commitapply
-
 -- uci.mobiled.profile
 local mobiled_profile_ = {
     objectType = {
@@ -50,7 +49,7 @@ local mobiled_profile_ = {
                 access = "readWrite",
                 type = "string",
                 enumeration = {
-                    "none",
+		    "none",
                     "pap",
                     "chap",
                     "papchap"
@@ -172,6 +171,7 @@ local function get(mapping, paramname, key)
         if type == "" then
             return "none"
         end
+        return tostring(type)
     else
         return getFromUCI(key, paramname)
     end

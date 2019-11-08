@@ -61,8 +61,7 @@ function M.check(runtime, event, dev_idx)
 	elseif event.event == "antenna_change_detected" then
 		return "SelectAntenna"
 	elseif event.event == "firmware_upgrade_start" then
-		device:firmware_upgrade(device.info.firmware_upgrade.path)
-		return "DataSessionSetup"
+		return "FirmwareUpgrade"
 	elseif event.event == "qualtest_start" then
 		return "QualTest"
 	elseif event.event == "sim_removed" then
@@ -115,7 +114,7 @@ function M.check(runtime, event, dev_idx)
 			if info then
 				log:info("Current state for session " .. session.session_id .. ": " .. info.session_state)
 				if session.session_id == 0 and session.changed then
-					log:info("Restart network registration")
+					log:notice("Restart network registration")
 					-- Bring down the PPP daemon
 					mobiled.propagate_session_state(device, "teardown", "ipv4v6", { session })
 					return "RegisterNetwork"
@@ -138,7 +137,7 @@ function M.check(runtime, event, dev_idx)
 						-- Check if we are allowed to try again
 						if not session.pdn_retry_timer.timer then
 							if not info.autoconnect and not session.autoconnect then
-								log:info("Starting data session %d", session.session_id)
+								log:notice("Starting data session %d", session.session_id)
 								mobiled.start_data_session(device, session.session_id, profile)
 							end
 							session.changed = false
@@ -149,13 +148,13 @@ function M.check(runtime, event, dev_idx)
 					elseif session.session_id == 0 then
 						local config = mobiled.get_device_config(device)
 						if config.device.detach_mode == "detach" or config.device.detach_mode == "poweroff" then
-							log:info("Need to detach from network")
+							log:notice("Need to detach from network")
 							return "RegisterNetwork"
 						end
 					end
 				elseif info.session_state == "connected" then
 					if not session.allowed or not session.activated or session.changed then
-						log:info("Deactivating session %d", session.session_id)
+						log:notice("Deactivating session %d", session.session_id)
 						mobiled.stop_data_session(device, session.session_id, session.interface)
 						if not session.optional then
 							retState = "DataSessionSetup"

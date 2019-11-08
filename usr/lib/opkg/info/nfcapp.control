@@ -5,5 +5,5 @@ Source: feeds/technicolor/nfcapp
 Section: nfcapp
 Maintainer: Technicolor <linuxgw@technicolor.com>
 Architecture: brcm63xx-tch
-Installed-Size: 320370
+Installed-Size: 320374
 Description:  nfcapp

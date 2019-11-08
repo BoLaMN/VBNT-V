@@ -221,10 +221,10 @@ end
 
 -- Only include outputpower if changing the power is allowed
 -- It won't be possible to touch this parameter unless this is allowed
-local output_change_allowed = proxy.get(pathradio .. "tx_power_overrule_reg")[1].value
-if output_change_allowed == "1" then
+-- local output_change_allowed = proxy.get(pathradio .. "tx_power_overrule_reg")[1].value
+-- if output_change_allowed == "1" then
     mapParams["outputpower"] = pathradio .. "tx_power_adjust"
-end
+-- end
 
 -- We're defining the listbox enums here to be able to use them to validate the input
 -- Listbox that shows the supported WiFi standards
@@ -842,9 +842,9 @@ ngx.print(html)
         html[#html + 1] = ui_helper.createCheckboxSwitch(T"Cyclic-Delay Diversity", "cdd", content["cdd"], advanced)
         html[#html + 1] = ui_helper.createCheckboxSwitch(T"Space Time Block Code", "stbc", content["stbc"], advanced)
 
-        if output_change_allowed == "1" then
+--      if output_change_allowed == "1" then
             html[#html + 1] = ui_helper.createSliderSelect(T"Output Power", "outputpower", wifipower, content["outputpower"], advanced)
-        end
+--      end
     end
     ngx.print(html)
   ngx.print('\

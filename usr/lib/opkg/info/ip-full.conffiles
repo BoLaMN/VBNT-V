@@ -1,5 +1,5 @@
 ./usr/sbin/ip
-./CONTROL/conffiles
-./CONTROL/control
 ./CONTROL/prerm
 ./CONTROL/postinst
+./CONTROL/conffiles
+./CONTROL/control

@@ -11,6 +11,7 @@ local assistance_map = {
     "sessionmgr",
     "user",
     "interface",
+    "interface6",
     "timeout",
     "port",
     "active",
@@ -106,7 +107,8 @@ local uiconfig_map = {
       "nsplogo",
       "dnsserver_query",
       "expert"
-    }
+    },
+    lists = { "upgradefw_role" },
 }
 uci.registerNamedMultiMap(uiconfig_map)
 

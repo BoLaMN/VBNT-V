@@ -1,109 +1,114 @@
-local tonumber, ngx, tinsert = tonumber, ngx, table.insert
-local io = { open = io.open }
-local math = { floor = math.floor }
-
 -- Enable localization
 gettext.textdomain('webui-mobiled')
 
-local uci = require("uci")
-local json = require("dkjson")
-local sqlite3 = require ("lsqlite3")
+local content_helper = require("web.content_helper")
 local utils = require("web.lte-utils")
-
-local function parsePeriod(value)
-	if not value then return nil end
-	local pattern = "^(%d+)([dhms])$"
-	local number, precision = value:match(pattern)
-	number = number and tonumber(number)
-	if not number or number < 1 then return nil end
-	if precision == "m" then
-		return number * 60
-	elseif precision == "h" then
-		return number * 3600
-	elseif precision == "d" then
-		return number * 3600 * 24
-	end
-	return number
-end
-
-local function get_uptime()
-	local f = io.open("/proc/uptime")
-	local line = f:read("*line")
-	f:close()
-	return math.floor(tonumber(line:match("[%d%.]+")))
-end
+local proxy = require("datamodel")
+local json = require("dkjson")
 
 local post_data = ngx.req.get_post_args()
-local period = parsePeriod(post_data.data_period)
-if not period then
-	utils.sendResponse({'{ error = "Invalid period" }'})
-end
 
-local x = uci.cursor()
-local path = x:get("lte-doctor", "logger", "path")
-if not path or path == "" then
-	path = "/tmp/lte-doctor.db"
-end
+local max_age = tonumber(post_data.max_age) or 5
+local dev_idx = tonumber(post_data.dev_idx) or 1
+local since_uptime = tonumber(post_data.since_uptime)
 
-local db = sqlite3.open(path)
-if not db then
-	utils.sendResponse({'{ error : "Failed to open database" }'})
-end
-
-db:busy_timeout(1000)
-
-local table_exists = false
-for line in db:nrows("SELECT name FROM sqlite_master WHERE type='table';") do
-	if line.name == "log" then
-		table_exists = true
+local function setfield(t, f, v)
+	for w, d in string.gmatch(f, "([%w_]+)(.?)") do
+		if d == "." then
+			t[w] = t[w] or {}
+			t = t[w]
+		else
+			t[w] = v
+		end
 	end
 end
 
-if not table_exists then
-	utils.sendResponse({'{ error : "Failed to open log table" }'})
+local function convert_to_object(data, basepath, output)
+	if not output then output = {} end
+	if data and basepath then
+		for _, entry in pairs(data) do
+			local additional_path = entry.path:gsub(basepath, '')
+			if additional_path and additional_path ~= '' then
+				setfield(output, additional_path .. entry.param, entry.value)
+			else
+				output[entry.param] = entry.value
+			end
+		end
+	end
+	return output
 end
 
-local answer = {
-	data = {}
-}
+if not post_data.data_period then
+	utils.sendResponse({'{ error : "Invalid data_period" }'})
+	return
+end
 
-local query
-local last_uptime = tonumber(post_data.last_uptime)
+local path = string.format("rpc.ltedoctor.signal_quality.@%s.", post_data.data_period)
+local uptime_info = {
+	period_seconds = path .. 'period_seconds',
+	current_uptime = path .. 'current_uptime'
+}
+content_helper.getExactContent(uptime_info)
+local period_seconds = tonumber(uptime_info.period_seconds)
+local current_uptime = tonumber(uptime_info.current_uptime)
+
+if since_uptime then
+	path = "rpc.ltedoctor.signal_quality.@diff."
+	proxy.set(path .. "since_uptime", tostring(since_uptime))
+	proxy.apply()
+end
 
 local starting_uptime = 0
-local current_uptime = get_uptime()
-if current_uptime > period then
-	starting_uptime = current_uptime - period
+if current_uptime > period_seconds then
+	starting_uptime = current_uptime - period_seconds
 end
 
--- Check if this is the first request. If so, return the entire data set
-if not last_uptime then
-	query = 'SELECT * FROM log WHERE uptime > ' .. starting_uptime .. ' ORDER BY uptime;'
-else
-	if last_uptime < starting_uptime then
-		last_uptime = starting_uptime
-	end
-	query = 'SELECT * FROM log WHERE uptime > ' .. last_uptime .. ' ORDER BY uptime;'
-	answer.starting_uptime = starting_uptime
+path = path .. 'entries.'
+local history = content_helper.convertResultToObject(path, proxy.get(path))
+
+local current_data = {}
+
+local base_path = string.format('rpc.mobiled.device.@%d.', dev_idx)
+
+proxy.set(base_path .. 'radio.signal_quality.max_age', tostring(max_age))
+path = base_path .. 'radio.signal_quality.'
+local signal_quality = proxy.get(path)
+convert_to_object(signal_quality, path, current_data)
+
+path = base_path .. 'radio.signal_quality.additional_carriers.'
+current_data.additional_carriers = content_helper.convertResultToObject(path, proxy.get(path))
+
+proxy.set(base_path .. 'network.serving_system.max_age', tostring(max_age))
+path = base_path .. 'network.serving_system.'
+local serving_system = proxy.get(path)
+convert_to_object(serving_system, path, current_data)
+
+path = base_path .. 'leds.bars'
+local leds = proxy.get(path)
+current_data['bars'] = leds[1].value
+
+local filter = {
+	"AdditionalCarriersNumberOfEntries",
+	"NeighbourCellsNumberOfEntries"
+}
+for _, f in pairs(filter) do
+	current_data[f] = nil
 end
 
-answer.uptime = current_uptime
-answer.period_seconds = period
-
-for line in db:nrows(query) do
-        if line.nas_state ~= 'registered' then
-            line.rsrq = ""
-            line.snr = ""
-            line.rsrp = ""
-            line.rscp = ""
-            line.rssi = ""
-        end
-	tinsert(answer.data, line)
-end
+local data = {
+	history = {
+		period_seconds = period_seconds,
+		current_uptime = current_uptime,
+		starting_uptime = starting_uptime,
+		data = history
+	},
+	current = current_data
+}
 
 local buffer = {}
-local success = json.encode (answer, { indent = false, buffer = buffer })
+local success = json.encode (data, { indent = false, buffer = buffer })
 if success and buffer then
 	utils.sendResponse(buffer)
 end
+
 utils.sendResponse({'{ error : "Failed to encode data" }'})

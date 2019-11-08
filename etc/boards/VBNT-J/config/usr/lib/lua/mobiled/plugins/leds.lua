@@ -11,7 +11,7 @@ local M = {}
 	0 bar RSRP ≤ -120
 	In UMTS mode:
 	Devices that support 5 bar signal strength indication should display the bars as follow:
-	5 bar RSCP > -78 
+	5 bar RSCP > -78
 	4 bar -78 >= RSCP > -87
 	3 bar -87 >= RSCP > -93
 	2 bar -93 >= RSCP > -102
@@ -45,7 +45,7 @@ function M.get_led_info(device)
 							response.bars = 3
 						elseif rsrp > -115 then
 							response.bars = 2
-						elseif rsrp > -120 then
+						else
 							response.bars = 1
 						end
 					end

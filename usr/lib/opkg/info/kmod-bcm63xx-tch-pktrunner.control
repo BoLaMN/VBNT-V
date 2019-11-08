@@ -5,5 +5,5 @@ Source: package/kernel/linux
 License: GPLv2
 Section: kernel
 Architecture: brcm63xx-tch
-Installed-Size: 31820
+Installed-Size: 31747
 Description:  Broadcom Packet Runner

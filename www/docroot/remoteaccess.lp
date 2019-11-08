@@ -118,7 +118,15 @@ if wan_intf == "" then
   wan_intf = "wan"
 end
 
-local wanip = proxy.get("rpc.network.interface.@" .. wan_intf .. ".ipaddr")[1].value
+local data = proxy.get("rpc.network.interface.@" .. wan_intf .. ".ipaddr")
+local wanipv4 = data and data[1] and data[1].value or ""
+
+local wanipv6 = ""
+local wan_intf6 = proxy.get(path .. "interface6")[1].value
+if wan_intf6 ~= "" then
+  data = proxy.get("rpc.network.interface.@" .. wan_intf6 .. ".ip6addr")
+  wanipv6 = data and data[1] and data[1].value and string.match(data[1].value, "^%S+") or ""
+end
   ngx.print('\
 \
 <div class="container">\
@@ -142,7 +150,7 @@ local infomessage = {
 }
 local html = {}
 local info=""
-if wanip == "" then
+if wanipv4 == "" and wanipv6 == "" then
   html[#html + 1] = ui_helper.createAlertBlock(T"Before being able to allow your technical support to connect to your Technicolor Gateway you must make sure WAN connection is up.", infomessage)
 else
   if assistant:enabled() then
@@ -167,11 +175,14 @@ else
       }
   }
   html[#html + 1] = ui_helper.createCheckboxSwitch(T"Enabled", "ra_enabled", content["ra_enabled"], ra_enable_class)
-  local port = assistant:port()
   if assistant:enabled() then
     local url = ""
+    local urls = {}
+    local port = assistant:port()
     if port ~= nil and port ~= "" then
-      url = "https://" .. wanip .. ":" .. port
+      urls[#urls + 1] = wanipv4 ~= "" and string.format("https://%s:%s/", wanipv4, port) or nil
+      urls[#urls + 1] = wanipv6 ~= "" and string.format("https://[%s]:%s/", wanipv6, port) or nil
+      url = table.concat(urls, "\n")
     end
     html[#html + 1] = ui_helper.createLabel(T"URL", url)
     html[#html+1] = ui_helper.createLabel(T"Mode", mode_map2[content["mode"]])

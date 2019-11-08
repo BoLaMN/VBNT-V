@@ -424,18 +424,6 @@ function Device:get_firmware_upgrade_info()
 	return self.__plugin.plugin.get_firmware_upgrade_info(self.__plugin_id)
 end
 
---! @brief Activate a PDN on a given device
---! @param session_config table containing session_id, profile_id, optional parameter and interface
---! @return session context on success. nil and an error message on failure
-
-function Device:activate_data_session(session_config)
-	local session, errMsg = self:add_data_session(session_config)
-	if session then
-		session.activated = true
-	end
-	return session, errMsg
-end
-
 local function update_not_nil(session, session_config, params)
 	for _, param in pairs(params) do
 		if session_config[param] ~= nil then
@@ -460,7 +448,7 @@ function Device:add_data_session(session_config)
 			autoconnect = session_config.autoconnect or false,
 			bridge = session_config.bridge,
 			name = session_config.name,
-			activated = false,
+			activated = session_config.activated or false,
 			allowed = true,
 			pdn_retry_timer = { default_value = session_config.pdn_retry_timer_value or runtime.config.get_config().pdn_retry_timer_value }
 		}
@@ -674,6 +662,18 @@ end
 function Device:get_voice_network_capabilities()
 	if self.__plugin.plugin.get_voice_network_capabilities then
 		return self.__plugin.plugin.get_voice_network_capabilities(self.__plugin_id)
+	end
+	return nil, "Not supported"
+end
+
+--! @brief Converts an existing call to a data (e.g. fax) call
+--! @param call_id The call to convert
+--! @param codec The desired codec (e.g., "PCMA", "PCMU", ...) or nil to use the codec that is specified in the configuration
+--! @return true on success. nil and an error message on failure
+
+function Device:convert_to_data_call(call_id, codec)
+	if self.__plugin.plugin.convert_to_data_call then
+		return self.__plugin.plugin.convert_to_data_call(self.__plugin_id, call_id, codec)
 	end
 	return nil, "Not supported"
 end

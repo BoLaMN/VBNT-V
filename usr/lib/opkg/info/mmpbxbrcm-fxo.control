@@ -5,5 +5,5 @@ Source: feeds/technicolor/mmpbxbrcmfxo
 Section: mmpbx
 Maintainer: Technicolor <linuxgw@technicolor.com>
 Architecture: brcm63xx-tch
-Installed-Size: 32643
+Installed-Size: 32644
 Description:  MM PBX Broadcom FXO network implementation

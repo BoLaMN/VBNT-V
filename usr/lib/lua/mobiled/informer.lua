@@ -3,7 +3,6 @@
 --! @brief The informer module which is responsible for polling devices and sending LED events
 ---------------------------------
 
-local pairs = pairs
 local runtime, timeout, leds
 
 local M = {}

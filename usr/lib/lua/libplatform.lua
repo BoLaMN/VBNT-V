@@ -337,6 +337,9 @@ boards["VBNT-Y"].capabilities.rf_controls[1].rf_state = function()
 end
 
 function M.init()
+	if board_name == "VCNT-A" then
+		board_name = "VBNT-Y"
+	end
 	local family_member = boards[board_name]
 	if not family_member then
 		return true

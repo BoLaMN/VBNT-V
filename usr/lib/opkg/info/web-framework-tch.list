@@ -23,6 +23,7 @@
 /usr/bin/sscertgen
 /usr/lib/lua/web/session.lua
 /usr/lib/lua/web/ui_helper.lua
+/usr/lib/lua/web/check_host.lua
 /usr/lib/lua/web/sessioncontrol.lua
 /usr/lib/lua/web/lp.lua
 /usr/lib/lua/web/intercept.lua

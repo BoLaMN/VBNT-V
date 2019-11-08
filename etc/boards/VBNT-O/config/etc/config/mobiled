@@ -49,7 +49,7 @@ config detector
     option type 'usb'
 
 config mobiled 'globals'
-    option tracelevel '5'
+    option tracelevel '4'
     option max_devices '1'
     option pdn_retry_timer '720'
     option initmode 'PlatformConfigure'

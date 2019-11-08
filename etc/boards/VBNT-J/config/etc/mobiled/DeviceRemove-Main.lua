@@ -1,6 +1,6 @@
 local M = {}
 
-function M.check(runtime, event, dev_idx)
+function M.check(runtime, _, dev_idx)
 	local mobiled = runtime.mobiled
 
 	local device, errMsg = mobiled.get_device(dev_idx)

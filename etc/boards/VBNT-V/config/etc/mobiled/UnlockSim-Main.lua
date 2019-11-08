@@ -45,8 +45,7 @@ function M.check(runtime, event, dev_idx)
 	elseif event.event == "device_config_changed" then
 		return "DeviceConfigure"
 	elseif event.event == "firmware_upgrade_start" then
-		device:firmware_upgrade(device.info.firmware_upgrade.path)
-		return "UnlockSim"
+		return "FirmwareUpgrade"
 	elseif event.event == "qualtest_start" then
 		return "QualTest"
 	end

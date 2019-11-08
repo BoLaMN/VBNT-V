@@ -56,7 +56,11 @@ function send_bfdecho_msg()
 
          local nexthop = ""
          for j=1, #data["route"] do
-             if data["route"][j].nexthop and data["route"][j].nexthop ~= "0.0.0.0" then
+             local source = string.match(data["route"][j].source, "(.*)\/%d+")
+             if not source then
+                 source = data["route"][j].source
+             end
+             if data["route"][j].nexthop and data["route"][j].nexthop ~= "0.0.0.0" and data["route"][j].nexthop ~= "::" and src_ip == source then
                  nexthop = data["route"][j].nexthop
                  break
              end

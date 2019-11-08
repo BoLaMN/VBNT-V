@@ -94,33 +94,42 @@ end
 
 function M.call_info(device, call_id)
 	call_id = tonumber(call_id)
-	local count = 1
-	local indexed_table = {}
+
+	local call_list = {}
+	local call_map = {}
 
 	local ret = device:send_multiline_command("AT+CLCC", "+CLCC:", 2000)
-	if ret then
-		for _, call in pairs(ret) do
-			local id, direction, _, mode, _, remote_party, number_type = match(call, '%+CLCC:%s*(%d+),(%d+),(%d+),(%d+),(%d+),"(.-)",(%d+)')
-			id = tonumber(id)
-			if id then
-				if M.clcc_mode[mode] == "voice" then
-					if not device.calls[id] then
-						device.calls[id] = {}
-					end
-					device.calls[id].remote_party = remote_party
-					device.calls[id].direction = M.clcc_direction[direction]
-					device.calls[id].number_format = M.clcc_number_type[number_type]
-					table.insert(indexed_table,count,device.calls[id])
-					count = count + 1
+	for _, call in pairs(ret or {}) do
+		local id, direction, _, mode, _, remote_party, number_type = match(call, '%+CLCC:%s*(%d+),(%d+),(%d+),(%d+),(%d+),"(.-)",(%d+)')
+		id = tonumber(id)
+		if id then
+			if M.clcc_mode[mode] == "voice" then
+				if not device.calls[id] then
+					device.calls[id] = {}
 				end
+				device.calls[id].remote_party = remote_party
+				device.calls[id].direction = M.clcc_direction[direction]
+				device.calls[id].number_format = M.clcc_number_type[number_type]
+
+				local info = {
+					mmpbx_call_id = device.calls[id].mmpbx_call_id,
+					remote_party = device.calls[id].remote_party,
+					direction = device.calls[id].direction,
+					number_format = device.calls[id].number_format,
+					call_state = device.calls[id].call_state,
+					media_state = device.calls[id].media_state,
+					release_reason = device.calls[id].release_reason
+				}
+				table.insert(call_list, info)
+				call_map[info.mmpbx_call_id] = info
 			end
 		end
 	end
 
 	if call_id then
-		return device.calls[call_id] or {}
+		return call_map[call_id] or {}
 	end
-	return indexed_table or {}
+	return call_list
 end
 
 function M.send_dtmf(device, tones, interval, duration)

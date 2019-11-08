@@ -448,6 +448,10 @@ local Multi_Services_VoiceService_i_PhyInterface_i_Tests_ = {
                 },
                 max = "64",
             },
+            X_000E50_RENValue = {
+               access = "readOnly",
+                type = "string",
+            },
         }
     }
 }
@@ -474,6 +478,12 @@ local function getTests(mapping, param, key)
             local val = test[param]
             if param == "TestState" then
                 return TestStateMap[val] or ""
+            elseif param == "X_000E50_RENValue" then
+                if test["REN"] ~= nil then
+                  return tostring(test["REN"]/1000)
+                else
+                  return "0"
+                end
             else
                 return PhoneConnectivityMap[val] or "0"
             end

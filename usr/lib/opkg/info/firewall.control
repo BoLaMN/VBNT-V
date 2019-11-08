@@ -6,5 +6,5 @@ License: ISC
 Section: net
 Maintainer: Jo-Philipp Wich <jo@mein.io>
 Architecture: brcm63xx-tch
-Installed-Size: 39481
+Installed-Size: 39574
 Description:  This package provides a config-compatible C implementation of the UCI firewall.

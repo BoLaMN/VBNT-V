@@ -34,7 +34,8 @@ local xdsl_data = {
 }
 
 local mobiled = {
-    num_devices = "rpc.mobiled.DeviceNumberOfEntries"
+    num_devices = "rpc.mobiled.DeviceNumberOfEntries",
+    sim_state = "rpc.mobiled.device.@1.sim.sim_state"
 }
 
 local cs = {
@@ -91,6 +92,11 @@ local matchAUTOTable = {
         name = "lte",
         module = "LTE",
         text = "LTE TEST",
+    },
+    ["simcard"] = {
+        name = "simcard",
+        module = "LTE1",
+        text = "LTE SIMCARD TEST",
     },
     ["dect"] = {
         name = "dect",
@@ -174,8 +180,7 @@ local matchMANULTable = {
 
 }
 
-local activeAUTOModule = {"ethLan","ethWan","dsl","usb1","wifi1","wifi2","lte","dect"}
---local activeAUTOModule = {"ethWan","dsl","usb1","usb2","wifi1","wifi2","dect"}
+local activeAUTOModule = {"ethLan","ethWan","dsl","usb1","wifi1","wifi2","lte","simcard", "dect"}
 local activeMANULModule = {"dt1","led","dectbtn","wifibtn","dt2"}
 
 --table.insert(activeAUTOModule,"ethLan")
@@ -351,29 +356,42 @@ if ngx.req.get_method() == "POST" then
         else
            ngx.print('{ "result":"fail","act":"lte" }')
         end
+    elseif action == "simcard" then
+        content_helper.getExactContent(mobiled)
+        local sim_state = mobiled["sim_state"] or ""
+        ngx.header.content_type = "application/json"
+        if sim_state == "ready" then
+            ngx.print('{ "result":"suc","act":"simcard" }')
+        else
+           ngx.print('{ "result":"fail","act":"simcard" }')
+        end
     elseif action == "dect" then
         content_helper.getExactContent(mmpbx_state)
 	local mState = 0
         local ret = 0
         local state = args["state"]
 	if mmpbx_state["state"] == "RUNNING" then
-        local host_path = "sys.dect.dev."
-        local host_path_value = content_helper.convertResultToObject(host_path,proxy.get(host_path))
-        
-        for _,v in ipairs(host_path_value) do
-            local locate = format("%s",v.LocationStatus)
-            if locate == "Located" then
-                mState = 1
-                    break
+            local host_path = "sys.dect.dev."
+            local host_path_value = content_helper.convertResultToObject(host_path,proxy.get(host_path))
+            
+            for _,v in ipairs(host_path_value) do
+                local locate = format("%s",v.LocationStatus)
+                if locate == "Located" then
+                    mState = 1
+                        break
+                end
             end
-        end
 	end
         if(state == nil or state == "testing") then
             if mState ==  1 then
                 ret = 1;
+            elseif mmpbx_state["state"] ~= "RUNNING" then
+                ret = -2;
             else
                 ret = -1;
             end
+        elseif state == "preparing" then
+            ret = -2;
         elseif state == "final" then
             if mState == 1 then
                 ret = 1;
@@ -386,6 +404,8 @@ if ngx.req.get_method() == "POST" then
             ngx.print('{ "result":"suc","act":"dect" }')
 	elseif(ret == -1) then
             ngx.print('{ "result":"testing","act":"dect" }')
+	elseif(ret == -2) then
+            ngx.print('{ "result":"preparing","act":"dect" }')
         else
             ngx.print('{ "result":"fail","act":"dect" }')
         end
@@ -423,9 +443,20 @@ end
 if ngx.req.get_method() == "GET" then
     local mode_active = ""
 
-    proxy.set("uci.mmpbxbrcmfxsdev.device.@fxs_dev_0.relay_state" , "0")
-    proxy.set("uci.mmpbxbrcmfxsdev.device.@fxs_dev_1.relay_state" , "0")
-    proxy.set("uci.mmpbxbrcmfxonet.profile.@fxo_profile.enabled" , "1")
+    local relay_state0 = format("%s", proxy.get("uci.mmpbxbrcmfxsdev.device.@fxs_dev_0.relay_state")[1].value)
+    local relay_state1 = format("%s", proxy.get("uci.mmpbxbrcmfxsdev.device.@fxs_dev_1.relay_state")[1].value)
+    local fxo_enabled = format("%s", proxy.get("uci.mmpbxbrcmfxonet.profile.@fxo_profile.enabled")[1].value)
+
+    -- incase we don't need to restart mmpbxd as it takes too long time (~50s)
+    if (relay_state0 ~= nil and relay_state0 ~= "0") then
+        proxy.set("uci.mmpbxbrcmfxsdev.device.@fxs_dev_0.relay_state" , "0")
+    end
+    if (relay_state1 ~= nil and relay_state1 ~= "0") then
+        proxy.set("uci.mmpbxbrcmfxsdev.device.@fxs_dev_1.relay_state" , "0")
+    end
+    if (fxo_enabled ~= nil and fxo_enabled ~= "1") then
+        proxy.set("uci.mmpbxbrcmfxonet.profile.@fxo_profile.enabled" , "1")
+    end
 
     proxy.set("uci.wansensing.global.enable" ,"0")
     proxy.set("uci.network.interface.@wan.proto","dhcp")
@@ -821,7 +852,7 @@ function autoTestAllModule()
     {
         var st = "";
         count++;
-        if(count == 28)
+        if(count == 60)
         {
             count = 0;
             st = "final";
@@ -886,6 +917,11 @@ function postResult(data,status)
     }else if(data.result == "testing")
     {
         document.getElementById(data.act).innerHTML = "TESTING";
+        window.setTimeout(autoTestAllModule, 1500);
+        return;
+    }else
+    {
+        document.getElementById(data.act).innerHTML = "";
         window.setTimeout(autoTestAllModule, 1500);
         return;
     }

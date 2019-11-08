@@ -5,5 +5,5 @@ Source: package/kernel/linux
 License: GPLv2
 Section: kernel
 Architecture: brcm63xx-tch
-Installed-Size: 2559
+Installed-Size: 2549
 Description:  Kernel module for LEDs on GPIO lines

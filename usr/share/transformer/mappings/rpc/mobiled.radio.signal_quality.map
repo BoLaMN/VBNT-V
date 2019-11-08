@@ -25,6 +25,10 @@ local mobiled_radio_signal_quality_ = {
                  access = "readOnly",
                  type = "string"
             },
+            sinr = {
+                 access = "readOnly",
+                 type = "string"
+            },
             cinr = {
                  access = "readOnly",
                  type = "string"
@@ -124,10 +128,16 @@ local mobiled_radio_signal_quality_ = {
             radio_bearer_type = {
                 access = "readOnly",
                 type = "string"
+            },
+            max_age = {
+                access = "readWrite",
+                type = "unsignedInt"
             }
         }
     }
 }
+
+local max_age = {}
 
 local conn = mapper("ubus").connect()
 if not conn then
@@ -137,14 +147,27 @@ end
 local helper = require("mobiled.scripthelpers")
 
 local function getall(mapping, key)
-    return helper.getUbusData(conn, "mobiled.radio", "signal_quality", { dev_idx = tonumber(string.match(key, '%d')) })
+    local dev_idx = tonumber(string.match(key, '%d'))
+    local data = helper.getUbusData(conn, "mobiled.radio", "signal_quality", { dev_idx = dev_idx, max_age = max_age[dev_idx] })
+    if max_age[dev_idx] then
+        data.max_age = tostring(max_age[dev_idx])
+    end
+    return data
 end
 
 local function get(mapping, paramName, key)
     return getall(mapping, key)[paramName]
 end
 
+local function set(mapping, paramName, paramVal, key)
+    if paramName == "max_age" then
+        local dev_idx = tonumber(string.match(key, '%d'))
+        max_age[dev_idx] = tonumber(paramVal)
+    end
+end
+
 mobiled_radio_signal_quality_.getall = getall
 mobiled_radio_signal_quality_.get = get
+mobiled_radio_signal_quality_.set = set
 
 register(mobiled_radio_signal_quality_)

@@ -32,8 +32,7 @@ function M.check(runtime, event, dev_idx)
 	elseif event.event == "device_disconnected" then
 		return "DeviceRemove"
 	elseif event.event == "firmware_upgrade_start" then
-		device:firmware_upgrade(device.info.firmware_upgrade.path)
-		return "NetworkScan"
+		return "FirmwareUpgrade"
 	elseif event.event == "qualtest_start" then
 		return "QualTest"
 	end

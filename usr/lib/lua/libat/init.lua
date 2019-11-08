@@ -190,7 +190,7 @@ function M.destroy_device(dev_idx, force) --luacheck: no unused args
 	local device, errMsg = get_device(dev_idx)
 	if not device then return nil, errMsg end
 
-	runtime.log:info("Destroy device " .. dev_idx)
+	runtime.log:notice("Destroy device " .. dev_idx)
 
 	run_action(dev_idx, "destroy_device")
 
@@ -298,6 +298,7 @@ end
 local function get_device_capabilities(device, info)
 	info.sms_reading = false
 	info.sms_sending = false
+	info.max_carriers = 1
 	local ret = device:send_singleline_command('AT+CSMS=0', "+CSMS:")
 	if ret then
 		local mt, mo = string.match(ret, "+CSMS:%s?(%d+),%s?(%d+)")
@@ -308,7 +309,7 @@ local function get_device_capabilities(device, info)
 			info.sms_sending = true
 		end
 	end
-	info.reuse_profiles = false
+	info.reuse_profiles = true
 	info.manual_plmn_selection = true
 	info.arfcn_selection_support = ""
 	info.band_selection_support = ""
@@ -883,6 +884,10 @@ function M.send_dtmf(dev_idx, tones, interval, duration)
 	return run_action(dev_idx, "send_dtmf", tones, interval, duration)
 end
 
+function M.convert_to_data_call(dev_idx, call_id, codec)
+	return run_action(dev_idx, "convert_to_data_call", call_id, codec)
+end
+
 function M.get_network_interface(dev_idx, session_id)
 	local ret = run_action(dev_idx, "get_network_interface", session_id)
 	if type(ret) == "string" then
@@ -948,9 +953,6 @@ function M.get_voice_info(dev_idx)
 	return info
 end
 
-local function get_voice_network_capabilities(device, info)
-	return voice.network_capabilities(device, info)
-end
 
 function M.get_voice_network_capabilities(dev_idx)
 	local info = {}
@@ -1010,7 +1012,7 @@ M.mappings = {
 	periodic = periodic,
 	get_ip_info = session.get_ip_info,
 	get_voice_info = get_voice_info,
-	get_voice_network_capabilities = get_voice_network_capabilities
+	get_voice_network_capabilities = voice.network_capabilities
 }
 
 return M

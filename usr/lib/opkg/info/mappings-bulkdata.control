@@ -5,5 +5,5 @@ Source: feeds/custo/mappings-bulkdata
 Section: mappings-bulkdata
 Maintainer: Technicolor <linuxgw@technicolor.com>
 Architecture: brcm63xx-tch
-Installed-Size: 6185
+Installed-Size: 6236
 Description:  Transformer bulk data mapping files.

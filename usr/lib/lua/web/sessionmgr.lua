@@ -1,9 +1,14 @@
 local setmetatable, pairs, ipairs, tonumber, require, type = setmetatable, pairs, ipairs, tonumber, require, type
 local ngx, tostring = ngx, tostring
+
 local dm = require("datamodel")
 local srp = require("srp")
+local check_host = require("web.check_host")
+
 local printf = require("web.web").printf
 local get_cookies = require("web.web").get_cookies
+local string = string
+local format = string.format
 local untaint = string.untaint
 local gsub = string.gsub
 local posix = require("tch.posix")
@@ -221,6 +226,20 @@ function SessionMgr:authorizeRequest(session, resource)
   return true
 end
 
+local function hostWithoutPort(host)
+  return host:match("^([^:]+):?%d*$") or host:match("^%[(.+)%]:?%d*$")
+end
+
+local function preventDNSRebind(http_host)
+  if http_host then
+    http_host = hostWithoutPort(http_host)
+    if not check_host.refersToUs(http_host) then
+      ngx.log(ngx.ERR, "HTTP Host header does not refer to us")
+      ngx.exit(ngx.HTTP_UNAUTHORIZED)
+    end
+  end
+end
+
 local function redirectIfNotAuthorized(mgr, session, sessionID)
   local rc, resp_code = mgr:authorizeRequest(session, ngx.var.uri)
   if not rc then
@@ -254,6 +273,7 @@ local function getSessionAddress()
   return {
     remote = untaint(ngx_var.remote_addr),
     server = untaint(ngx_var.server_addr),
+    http_host = untaint(ngx_var.http_host),
   }
 end
 
@@ -288,8 +308,7 @@ local function redirectIfServiceNotAvailable(session)
   end
 end
 
-local function getSessionForRequest(mgr, noActivityUpdate)
-  local address = getSessionAddress()
+local function getSessionForRequest(mgr, address, noActivityUpdate)
   local session, sessionID = verifySession(mgr, address.remote)
   if not session then
     session, sessionID = newSession(mgr, address)
@@ -310,7 +329,9 @@ end
 -- @param noActivityUpdate (optional) if true, the user activity timer
 --     for the session won't be updated.
 function SessionMgr:checkrequest(noActivityUpdate)
-  local session, sessionID = getSessionForRequest(self, noActivityUpdate)
+  local address = getSessionAddress()
+  preventDNSRebind(address.http_host)
+  local session, sessionID = getSessionForRequest(self, address, noActivityUpdate)
   redirectIfServiceNotAvailable(session)
   redirectIfNotAuthorized(self, session, sessionID)
   storeSessionInNginx(session)

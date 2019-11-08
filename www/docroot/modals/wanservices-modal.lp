@@ -15,26 +15,28 @@ local hosts_ac = uinetwork.getAutocompleteHostsListIPv4()
 local io, pairs, string = io, pairs, string
 local table, ipairs, tonumber, format, match = table, ipairs, tonumber, string.format, string.match
 
-local ddns_supported_services = {}
-
-local function generate_ddns_supported_services()
+local function generate_ddns_supported_services(name)
     -- open the supported services file that come with the ddns package
-    local f = io.open("/etc/ddns/services", "r")
+    local ddns_supported_services , valid_services = {}, {}
+    local path = format("/etc/ddns/%s", name)
+    local f = io.open(path, "r")
     if f then
         for line in f:lines() do
             --a service in this file is  indicated as a url between quotes, we want a list with urls and name of service in capitals
             local service = line:match('^%b""')
             if service then
                 service = service:gsub('"','')
-                local serviceline = { service , service:upper() }
-                ddns_supported_services[#ddns_supported_services + 1] = serviceline
+                ddns_supported_services[service] = service
+                valid_services[#valid_services + 1] ={ service }
             end
         end
         f:close()
     end
+    return ddns_supported_services, valid_services
 end
 
-generate_ddns_supported_services()
+local ddns_ipv4_supported_services , valid_ipv4_services = generate_ddns_supported_services("services")
+local ddns_ipv6_supported_services , valid_ipv6_services = generate_ddns_supported_services("services_ipv6")
 
 -- Retrieve GW IP + netmask for use by validation function
 local ipdetails = {
@@ -43,24 +45,44 @@ local ipdetails = {
 }
 content_helper.getExactContent(ipdetails)
 
+local ddns_ipv4_path = "uci.ddns.service.@myddns_ipv4."
+local ddns_ipv6_path = "uci.ddns.service.@myddns_ipv6."
+local ddns_ipv4 = proxy.get(ddns_ipv4_path)
+local ddns_ipv6 = proxy.get(ddns_ipv6_path)
+
 local ddns_status_data = {
     ddns_status = "rpc.ddns.status",
 }
-content_helper.getExactContent(ddns_status_data)
 
 -- DMZ / DynDNS / UPnP switches Only one handleQuery in a page
 local qry_params = {
     DMZ_enable = "rpc.network.firewall.dmz.enable",
     DMZ_destinationip = "rpc.network.firewall.dmz.redirect.dest_ip",
-    ddns_enabled = "uci.ddns.service.@myddns_ipv4.enabled",
-    ddns_service_name = "uci.ddns.service.@myddns_ipv4.service_name",
-    ddns_domain = "uci.ddns.service.@myddns_ipv4.domain",
-    ddns_lookup_host = "uci.ddns.service.@myddns_ipv4.lookup_host",
-    ddns_username = "uci.ddns.service.@myddns_ipv4.username",
-    ddns_password = "uci.ddns.service.@myddns_ipv4.password",
     upnp_status = "uci.upnpd.config.enable_upnp",
     upnp_natpmp = "uci.upnpd.config.enable_natpmp",
     upnp_secure_mode = "uci.upnpd.config.secure_mode",
+}
+
+local ddns_ipv4_params = {
+    ddnsv4_enabled = "uci.ddns.service.@myddns_ipv4.enabled",
+    ddnsv4_service_name = "uci.ddns.service.@myddns_ipv4.service_name",
+    ddnsv4_domain = "uci.ddns.service.@myddns_ipv4.domain",
+    ddnsv4_lookup_host = "uci.ddns.service.@myddns_ipv4.lookup_host",
+    ddnsv4_username = "uci.ddns.service.@myddns_ipv4.username",
+    ddnsv4_password = "uci.ddns.service.@myddns_ipv4.password",
+    ddnsv4_usehttps = "uci.ddns.service.@myddns_ipv4.use_https",
+    ddnsv4_cacert = "uci.ddns.service.@myddns_ipv4.cacert",
+}
+
+local ddns_ipv6_params = {
+    ddnsv6_enabled = "uci.ddns.service.@myddns_ipv6.enabled",
+    ddnsv6_service_name = "uci.ddns.service.@myddns_ipv6.service_name",
+    ddnsv6_domain = "uci.ddns.service.@myddns_ipv6.domain",
+    ddnsv6_lookup_host = "uci.ddns.service.@myddns_ipv6.lookup_host",
+    ddnsv6_username = "uci.ddns.service.@myddns_ipv6.username",
+    ddnsv6_password = "uci.ddns.service.@myddns_ipv6.password",
+    ddnsv6_usehttps = "uci.ddns.service.@myddns_ipv6.use_https",
+    ddnsv6_cacert = "uci.ddns.service.@myddns_ipv6.cacert",
 }
 
 -- Shortcuts to validation helpers to make lines shorter
@@ -74,6 +96,7 @@ local vSIP = post_helper.validateStringIsPort
 local vSIPR = post_helper.validateStringIsPortRange
 local gVP = post_helper.getValidationPassword
 local gVSIDIP = post_helper.getValidateStringIsDeviceIPv4
+local vSIIP6 = post_helper.validateStringIsIPv6
 local vSIDIP = gVSIDIP(ipdetails.gw, ipdetails.netmask)
 local gAV = post_helper.getAndValidation
 local gOrV = post_helper.getOrValidation
@@ -88,23 +111,54 @@ local function validate_dmz_dest(value, object, key)
   return vSIDIP(value, object, key)
 end
 
-local function set_lookup_host(value, object, key)
-    object["ddns_lookup_host"] = object["ddns_domain"]
+local function set_lookup_hostv4(value, object, key)
+    object["ddnsv4_lookup_host"] = object["ddnsv4_domain"]
+    return true
+end
+
+local function set_lookup_hostv6(value, object, key)
+    object["ddnsv6_lookup_host"] = object["ddnsv6_domain"]
+    return true
+end
+
+local function set_cacertv4(_, object)
+    object["ddnsv4_cacert"] = "IGNORE"
+    return true
+end
+
+local function set_cacertv6(_, object)
+    object["ddnsv6_cacert"] = "IGNORE"
     return true
 end
 
 local qry_valid = {
     DMZ_enable = gVCS,
     DMZ_destinationip = validate_dmz_dest,
-    ddns_enabled = gVCS,
-    ddns_service_name = gVICSPIL(gVIES(ddns_supported_services), "ddns_enabled", {"1"}),
-    ddns_username = gVICSPIL(vNES, "ddns_enabled", {"1"}),
-    ddns_password = gVP(gVICSPIL(vNES, "ddns_enabled", {"1"})),
-    ddns_domain = gAV(gOrV(vSIDN, vSIIP), gVIPIL(vNES, "ddns_enabled", {"1"})),
-    ddns_lookup_host = set_lookup_host,
     upnp_status = gVCS,
     upnp_natpmp = gVCS,
     upnp_secure_mode = gVCS,
+}
+
+local ddns_ipv4_valid = {
+    ddnsv4_enabled = vB,
+    ddnsv4_service_name = gAV(gVIPIL(gOrV(vSIDN, vSIIP), "ddnsv4_enabled", {"1"}), gVIPIL(gVIES(valid_ipv4_services), "ddnsv4_enabled", {"1"})),
+    ddnsv4_username = gVIPIL(vNES, "ddnsv4_enabled", {"1"}),
+    ddnsv4_password = gVP(gVIPIL(vNES, "ddnsv4_enabled", {"1"})),
+    ddnsv4_domain = gVIPIL(gOrV(vSIDN, vSIIP), "ddnsv4_enabled", {"1"}),
+    ddnsv4_lookup_host = set_lookup_hostv4,
+    ddnsv4_usehttps = vB,
+    ddnsv4_cacert = set_cacertv4,
+}
+
+local ddns_ipv6_valid = {
+    ddnsv6_enabled = vB,
+    ddnsv6_service_name = gAV(gVIPIL(gOrV(vSIDN, vSIIP6), "ddnsv6_enabled", {"1"}), gVIPIL(gVIES(valid_ipv6_services), "ddnsv6_enabled", {"1"})),
+    ddnsv6_username = gVIPIL(vNES, "ddnsv6_enabled", {"1"}),
+    ddnsv6_password = gVP(gVIPIL(vNES, "ddnsv6_enabled", {"1"})),
+    ddnsv6_domain = gVIPIL(gOrV(vSIDN, vSIIP6), "ddnsv6_enabled", {"1"}),
+    ddnsv6_lookup_host = set_lookup_hostv6,
+    ddnsv6_usehttps = vB,
+    ddnsv6_cacert = set_cacertv6,
 }
 
 local ddns_state_map = {
@@ -133,6 +187,64 @@ end
 
 local qry_data, qry_helpmsg = post_helper.handleQuery(qry_params, qry_valid)
 
+local ddns_ipv4_data, ddns_ipv4_helpmsg
+local ddns_ipv4_status, ddns_ipv4_update_info
+
+if ddns_ipv4 then
+  ddns_ipv4_data, ddns_ipv4_helpmsg = post_helper.handleQuery(ddns_ipv4_params, ddns_ipv4_valid)
+end
+
+local ddns_ipv6_data, ddns_ipv6_helpmsg
+local ddns_ipv6_status, ddns_ipv6_update_info
+
+if ddns_ipv6 then
+  ddns_ipv6_data, ddns_ipv6_helpmsg = post_helper.handleQuery(ddns_ipv6_params, ddns_ipv6_valid)
+end
+
+content_helper.getExactContent(ddns_status_data)
+local status = ddns_status_data.ddns_status
+
+local function get_ddns_status(service_name, ddns_enabled)
+  local ddns_status = "error"
+  local ddns_update_info = "No error received from server"
+  local service_status
+
+  if status then
+    for x in string.gmatch(status, '([^%]]+)') do
+      service_status = match(x, service_name .. "%[(.+)")
+      if service_status then
+        break
+      end
+    end
+  end
+  if ddns_enabled ~= "1" then
+    ddns_status = "disabled"
+  else
+    if action == "SAVE" then
+      ddns_status = "updating"
+    elseif service_status then
+      if service_status == "Domain's IP updated" then
+        ddns_status = "updated"
+      elseif service_status == "No error received from server" then
+        ddns_status = "updating"
+      else
+        ddns_status = "error"
+      end
+
+      ddns_update_info = format("%s", service_status)
+    end
+  end
+  return ddns_status, ddns_update_info
+end
+
+if ddns_ipv4 then
+  ddns_ipv4_status, ddns_ipv4_update_info = get_ddns_status("myddns_ipv4", ddns_ipv4_data.ddnsv4_enabled)
+end
+
+if ddns_ipv6 then
+  ddns_ipv6_status, ddns_ipv6_update_info = get_ddns_status("myddns_ipv6", ddns_ipv6_data.ddnsv6_enabled)
+end
+
 local action
 if ngx.var.request_method == "POST" then
   action = ngx.req.get_post_args().action
@@ -140,27 +252,6 @@ if ngx.var.request_method == "POST" then
 
   if content.action == "TABLE-DELETE" and content.tableid == "portforwarding" then
     del_pfw_index = tonumber(content.index)
-  end
-end
-
-local ddns_status = "error"
-local ddns_update_info = "No error received from server"
-
-if qry_data.ddns_enabled ~= "1" then
-  ddns_status = "disabled"
-else
-  if action == "SAVE" then
-    ddns_status = "updating"
-  elseif ddns_status_data.ddns_status then
-    if ddns_status_data.ddns_status == "Domain's IP updated" then
-      ddns_status = "updated"
-    elseif ddns_status_data.ddns_status == "No error received from server" then
-      ddns_status = "updating"
-    else
-      ddns_status = "error"
-    end
-
-    ddns_update_info = format("%s", ddns_status_data.ddns_status)
   end
 end
 
@@ -606,31 +697,64 @@ local help_link = { href="/help/index.html?anchor=" .. format("%s", uri:match("/
         )
         ngx.print('\
     </fieldset>\
-\
+    ');  
+    if ddns_ipv4 ~= nil then
+      ngx.print('\
     <fieldset class="advanced hide">\
-      <legend>');  ngx.print( T"DynDNS" ); ngx.print('</legend>\
+      <legend>');  ngx.print( T"DynDNS IPV4" ); ngx.print('</legend>\
       ');  
          ngx.print(
-            ui_helper.createLight(T"Status", nil, ddns_state_map[ddns_status], { light = { class = ddns_light_map[ddns_status] } }),
-            ui_helper.createCheckboxSwitch(T"Enabled", "ddns_enabled", qry_data["ddns_enabled"], nil, qry_helpmsg["ddns_enabled"]),
-            ui_helper.createInputSelect(T"Service Name", "ddns_service_name", ddns_supported_services, qry_data["ddns_service_name"], nil, qry_helpmsg["ddns_service_name"]),
-            ui_helper.createInputText(T"Domain", "ddns_domain", qry_data["ddns_domain"], nil, qry_helpmsg["ddns_domain"]),
-            ui_helper.createInputText(T"User Name", "ddns_username", qry_data["ddns_username"], nil, qry_helpmsg["ddns_username"]),
-            ui_helper.createInputPassword(T"Password", "ddns_password", qry_data["ddns_password"], nil, qry_helpmsg["ddns_password"])
-          )
-        if qry_data["ddns_enabled"] == "1" then
+            ui_helper.createLight(T"Status", nil, ddns_state_map[ddns_ipv4_status], { light = { class = ddns_light_map[ddns_ipv4_status] } }),
+            ui_helper.createSwitch(T"Enabled", "ddnsv4_enabled", ddns_ipv4_data["ddnsv4_enabled"], nil, ddns_ipv4_helpmsg["ddnsv4_enabled"]),
+            ui_helper.createInputText(T"Service Name", "ddnsv4_service_name", ddns_ipv4_data["ddnsv4_service_name"], {autocomplete = ddns_ipv4_supported_services}, ddns_ipv4_helpmsg["ddnsv4_service_name"]),
+            ui_helper.createSwitch(T"HTTPS", "ddnsv4_usehttps", ddns_ipv4_data["ddnsv4_usehttps"], nil, ddns_ipv4_helpmsg["ddnsv4_usehttps"]),
+            ui_helper.createLabel(T"", T"Note: HTTPS mode will enable encryption but not certificate-based authentication of DynDNS service", { span = {class = "span12"},}),
+            ui_helper.createInputText(T"Domain", "ddnsv4_domain", ddns_ipv4_data["ddnsv4_domain"], nil, ddns_ipv4_helpmsg["ddnsv4_domain"]),
+            ui_helper.createInputText(T"User Name", "ddnsv4_username", ddns_ipv4_data["ddnsv4_username"], nil, ddns_ipv4_helpmsg["ddnsv4_username"]),
+            ui_helper.createInputPassword(T"Password", "ddnsv4_password", ddns_ipv4_data["ddnsv4_password"], nil, ddns_ipv4_helpmsg["ddnsv4_password"])
+        )
+        if ddns_ipv4_data["ddnsv4_enabled"] == "1" then
           local basic = {
             span = {
             class = "span12"
             },
           }
           ngx.print(
-            ui_helper.createLabel(T"DynDNS Information", ddns_update_info, basic)
+            ui_helper.createLabel(T"DynDNS Information", ddns_ipv4_update_info, basic)
           )
         end
         ngx.print('\
     </fieldset>\
-\
+    ');  end   ngx.print('\
+    ');  
+    if ddns_ipv6 ~= nil then
+      ngx.print('\
+    <fieldset class="advanced hide">\
+      <legend>');  ngx.print( T"DynDNS IPV6" ); ngx.print('</legend>\
+      ');  
+         ngx.print(
+            ui_helper.createLight(T"Status", nil, ddns_state_map[ddns_ipv6_status], { light = { class = ddns_light_map[ddns_ipv6_status] } }),
+            ui_helper.createSwitch(T"Enabled", "ddnsv6_enabled", ddns_ipv6_data["ddnsv6_enabled"], nil, ddns_ipv6_helpmsg["ddnsv6_enabled"]),
+            ui_helper.createInputText(T"Service Name", "ddnsv6_service_name", ddns_ipv6_data["ddnsv6_service_name"], {autocomplete = ddns_ipv6_supported_services}, ddns_ipv6_helpmsg["ddnsv6_service_name"]),
+            ui_helper.createSwitch(T"HTTPS", "ddnsv6_usehttps", ddns_ipv6_data["ddnsv6_usehttps"], nil, ddns_ipv6_helpmsg["ddnsv6_usehttps"]),
+            ui_helper.createLabel(T"", T"Note: HTTPS mode will enable encryption but not certificate-based authentication of DynDNS service", { span = {class = "span12"},}),
+            ui_helper.createInputText(T"Domain", "ddnsv6_domain", ddns_ipv6_data["ddnsv6_domain"], nil, ddns_ipv6_helpmsg["ddnsv6_domain"]),
+            ui_helper.createInputText(T"User Name", "ddnsv6_username", ddns_ipv6_data["ddnsv6_username"], nil, ddns_ipv6_helpmsg["ddnsv6_username"]),
+            ui_helper.createInputPassword(T"Password", "ddnsv6_password", ddns_ipv6_data["ddnsv6_password"], nil, ddns_ipv6_helpmsg["ddnsv6_password"])
+        )
+        if ddns_ipv6_data["ddnsv6_enabled"] == "1" then
+          local basic = {
+            span = {
+            class = "span12"
+            },
+          }
+          ngx.print(
+            ui_helper.createLabel(T"DynDNS Information", ddns_ipv6_update_info, basic)
+          )
+        end
+        ngx.print('\
+    </fieldset>\
+    ');  end   ngx.print('\
     ');  if wol then  ngx.print('\
       <fieldset class="advanced hide">\
         <legend>');  ngx.print( T"Wake on LAN over the Internet" ); ngx.print('</legend>\

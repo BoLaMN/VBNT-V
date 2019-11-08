@@ -3,8 +3,6 @@
 --! @brief The config module which parses UCI and sends out UBUS events on changes
 ---------------------------------
 
-local tonumber, table, pairs, type, string, tostring = tonumber, table, pairs, type, string, tostring
-
 local uci = require('uci')
 local helper = require("mobiled.scripthelpers")
 
@@ -13,6 +11,11 @@ local __config = {}
 local mobiled_config_file = "mobiled"
 
 local M = {}
+
+local function get_boolean(config_item, default)
+	if not config_item then return default end
+	return config_item ~= '0' and config_item ~= 'false' and config_item ~= false
+end
 
 local function reload_sims(cursor)
 	__config.sims = {}
@@ -32,8 +35,7 @@ local function filter_uci_section(s)
 end
 
 function M.get_pin_from_config(pinType, iccid)
-	local pin
-	local migrated_sim
+	local pin, migrated_sim
 	for _, s in pairs(__config.sims) do
 		if s.pin_type == pinType then
 			if s.iccid == iccid then
@@ -100,8 +102,7 @@ local function add_default_sim_config(defaults, cursor)
 end
 
 function M.store_pin_to_config(pinType, pin, iccid)
-	local c = uci.cursor()
-	local sim
+	local c, sim = uci.cursor()
 	c:foreach(mobiled_config_file, "sim", function(s)
 		if s.iccid == iccid and s.pin_type == pinType then
 			sim = s[".name"]
@@ -267,7 +268,7 @@ function M.reloadconfig(stateMachines, plugins, force)
 			if sm.device then
 				local sessions = sm.device:get_data_sessions()
 				for _, profile_id in pairs(changed_profiles) do
-					runtime.log:info("Profile " .. profile_id .. " changed")
+					runtime.log:notice("Profile " .. profile_id .. " changed")
 					for _, map in pairs(sessions) do
 						if tonumber(map.profile_id) == tonumber(profile_id) then
 							table.insert(session_changed, {session_id = map.session_id, dev_idx = sm.dev_idx})
@@ -295,22 +296,22 @@ function M.reloadconfig(stateMachines, plugins, force)
 	end
 
 	if tonumber(__config.globals.store_pin) == 0 then
-		runtime.log:info("Clearing PIN storage")
+		runtime.log:notice("Clearing PIN storage")
 		M.remove_all_pin_from_config()
 	end
 
 	if platform_changed or force then
-		runtime.log:info("Platform config changed")
+		runtime.log:notice("Platform config changed")
 		events.send_event("mobiled", { event = "platform_config_changed" })
 	end
 
 	for dev_idx in pairs(device_config_devices) do
-		runtime.log:info("Device config changed")
+		runtime.log:notice("Device config changed")
 		events.send_event("mobiled", { event = "device_config_changed", dev_idx = dev_idx })
 	end
 
 	for _, session in pairs(session_changed) do
-		runtime.log:info("Session config changed")
+		runtime.log:notice("Session config changed")
 		events.send_event("mobiled", { event = "session_config_changed", session_id = session.session_id, dev_idx = session.dev_idx })
 	end
 end
@@ -332,7 +333,14 @@ function M.loadconfig()
 	local cursor = uci.cursor()
 	cursor:foreach("network", "interface", function(s)
 		if s.proto == "mobiled" and s.session_id and s.profile then
-			table.insert(c.sessions, s)
+			s.interface = s['.name']
+			table.insert(c.sessions, filter_uci_section(s))
+		end
+	end)
+
+	cursor:foreach("mobiled_sessions", "session", function(s)
+		if s.session_id and s.profile then
+			table.insert(c.sessions, filter_uci_section(s))
 		end
 	end)
 
@@ -346,7 +354,11 @@ function M.loadconfig()
 	cursor:foreach(mobiled_config_file, "mobiled_state", function(s) c.states[s.name] = filter_uci_section(s) end)
 	cursor:foreach(mobiled_config_file, "profile", function(s) table.insert(c.profiles, s) end)
 	cursor:foreach(mobiled_config_file, "detector", function(s) table.insert(c.detectors, filter_uci_section(s)) end)
-	cursor:foreach(mobiled_config_file, "operator", function(s) table.insert(c.operators, filter_uci_section(s)) end)
+	cursor:foreach(mobiled_config_file, "operator", function(s)
+		if s.mcc and s.mnc then
+			table.insert(c.operators, filter_uci_section(s))
+		end
+	end)
 	cursor:foreach(mobiled_config_file, "debug_device", function(s) table.insert(c.debug_devices, s) end)
 	cursor:foreach(mobiled_config_file, "radio_preference", function(s) table.insert(c.radio_preferences, filter_uci_section(s)) end)
 
@@ -418,24 +430,9 @@ function M.get_raw_config()
 	return __config
 end
 
-local function is_radio_supported(device, pref)
-	local device_capabilities = device:get_device_capabilities()
-	if device_capabilities and device_capabilities.radio_interfaces then
-		for _, radio in pairs(device_capabilities.radio_interfaces) do
-			if radio.radio_interface == pref then return true end
-		end
-	end
-	return nil
-end
-
-local function add_default_device_config(device, defaults, cursor)
+local function add_default_device_config(defaults, cursor)
 	local section = cursor:add(mobiled_config_file, "device")
 	for k, v in pairs(defaults) do
-		if k == "radio_pref" then
-			if not is_radio_supported(device, v) then
-				v = "auto"
-			end
-		end
 		cursor:set(mobiled_config_file, section, k, tostring(v))
 	end
 	cursor:commit(mobiled_config_file)
@@ -448,7 +445,7 @@ local function get_default_device_config()
 	if not __config.device_defaults.roaming then __config.device_defaults.roaming = "none" end
 	if not __config.device_defaults.network_selection then __config.device_defaults.network_selection = "auto" end
 	for k, v in pairs(__config.device_customer_defaults) do
-		runtime.log:debug("Adding customer specific parameter: %s", k)
+		runtime.log:info("Adding customer specific parameter: %s", k)
 		__config.device_defaults[k] = v
 	end
 	return __config.device_defaults
@@ -480,11 +477,14 @@ function M.get_session_config(device)
 	for _, session_config in pairs(__config.sessions) do
 		if not session_config.dev_idx or tonumber(session_config.dev_idx) == device.sm.dev_idx then
 			local session = {
-				optional = session_config.optional == '1' or session_config.optional == 'true',
+				autoconnect = get_boolean(session_config.autoconnect, false),
+				activated = get_boolean(session_config.activated, false),
+				optional = get_boolean(session_config.optional, false),
+				internal = get_boolean(session_config.internal, false),
 				session_id = tonumber(session_config.session_id),
 				profile_id = session_config.profile,
 				interface = session_config['.name'],
-				internal = false
+				name = session_config.name
 			}
 			table.insert(sessions, session)
 		end
@@ -511,7 +511,7 @@ function M.get_device_config(device)
 		device_config[device.info.device_config_parameter] = device.info[device.info.device_config_parameter]
 		device_config.model = device.info.model
 		local cursor = uci.cursor()
-		add_default_device_config(device, device_config, cursor)
+		add_default_device_config(device_config, cursor)
 		__config.devices = {}
 		cursor:foreach(mobiled_config_file, "device", function(s) table.insert(__config.devices, s) end)
 		cursor:close()
@@ -543,33 +543,45 @@ function M.get_device_config(device)
 	c.device.username = device_config.username
 	c.device.password = device_config.password
 
-	for radio in string.gmatch(device_config.radio_pref or "auto", "[^%s]+") do
-		local radio_pref = { type = radio }
-		if radio == "lte" then
-			if device_config.lte_bands then
-				radio_pref.bands = {}
-				for band in string.gmatch(device_config.lte_bands, "[^%s]+") do
-					table.insert(radio_pref.bands, tonumber(band))
-				end
-			end
-			if type(device_config.earfcn) == "table" then
-				radio_pref.arfcn = {}
-				for _, earfcn in ipairs(device_config.earfcn) do
-					local arfcn, pci = string.match(earfcn, "^(%d+),(%d+)$")
-					if not arfcn then
-						arfcn = string.match(earfcn, "^(%d+)$")
-					end
-					if arfcn then
-						local entry = {
-							pci = pci,
-							arfcn = tonumber(arfcn)
-						}
-						table.insert(radio_pref.arfcn, entry)
-					end
-				end
-			end
+	local supported_modes = {}
+	local device_capabilities = device:get_device_capabilities()
+	if device_capabilities and device_capabilities.radio_interfaces then
+		for _, radio in pairs(device_capabilities.radio_interfaces) do
+			supported_modes[radio.radio_interface] = true
 		end
-		c.network.radio_pref[#c.network.radio_pref+1] = radio_pref
+	end
+	for radio in string.gmatch(device_config.radio_pref or "auto", "([^%s?]+)%??") do
+		if supported_modes[radio] then
+			local radio_pref = { type = radio }
+			if radio == "lte" then
+				if device_config.lte_bands then
+					radio_pref.bands = {}
+					for band in string.gmatch(device_config.lte_bands, "[^%s]+") do
+						table.insert(radio_pref.bands, tonumber(band))
+					end
+				end
+				if type(device_config.earfcn) == "table" then
+					radio_pref.arfcn = {}
+					for _, earfcn in ipairs(device_config.earfcn) do
+						local arfcn, pci = string.match(earfcn, "^(%d+),(%d+)$")
+						if not arfcn then
+							arfcn = string.match(earfcn, "^(%d+)$")
+						end
+						if arfcn then
+							local entry = {
+								pci = pci,
+								arfcn = tonumber(arfcn)
+							}
+							table.insert(radio_pref.arfcn, entry)
+						end
+					end
+				end
+			end
+			table.insert(c.network.radio_pref, radio_pref)
+		end
+	end
+	if #c.network.radio_pref == 0 then
+		table.insert(c.network.radio_pref, { type = "auto" })
 	end
 
 	c.reuse_profiles = device_config.reuse_profiles
@@ -612,7 +624,6 @@ function M.get_device_config(device)
 			for k, v in pairs(section) do
 				c.device[k] = v
 			end
-			break
 		end
 	end
 
@@ -654,7 +665,7 @@ function M.set_device_enable(device, enable)
 		device_config[device.info.device_config_parameter] = device.info[device.info.device_config_parameter]
 		device_config.model = device.info.model
 		device_config.enabled = enable
-		add_default_device_config(device, device_config, c)
+		add_default_device_config(device_config, c)
 	else
 		c:set(mobiled_config_file, device_config, "enabled", enable)
 		c:commit(mobiled_config_file)

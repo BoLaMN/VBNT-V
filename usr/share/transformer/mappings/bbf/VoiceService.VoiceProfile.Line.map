@@ -19,7 +19,6 @@ local mt = { __index = function() return "" end }
 local common_default = setmetatable({}, mt)
 local numOfFxs, numOfDect, numOfSipdev
 local rtp_session = {}
-local profile_update = {}
 local Multi_Services_VoiceService_i_VoiceProfile_i_Line_i_ = {
     objectType = {
         name = "#ROOT.Services.VoiceService.{i}.VoiceProfile.{i}.Line.{i}.",
@@ -164,33 +163,6 @@ local configfile_sip = "mmpbxrvsipnet"
 local transactions = {}
 
 local function line_commit()
-    for index, value in pairs(profile_update) do
-	local profile_new = {}
-        for index1, value1 in pairs(value) do
-	    profile_new["profile"] = index
-	    if index1 == "Enable" then
-                profile_new["enable"] = tonumber(EnableStatus[value1])
-	    else
-		if not profile_new["SIP"] then
-		    profile_new["SIP"] = {}
-		    profile_new["SIP"][1] = {}
-	        end
-	        if index1 == "URI" then
-		    profile_new["SIP"][1]["uri"] = value1
-	        elseif index1 == "AuthPassword" then
-		    profile_new["SIP"][1]["password"] = value1
-	        elseif index1 == "AuthUserName" then
-		    profile_new["SIP"][1]["user_name"] = value1
-	        elseif index1 == "CallerIDName" then
-		    profile_new["SIP"][1]["display_name"] = value1
-	        elseif index1 == "X_000E50_DisplayName" then
-		    profile_new["SIP"][1]["display_name"] = value1
-	        end
-	    end
-        end
-	conn:call("mmpbx.profile", "update",profile_new)
-    end
-    profile_update = {}
     local binding = {}
     for config in pairs(transactions) do
         binding.config = config
@@ -395,21 +367,11 @@ local function setParam(maps, set_maps)
         binding.sectionname = name
         local map = maps[ltype]
         local set_map = set_maps[ltype]
-        local mmpbx_state = uci_helper.get_from_uci({config="mmpbx", sectionname="state"})
-	if not profile_update[name] then
-	    profile_update[name] = {}
-	end
+
         if set_map[param] then
             if type(set_map[param]) == "function" then
                 binding.option = nil
-		if ((ltype == "sip_profile") and (param == "Enable" or param == "URI" or param == "AuthPassword") and (mmpbx_state == "RUNNING")) then
-		    local err, msg = set_map[param](binding, value, ltype)
-                    transactions[binding.config] = true
-		    profile_update[name][param] = value
-		else
-		    local err, msg = set_map[param](binding, value)
-		    transactions[binding.config] = true
-		end
+                local err, msg = set_map[param](binding, value)
                 if not err and msg then
                     return err, msg
                 end
@@ -417,14 +379,7 @@ local function setParam(maps, set_maps)
                 return true
             elseif type(map.value[param]) == "string" then
                 binding.option = map.value[param]
-		if ((ltype == "sip_profile") and (param == "X_000E50_DisplayName" or param == "AuthUserName") and (mmpbx_state == "RUNNING")) then
-		    uci_helper.set_on_uci(binding, value)
-		    transactions[binding.config] = true
-		    profile_update[name][param] = value
-		else
-		    uci_helper.set_on_uci(binding, value, commitapply)
-		    transactions[binding.config] = true
-		end
+                uci_helper.set_on_uci(binding, value, commitapply)
                 transactions[binding.config] = true
                 return true
             end
@@ -433,20 +388,14 @@ local function setParam(maps, set_maps)
     end
 end
 
-local function setEnable(binding, paramvalue, ltype)
+local function setEnable(binding, paramvalue)
     local value = "0"
-    local mmpbx_state = uci_helper.get_from_uci({config="mmpbx", sectionname="state"})
     binding.option = "enabled"
     if paramvalue == "Quiescent" then
        paramvalue = "Disabled"
     end
     value = EnableStatus[paramvalue]
-    if (ltype == "sip_profile") and (mmpbx_state == "RUNNING") then
-	uci_helper.set_on_uci(binding, value)
-    else
-	uci_helper.set_on_uci(binding, value, commitapply)
-    end
-
+    uci_helper.set_on_uci(binding, value, commitapply)
 end
 
 local function setReset(binding, paramvalue)
@@ -625,20 +574,14 @@ local sip_maps = {
 
 local set_sip_sip_net_map = {
     AuthUserName = true,
-    AuthPassword = function(binding, value, ltype)
+    AuthPassword = function(binding, value)
         binding.option = "password"
-        local mmpbx_state = uci_helper.get_from_uci({config="mmpbx", sectionname="state"})
-	if (ltype == "sip_profile") and (mmpbx_state == "RUNNING") then
-            uci_helper.set_on_uci(binding, value)
-	else
-	    uci_helper.set_on_uci(binding, value, commitapply)
-	end
+        uci_helper.set_on_uci(binding, value, commitapply)
         return true
     end,
-    URI = function(binding, value, ltype)
+    URI = function(binding, value)
         binding.option = "uri"
         local uris = {}
-        local mmpbx_state = uci_helper.get_from_uci({config="mmpbx", sectionname="state"})
         local profile_binding = { config = "mmpbxrvsipnet", sectionname = "profile", option = "uri"}
 
 	uci_helper.foreach_on_uci(profile_binding, function(s)
@@ -650,11 +593,7 @@ local set_sip_sip_net_map = {
         if uci_helper.get_from_uci(binding) ~= value and uris[value] then
             return nil, "this URI has already existed"
         end
-	if (ltype == "sip_profile") and (mmpbx_state == "RUNNING") then
-            uci_helper.set_on_uci(binding, value)
-        else
-            uci_helper.set_on_uci(binding, value, commitapply)
-        end
+        uci_helper.set_on_uci(binding, value, commitapply)
         return true
     end,
 }
@@ -2588,23 +2527,14 @@ Multi_Services_VoiceService_i_VoiceProfile_i_Line_i_CallingFeatures_.set = funct
     local config, name, ltype = getInfoFromKey(key, parentkey)
     local map = call_maps[ltype]
     local set_map = set_call_maps[ltype]
-    local mmpbx_state = uci_helper.get_from_uci({config="mmpbx", sectionname="state"})
-    if not profile_update[name] then
-        profile_update[name] = {}
-    end
+
     if set_map[param] ~= nil then
         if type(map.value[param]) == "string" then
             binding.config = config
             binding.sectionname = name
             binding.option = map.value[param]
-	    if (ltype == "sip_profile") and (param == "CallerIDName") and (mmpbx_state == "RUNNING") then
-		uci_helper.set_on_uci(binding, value)
-		transactions[binding.config] = true
-		profile_update[name][param] = value
-	    else
-		uci_helper.set_on_uci(binding, value, commitapply)
-		transactions[binding.config] = true
-            end
+            uci_helper.set_on_uci(binding, value, commitapply)
+            transactions[binding.config] = true
             return true
         elseif type(map.value[param]) == "table" then
             local stype = map.value[param][1]

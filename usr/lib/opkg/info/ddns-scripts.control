@@ -5,5 +5,5 @@ License: GPL-2.0
 Section: net
 Maintainer: Christian Schoenebeck <christian.schoenebeck@gmail.com>
 Architecture: all
-Installed-Size: 14797
+Installed-Size: 15092
 Description:  Dynamic DNS Client scripts (with IPv6 support) - Info: http://wiki.openwrt.org/doc/howto/ddns.client

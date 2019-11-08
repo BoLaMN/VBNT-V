@@ -88,7 +88,7 @@ local function do_send(device, send_function, params, retry, interface_type)
 		ret, err, cme_err = send_function(intf.channel, unpack(params))
 		local duration = ((socket.gettime()*1000)-start)
 		if not ret then
-			device.runtime.log:warning(string.format('Command "%s" failed after %.2fms', params[1], duration))
+			device.runtime.log:info(string.format('Command "%s" failed after %.2fms', params[1], duration))
 		else
 			device.runtime.log:debug(string.format('Command "%s" took %.2fms', params[1], duration))
 		end
@@ -218,7 +218,7 @@ function Device:get_unsolicited_messages()
 							local stat = network.parse_creg_state(line)
 							local state = network.creg_state_to_string(stat)
 							if state then
-								self.runtime.log:info("Network registration state changed to: " .. state)
+								self.runtime.log:notice("Network registration state changed to: " .. state)
 								if state == "registered" then
 									self:send_event("mobiled", { event = "network_registered", dev_idx = self.dev_idx })
 								elseif state == "not_registered" or state == "not_registered_searching" then
@@ -249,17 +249,26 @@ function Device:get_unsolicited_messages()
 								self.buffer.sim_info = {}
 								self:send_event("mobiled", { event = "sim_removed", dev_idx = self.dev_idx })
 							elseif status == "READY" then
+								self.buffer.sim_info = {}
 								self:send_event("mobiled", { event = "sim_initialized", dev_idx = self.dev_idx })
 							end
+							handled = true
+						elseif helper.startswith(line, "+CNEMIU:") then
+							local supported = string.match(line, '^+CNEMIU:%s?([01])$')
+							self:send_event("mobiled.voice", { dev_idx = self.dev_idx, event = "cs_emergency", supported = supported == '1' })
+							handled = true
+						elseif helper.startswith(line, "+CNEMS1:") then
+							local supported = string.match(line, '^+CNEMS1:%s?([01])$')
+							self:send_event("mobiled.voice", { dev_idx = self.dev_idx, event = "volte_emergency", supported = supported == '1' })
 							handled = true
 						end
 					end
 					if not handled then
-						self.runtime.log:debug("Received unsolicited data: " .. line .. " on port " .. interface.port)
+						self.runtime.log:info("Received unsolicited data: " .. line .. " on port " .. interface.port)
 					end
 				end
 				if entry.sms_pdu then
-					self.runtime.log:debug("SMS PDU received")
+					self.runtime.log:info("SMS PDU received")
 				end
 			end
 		end

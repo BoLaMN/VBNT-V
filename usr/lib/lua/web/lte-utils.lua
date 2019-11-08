@@ -71,7 +71,6 @@ internal.mobiled_state_map = {
 	["disconnected"]		= T"Disconnected",
 	["scanning_network"]	= T"Scanning networks",
 	["upgrading_firmware"]	= T"Upgrading firmware",
-	["SelectAntenna"]		= T"Selecting antenna",
 	["disabled"]			= T"Disabled",
 	["error"]				= T"Error"
 }

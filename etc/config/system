@@ -50,4 +50,8 @@ config log
     option loglevel 'Normal'
     option size '1024000'
 
+config fwupgrade fwupgrade
+    option keeprebootingonlybank '0'
+    option maxbootattempts '1'
+    option switchbacktofailedbank '0'
 

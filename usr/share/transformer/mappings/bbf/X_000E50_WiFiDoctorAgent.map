@@ -119,36 +119,55 @@ Multi_X_000E50_wifi_doctor_agent_.getall = function(mapping)
   }
 end
 
+local function checkValue(binding, newValue)
+  local oldValue = uci_helper.get_from_uci(binding)
+  if newValue ~= oldValue then
+    return true
+  end
+end
+
 Multi_X_000E50_wifi_doctor_agent_.set = {
   Enabled = function(mapping, param, value)
     binding.option = "enabled"
-    uci_helper.set_on_uci(binding, value, commitapply)
-    setSomething = true
+    if checkValue(binding, value) then
+      uci_helper.set_on_uci(binding, value, commitapply)
+      setSomething = true
+    end
   end,
   URL = function(mapping, param, value)
     binding.option = "cs_url"
-    uci_helper.set_on_uci(binding, value, commitapply)
-    setSomething = true
+    if checkValue(binding, value) then
+      uci_helper.set_on_uci(binding, value, commitapply)
+      setSomething = true
+    end
   end,
   BufferSize = function(mapping, param, value)
     binding.option = "cs_buf_sz"
-    uci_helper.set_on_uci(binding, value, commitapply)
-    setSomething = true
+    if checkValue(binding, value) then
+      uci_helper.set_on_uci(binding, value, commitapply)
+      setSomething = true
+    end
   end,
   ReportingPeriod = function(mapping, param, value)
     binding.option = "cs_buf_period"
-    uci_helper.set_on_uci(binding, value, commitapply)
-    setSomething = true
+    if checkValue(binding, value) then
+      uci_helper.set_on_uci(binding, value, commitapply)
+      setSomething = true
+    end
   end,
   ActiveRadio = function(mapping, param, value)
     binding.option = "active_radio"
-    uci_helper.set_on_uci(binding, value, commitapply)
-    setSomething = true
+    if checkValue(binding, value) then
+      uci_helper.set_on_uci(binding, value, commitapply)
+      setSomething = true
+    end
   end,
   AuthPasswd = function(mapping, param, value)
     bindingAuth.option = "passwd"
-    uci_helper.set_on_uci(bindingAuth, value, commitapply)
-    setSomething = true
+    if checkValue(bindingAuth, value) then
+      uci_helper.set_on_uci(bindingAuth, value, commitapply)
+      setSomething = true
+    end
   end,
 }
 

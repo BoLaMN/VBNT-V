@@ -265,8 +265,8 @@ local fwrule_valid = {
 }
 
 local fwrule_defaultObject = {
-    src = "lan",
-    dest = "wan"
+    src = "wan",
+    dest = "lan"
 }
 
 local fwrule_data, fwrule_helpmsg = post_helper.handleTableQuery(fwrule_columns, fwrule_options, nil, fwrule_defaultObject, fwrule_valid)

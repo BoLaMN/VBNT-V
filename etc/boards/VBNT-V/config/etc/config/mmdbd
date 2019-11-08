@@ -4,7 +4,7 @@
 
 config mmdbd 'global'
         option trace_level '2'
-        option max_contact_number '1000'
+        option max_contact_number '100'
 
 #/*******************************************************************/
 #/*               Default contacts configuration                     */

@@ -30,10 +30,12 @@ if [ -z "$source_version" ] || [ -z "$target_version" ]; then
 fi
 echo "firmware-upgrade-ext: $component_name target_version is $target_version" >/dev/console
 
-# Check which version is currently installed.  Try up to 5 times until you get an answer that's not "".
+# Check which version is currently installed.  Try up to 120 times until you get
+# an answer that's not "" as a firmware upgrade of the module might be running
+# if the power was cut during an upgrade.
 installed_version=""
 read_attempts=0
-max_read_attempts=5
+max_read_attempts=120
 while true; do
 	# If you couldn't get an answer, log an error and exit.
 	if [ $read_attempts -ge $max_read_attempts ]; then
@@ -42,7 +44,7 @@ while true; do
 		exit 1
 	fi
 	# Here's the command to get the installed version:
-	if installed_version="$(ubus call mobiled.device get | jsonfilter -e '$.software_version')"; then
+	if ubus call mobiled.device firmware_upgrade | jsonfilter -e '$.status' | grep -Eqv '^started|downloading|downloaded|flashing$' && installed_version="$(ubus call mobiled.device get | jsonfilter -e '$.software_version')"; then
 		break
 	fi
 	let ++read_attempts
@@ -57,14 +59,17 @@ elif [ "$installed_version" != "$source_version" ]; then
 	echo "firmware-upgrade-ext: The installed $component_name version does not match source version, not upgrading." >/dev/console
 	echo "The installed $component_name version does not match source version, not upgrading." >"$component_root/status.success"
 else
-	echo "firmware-upgrade-ext: Updating $component_name firmware version $installed_version -> $target_version" >/dev/console
+	logger -s -t "firmware-upgrade-ext" "Updating $component_name firmware version $installed_version -> $target_version" >/dev/console
 	echo '"completion": 0' >"$component_root/status.inprogress"
 
 	if upgrade_target "$firmware_file"; then
-		echo "firmware-upgrade-ext: Successfully updated $component_name firmware." >/dev/console
+		logger -s -t "firmware-upgrade-ext" "Successfully updated $component_name firmware." >/dev/console
 		echo "$component_name successfully upgraded from $installed_version to $target_version" >"$component_root/status.success"
+
+		# Remove the firmware file to avoid future upgrade attempts.
+		rm "$firmware_file"
 	else
-		echo "firmware-upgrade-ext: ERROR: $component_name firmware update failed." >/dev/console
+		logger -s -t "firmware-upgrade-ext" "ERROR: $component_name firmware update failed." >/dev/console
 		echo "$component_name failed to upgrade from $installed_version to $target_version" >"$component_root/status.failure"
 	fi
 

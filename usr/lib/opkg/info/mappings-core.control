@@ -5,5 +5,5 @@ Source: feeds/custo/mappings-core
 Section: mappings-core
 Maintainer: Technicolor <linuxgw@technicolor.com>
 Architecture: brcm63xx-tch
-Installed-Size: 15780
+Installed-Size: 15813
 Description:  Core Transformer mapping files.

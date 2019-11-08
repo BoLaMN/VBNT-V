@@ -3,7 +3,7 @@
 --! @brief The implementation of the UBUS handler functions
 ---------------------------------
 
-local require, table, pairs, string, collectgarbage = require, table, pairs, string, collectgarbage
+local tinsert = table.insert
 
 local leds
 local runtime = {}
@@ -43,7 +43,7 @@ local function mobiled_get_status(req, msg)
 			session_id = session.session_id,
 			activated = session.activated
 		}
-		table.insert(data_session_requests, s)
+		tinsert(data_session_requests, s)
 	end
 
 	local response = {
@@ -76,7 +76,7 @@ local function mobiled_get_devices(req)
 	local devices = mobiled.get_devices()
 	for _, d in pairs(devices) do
 		local data = d:get_device_info() or {}
-		table.insert(response.devices, {dex_idx = d.sm.dev_idx, dev_desc = data.dev_desc, imei = data.imei })
+		tinsert(response.devices, {dex_idx = d.sm.dev_idx, dev_desc = data.dev_desc, imei = data.imei })
 	end
 	conn:reply(req, response)
 end
@@ -94,16 +94,13 @@ local function get_session_info(device, session)
 		"allowed",
 		"internal",
 		"autoconnect",
+		"activated",
 		"name"
 	}
 
 	if not session.internal then
-		table.insert(session_params, "changed")
-		table.insert(session_params, "interface")
-	end
-
-	if not session.autoconnect then
-		table.insert(session_params, "activated")
+		tinsert(session_params, "changed")
+		tinsert(session_params, "interface")
 	end
 
 	for _, param in pairs(session_params) do
@@ -149,7 +146,7 @@ local function mobiled_get_session_info(req, msg)
 	else
 		local sessions = {}
 		for _, session in pairs(device:get_data_sessions()) do
-			table.insert(sessions, get_session_info(device, session))
+			tinsert(sessions, get_session_info(device, session))
 		end
 		conn:reply(req, { sessions = sessions })
 	end
@@ -181,7 +178,7 @@ local function mobiled_get_network_info(req, msg)
 		return
 	end
 
-	local data = device:get_network_info() or {}
+	local data = device:get_network_info(msg.max_age) or {}
 
 	-- Check if the attach retry timer is running
 	if device.attach_retry_timer.timer then
@@ -297,34 +294,19 @@ local function mobiled_get_device_capabilities(req, msg)
 		return
 	end
 
-	local capabilities = {}
-	local device_capabilities = device:get_device_capabilities()
-	if device_capabilities then
-		capabilities.max_data_sessions = device_capabilities.max_data_sessions
-		capabilities.sms_reading = device_capabilities.sms_reading
-		capabilities.sms_sending = device_capabilities.sms_sending
-		capabilities.strongest_cell_selection = device_capabilities.strongest_cell_selection
-		capabilities.manual_plmn_selection = device_capabilities.manual_plmn_selection
-		capabilities.arfcn_selection_support = device_capabilities.arfcn_selection_support
-		capabilities.band_selection_support = device_capabilities.band_selection_support
-		capabilities.cs_voice_support = device_capabilities.cs_voice_support
-		capabilities.volte_support = device_capabilities.volte_support
-		capabilities.supported_pdp_types = device_capabilities.supported_pdp_types
-		capabilities.supported_auth_types = device_capabilities.supported_auth_types
-		capabilities.terminal_profile = device_capabilities.terminal_profile
-		if device_capabilities.radio_interfaces then
-			local supported_modes = {}
-			for _, radio in pairs(device_capabilities.radio_interfaces) do
-				table.insert(supported_modes, radio.radio_interface)
-				if radio.supported_bands then
-					capabilities["supported_bands_"..radio.radio_interface] = table.concat(radio.supported_bands, " ")
-				end
+	local device_capabilities = device:get_device_capabilities() or {}
+	if device_capabilities.radio_interfaces then
+		local supported_modes = {}
+		for _, radio in pairs(device_capabilities.radio_interfaces) do
+			tinsert(supported_modes, radio.radio_interface)
+			if radio.supported_bands then
+				device_capabilities["supported_bands_"..radio.radio_interface] = table.concat(radio.supported_bands, " ")
 			end
-			capabilities.supported_modes = table.concat(supported_modes, " ")
 		end
+		device_capabilities.supported_modes = table.concat(supported_modes, " ")
+		device_capabilities.radio_interfaces = nil
 	end
-
-	conn:reply(req, capabilities)
+	conn:reply(req, device_capabilities)
 end
 
 local function mobiled_get_device_radio_preferences(req, msg)
@@ -345,22 +327,29 @@ local function mobiled_get_device_radio_preferences(req, msg)
 			supported_modes[radio.radio_interface] = true
 		end
 		for _, radio_preference in ipairs(runtime.config.get_radio_preferences()) do
-			local all_radios_supported = true
-			for _, radio in pairs(radio_preference.radios) do
-				if not supported_modes[radio] then
-					all_radios_supported = false
-					break
+			if radio_preference.name and radio_preference.radios then
+				local is_supported = false
+				for _, radio in pairs(radio_preference.radios) do
+					-- Radios can be qualified with a '?' to indicate that the radio should be omitted
+					-- from the radio preference if it is not supported by the device and not that the
+					-- radio preference should omitted entirely if the radio is not supported.
+					local name, qualifier = radio:match("^(.-)(%??)$")
+					if supported_modes[name] then
+						is_supported = true
+					elseif qualifier ~= "?" then
+						is_supported = false
+						break
+					end
+				end
+				if is_supported then
+					tinsert(radio_preferences, {name = radio_preference.name, radios = table.concat(radio_preference.radios, " ")})
 				end
 			end
-			if all_radios_supported then
-				table.insert(radio_preferences, {name = radio_preference.name, radios = table.concat(radio_preference.radios, " ")})
-			end
 		end
-	end
-
-	if #radio_preferences == 0 and device_capabilities.radio_interfaces then
-		for _, radio in pairs(device_capabilities.radio_interfaces) do
-			table.insert(radio_preferences, {name = radio.radio_interface, radios = radio.radio_interface})
+		if #radio_preferences == 0 then
+			for _, radio in pairs(device_capabilities.radio_interfaces) do
+				tinsert(radio_preferences, {name = radio.radio_interface, radios = radio.radio_interface})
+			end
 		end
 	end
 
@@ -927,6 +916,23 @@ local function mobiled_voice_network_capabilities(req, msg)
 	conn:reply(req, device:get_voice_network_capabilities() or {})
 end
 
+local function mobiled_voice_convert_to_data_call(req, msg)
+	local conn = runtime.ubus
+	local mobiled = runtime.mobiled
+	local dev_idx = msg.dev_idx or 1
+
+	local device = mobiled.get_device(dev_idx)
+	if not device then
+		conn:reply(req, { error = error_messages.no_device })
+		return
+	end
+
+	local ret, errMsg = device:convert_to_data_call(msg.call_id, msg.codec)
+	if not ret and errMsg then
+		conn:reply(req, { error = errMsg })
+	end
+end
+
 local mobiled_methods = {
 	['mobiled'] = {
 		status = {
@@ -1091,6 +1097,9 @@ local mobiled_voice_methods = {
 		},
 		network_capabilities = {
 			mobiled_voice_network_capabilities, {dev_idx = ubus.INT32}
+		},
+		data_call = {
+			mobiled_voice_convert_to_data_call, {dev_idx = ubus.INT32, call_id = ubus.INT32, codec = ubus.STRING}
 		}
 	}
 }

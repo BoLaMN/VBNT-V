@@ -23,7 +23,7 @@ function Mapper:get_pin_info(device, info, type)
 	local ret = device:send_multiline_command('AT+QPINC?', "+QPINC:", 3000)
 	if ret then
 		for _, line in pairs(ret) do
-			local pin_type, pin_unlock_retries, pin_unblock_retries = string.match(line, '+QPINC:%s?"(.-)",%s?(%d+),%s?(%d+)')
+			local pin_type, pin_unlock_retries, pin_unblock_retries = line:match('+QPINC:%s?"(.-)",%s?(%d+),%s?(%d+)')
 			if (type == "pin1" and pin_type == "SC") or (type == "pin2" and pin_type == "P2") then
 				info.unlock_retries_left = pin_unlock_retries
 				info.unblock_retries_left = pin_unblock_retries
@@ -99,7 +99,9 @@ function Mapper:start_data_session(device, session_id, profile)
 		end
 		device.runtime.log:notice("Not ready to start data session yet")
 	else
-		device:send_command(string.format('AT+CGACT=1,%d', cid), 10000)
+		if session.name == "internal_ims_pdn" then
+			return device:send_singleline_command("AT+QIMSACT=1", "+QIMSACT:")
+		end
 	end
 end
 
@@ -117,9 +119,11 @@ function Mapper:stop_data_session(device, session_id)
 			return device:send_command(string.format("AT$QCRMCALL=0,%d,%s", cid, session.pdp_type), 30000)
 		end
 		return device:send_command(string.format("AT$QCRMCALL=0,%d,%s", cid, "3"), 30000)
+	else
+		if session.name == "internal_ims_pdn" then
+			return device:send_singleline_command("AT+QIMSACT=0", "+QIMSACT:")
+		end
 	end
-
-	return device:send_command(string.format('AT+CGACT=0,%d', cid), 10000)
 end
 
 function Mapper:get_session_info(device, info, session_id)
@@ -163,11 +167,11 @@ function Mapper:get_session_info(device, info, session_id)
 		if ret then
 			local ipv4_state, ipv6_state
 			for _, line in pairs(ret) do
-				ipv4_state, ipv6_state = string.match(line, "^$QCRMCALL:%s?(%d),V4$QCRMCALL:%s?(%d),V6$")
+				ipv4_state, ipv6_state = line:match("^$QCRMCALL:%s?(%d),V4$QCRMCALL:%s?(%d),V6$")
 				if ipv4_state then
 					break
 				end
-				local state, ip_type = string.match(line, '$QCRMCALL:%s?(%d),(V%d)')
+				local state, ip_type = line:match('$QCRMCALL:%s?(%d),(V%d)')
 				if ip_type == "V4" then
 					ipv4_state = state
 				end
@@ -187,7 +191,7 @@ function Mapper:get_session_info(device, info, session_id)
 		if info.session_state == "connected" then
 			ret = device:send_singleline_command("AT+QGDCNT?", "+QGDCNT:")
 			if ret then
-				local tx_bytes, rx_bytes = string.match(ret, "^+QGDCNT:%s?(%d+),(%d+)$")
+				local tx_bytes, rx_bytes = ret:match("^+QGDCNT:%s?(%d+),(%d+)$")
 				if tx_bytes then
 					info.packet_counters = {
 						tx_bytes = tonumber(tx_bytes),
@@ -202,17 +206,17 @@ end
 function Mapper:get_network_info(device, info)
 	local ret = device:send_singleline_command('AT+QENG="servingcell"', "+QENG:")
 	if ret then
-		local act = string.match(ret, '+QENG:%s?"servingcell",".-","(.-)"')
+		local act = ret:match('+QENG:%s?"servingcell",".-","(.-)"')
 		local cell_id
 		if act == 'LTE' then
 			local tracking_area_code
-			cell_id, tracking_area_code = string.match(ret, '+QENG:%s?"servingcell",".-","LTE",".-",%d+,%d+,(%x+),%d+,%d+,%d+,%d+,%d+,(%x+),[%d-]+,[%d-]+,[%d-]+,[%d-]+')
+			cell_id, tracking_area_code = ret:match('+QENG:%s?"servingcell",".-","LTE",".-",%d+,%d+,(%x+),%d+,%d+,%d+,%d+,%d+,(%x+),[%d-]+,[%d-]+,[%d-]+,[%d-]+')
 			if tracking_area_code then
 				info.tracking_area_code = tonumber(tracking_area_code, 16)
 			end
 		elseif act == "GSM" or act == "WCDMA" then
 			local location_area_code
-			location_area_code, cell_id = string.match(ret, '+QENG:%s?"servingcell",".-",".-",%d+,%d+,(%x+),(%x+)')
+			location_area_code, cell_id = ret:match('+QENG:%s?"servingcell",".-",".-",%d+,%d+,(%x+),(%x+)')
 			if location_area_code then
 				info.location_area_code = tonumber(location_area_code, 16)
 			end
@@ -221,7 +225,7 @@ function Mapper:get_network_info(device, info)
 			info.cell_id = tonumber(cell_id, 16)
 		end
 
-		local service_state = string.match(ret, '+QENG:%s?"servingcell","(.-)"')
+		local service_state = ret:match('+QENG:%s?"servingcell","(.-)"')
 		if service_state == "SEARCH" then
 			info.service_state = "no_service"
 		elseif service_state == "LIMSRV" then
@@ -234,7 +238,7 @@ function Mapper:get_network_info(device, info)
 	ret, err = device:send_multiline_command('AT+QGETMAXRATE', "+QGETMAXRATE:")
 	if ret then
 		for _, line in pairs(ret) do
-			local max_tx_rate, max_rx_rate = string.match(line, '^+QGETMAXRATE:%s?1,".-",(%d+),(%d+)$')
+			local max_tx_rate, max_rx_rate = line:match('^+QGETMAXRATE:%s?1,".-",(%d+),(%d+)$')
 			if max_tx_rate then
 				info.connection_rate = {
 					max_tx_rate = tonumber(max_tx_rate),
@@ -245,12 +249,40 @@ function Mapper:get_network_info(device, info)
 	elseif err ~= "blacklisted" then
 		table.insert(device.command_blacklist, 'AT%+QGETMAXRATE')
 	end
+	local neighbour_cells = {}
+	ret = device:send_multiline_command('AT+QENG="neighbourcell"', "+QENG:")
+	if ret then
+		for _, line in pairs(ret) do
+			local act = line:match('%+QENG:%s?"neighbourcell.-","(.-)"')
+			if act == 'LTE' then
+				local band_type, earfcn, phy_cell_id, rsrq, rsrp, rssi, sinr = line:match('%+QENG:%s?"neighbourcell(.-)","LTE",(%d+),(%d+),([%d-]+),([%d-]+),([%d-]+),([%d-]+)')
+				if band_type then
+					local cell = {
+						dl_earfcn = tonumber(earfcn),
+						phy_cell_id = tonumber(phy_cell_id),
+						rssi = tonumber(rssi),
+						rsrp = tonumber(rsrp),
+						rsrq = tonumber(rsrq)
+					}
+					sinr = tonumber(sinr)
+					if sinr then
+						cell.sinr = ((sinr/5)-20)
+					end
+					if band_type ~= "" then
+						cell.band_type = band_type:gsub("^ *", "")
+					end
+					table.insert(neighbour_cells, cell)
+				end
+			end
+		end
+	end
+	info.neighbour_cells = neighbour_cells
 end
 
 local function get_complete_revision(device)
 	local revision = device:get_revision()
 	if revision then
-		local prefix, suffix = revision:match("^(.+FAR%d+A%d+)(M4G.*)$")
+		local prefix, suffix = revision:match("^(.+[FL]AR%d+A%d+)(M4G.*)$")
 		if prefix and suffix then
 			local response = device:send_singleline_command('AT+CSUB', 'SubEdition:')
 			if response then
@@ -289,6 +321,13 @@ function Mapper:get_device_info(device, info) --luacheck: no unused args
 			device.buffer.device_info.software_version = get_complete_revision(device)
 		end
 	end
+	local ret = device:send_singleline_command("AT+QTEMP", "+QTEMP:")
+	if ret then
+		local temperature = ret:match('^+QTEMP:%s?([%d-]+),[%d-]+,[%d-]+$')
+		if temperature then
+			info.temperature = tonumber(temperature)
+		end
+	end
 end
 
 local bandwidth_map = {
@@ -303,13 +342,16 @@ local bandwidth_map = {
 function Mapper:get_radio_signal_info(device, info)
 	local ret = device:send_singleline_command('AT+QNWINFO', "+QNWINFO:")
 	if ret then
-		info.radio_bearer_type = string.match(ret, '+QNWINFO:%s?"(.-)"')
+		info.radio_bearer_type = ret:match('+QNWINFO:%s?"(.-)"')
 	end
 	ret = device:send_singleline_command('AT+QENG="servingcell"', "+QENG:")
 	if ret then
-		local act = string.match(ret, '+QENG:%s?"servingcell",".-","(.-)"')
+		local act = ret:match('+QENG:%s?"servingcell",".-","(.-)"')
 		if act == 'LTE' then
-			local phy_cell_id, earfcn, band, ul_bw, dl_bw, rsrp, rsrq, rssi, sinr, tx_power = string.match(ret, '+QENG:%s?"servingcell",".-","LTE",".-",%d+,%d+,%x+,(%d+),(%d+),(%d+),(%d+),(%d+),%x+,([%d-]+),([%d-]+),([%d-]+),([%d-]+),[%d-]+,([%d-]+)')
+			local phy_cell_id, earfcn, band, ul_bw, dl_bw, rsrp, rsrq, rssi, sinr, tx_power = ret:match('+QENG:%s?"servingcell",".-","LTE",".-",%d+,%d+,%x+,(%d+),(%d+),(%d+),(%d+),(%d+),%x+,([%d-]+),([%d-]+),([%d-]+),([%d-]+),[%d-]+,([%d-]+)')
+			if not phy_cell_id then
+				phy_cell_id, earfcn, band, ul_bw, dl_bw, rsrp, rsrq, rssi, sinr = ret:match('+QENG:%s?"servingcell",".-","LTE",".-",%d+,%d+,%x+,(%d+),(%d+),(%d+),(%d+),(%d+),%x+,([%d-]+),([%d-]+),([%d-]+),([%d-]+)')
+			end
 			info.lte_band = tonumber(band)
 			info.lte_ul_bandwidth = bandwidth_map[ul_bw]
 			info.lte_dl_bandwidth = bandwidth_map[dl_bw]
@@ -321,16 +363,37 @@ function Mapper:get_radio_signal_info(device, info)
 				info.sinr = ((sinr/5)-20)
 			end
 			tx_power = tonumber(tx_power)
-			if tx_power ~= -32768 then
+			if tx_power and tx_power ~= -32768 then
 				info.tx_power = tx_power/10
 			end
 			info.dl_earfcn = tonumber(earfcn)
 			info.phy_cell_id = tonumber(phy_cell_id)
+			ret = device:send_multiline_command("AT+QCAINFO", "+QCAINFO:")
+			if ret then
+				local carriers = {}
+				for _, line in pairs(ret) do
+					earfcn, dl_bw, band, phy_cell_id, rsrp, rsrq, rssi, sinr = line:match('+QCAINFO: %s?"sss",(%d+),(%d+),"LTE BAND (%d+)",%d+,(%d+),([%d-]+),([%d-]+),([%d-]+),([%d-]+)')
+					if earfcn then
+						local carrier = {
+							dl_earfcn = tonumber(earfcn),
+							phy_cell_id = tonumber(phy_cell_id),
+							lte_band = tonumber(band),
+							lte_dl_bandwidth = bandwidth_map[dl_bw],
+							rsrp = tonumber(rsrp),
+							rsrq = tonumber(rsrq),
+							rssi = tonumber(rssi),
+							sinr = tonumber(sinr)
+						}
+						table.insert(carriers, carrier)
+					end
+				end
+				info.additional_carriers = carriers
+			end
 		elseif act == 'GSM' then
-			local arfcn = string.match(ret, '+QENG:%s?"servingcell",".-","GSM",%d+,%d+,%x+,%x+,%d+,(%d+)')
+			local arfcn = ret:match('+QENG:%s?"servingcell",".-","GSM",%d+,%d+,%x+,%x+,%d+,(%d+)')
 			info.dl_arfcn = tonumber(arfcn)
 		elseif act == 'WCDMA' then
-			local uarfcn, rscp, ecio = string.match(ret, '+QENG:%s?"servingcell",".-","WCDMA",%d+,%d+,%x+,%x+,(%d+),%d+,%d+,([%d-]+),([%d-]+)')
+			local uarfcn, rscp, ecio = ret:match('+QENG:%s?"servingcell",".-","WCDMA",%d+,%d+,%x+,%x+,(%d+),%d+,%d+,([%d-]+),([%d-]+)')
 			info.dl_uarfcn = tonumber(uarfcn)
 			info.rscp = tonumber(rscp)
 			info.ecio = tonumber(ecio)
@@ -342,7 +405,7 @@ local function get_supported_lte_bands(device)
 	local supported_bands = {}
 	local ret = device:send_singleline_command("AT+QNVR=6828,0", "+QNVR:")
 	if ret then
-		local data = string.match(ret, '+QNVR:%s?"(.-)"')
+		local data = ret:match('+QNVR:%s?"(.-)"')
 		if data then
 			data = string.sub(data, 1, 16)
 			local offset = 0
@@ -370,11 +433,14 @@ function Mapper:get_device_capabilities(device, info)
 	local ret = device:send_singleline_command("AT+QHVN?", "+QHVN:")
 	if ret then
 		local hardware_version = ret:match('^+QHVN:%s?(.-)$')
-		if hardware_version and hardware_version:match("EC25AUTL") then
+		if hardware_version and (hardware_version:match("EC25AUTL") or hardware_version:match("EG06%-AUTL")) then
 			info.cs_voice_support = false
 			info.radio_interfaces = {
 				{ radio_interface = "lte", supported_bands = get_supported_lte_bands(device) }
 			}
+			if hardware_version:match("EG06%-AUTL") then
+				info.max_carriers = 2
+			end
 			return
 		end
 	end
@@ -403,9 +469,25 @@ local config_defaults = {
 	audio_digital_tx_gain = { default = 8192, type = "number" },
 	audio_codec_tx_gain = { default = 8192, type = "number" },
 	audio_digital_rx_gain = { default = 8192, type = "number" },
+	audio_mode = { default = -1, type = "number" },
+	audio_codecs = { default = "AMR_WB;AMR;PCMA;PCMU", type = "string" },
 	sip_user_agent = { default = 'Quectel <model> <software_version>', type = "string" },
-	mbn_selection = { default = "none", type = "string" }
+	mbn_selection = { default = "none", type = "string" },
+	data_call_codec = { default = "PCMU", type = "string" },
+	ringing_timer = { default = 90000, type = "number" },
+	enable_lapi = { default = "0", type = "string" }
 }
+
+local function set_config(device, config, facility, value)
+	-- Some commands fail to read before they are explicitly set
+	local ret = device:send_singleline_command(string.format('AT+%s="%s"', config, facility), string.format("+%s:", config))
+	if not ret or ret:match('^+.-:%s?".-",([^,]+)') ~= value:gsub('"', '') then
+		ret = device:send_command(string.format('AT+%s="%s",%s', config, facility, value))
+		if ret then
+			return true
+		end
+	end
+end
 
 function Mapper:configure_device(device, config)
 	for k, v in pairs(config_defaults) do
@@ -434,45 +516,55 @@ function Mapper:configure_device(device, config)
 	log:info('Using SIP user agent "%s"', parsed_user_agent)
 	device:send_command(string.format('AT+QIMSCFG="user_agent","%s"', parsed_user_agent))
 
-	device:send_command(string.format('AT+QMIC=%d,%d', config.device.audio_codec_tx_gain, config.device.audio_digital_tx_gain))
-	device:send_command(string.format('AT+QRXGAIN=%d', config.device.audio_digital_rx_gain))
+	-- Set the audio mode before setting the gains as setting the audio mode will overwrite the gains.
+	if config.device.audio_mode >= 0 then
+		device:send_command(string.format('AT+QAUDMOD=%d', config.device.audio_mode))
+	end
+	if config.device.audio_codec_tx_gain >= 0 and config.device.audio_digital_tx_gain >= 0 then
+		device:send_command(string.format('AT+QMIC=%d,%d', config.device.audio_codec_tx_gain, config.device.audio_digital_tx_gain))
+	end
+	if config.device.audio_digital_rx_gain >= 0 then
+		device:send_command(string.format('AT+QRXGAIN=%d', config.device.audio_digital_rx_gain))
+	end
+
+	local padded_codecs = config.device.audio_codecs .. string.rep("\0", 128 - string.len(config.device.audio_codecs))
+	local encoded_codecs = string.gsub(padded_codecs, ".", function(character)
+		return string.format("%02X", string.byte(character))
+	end)
+	if device:send_singleline_command('AT+QNVFR="/nv/item_files/ims/qipcall_audio_codec_list"', "+QNVFR:") ~= "+QNVFR: " .. encoded_codecs then
+		if device:send_command('AT+QNVFW="/nv/item_files/ims/qipcall_audio_codec_list",' .. encoded_codecs) then
+			log:info("Configured audio codecs")
+			reset_required = true
+		end
+	end
+
+	-- The ringing timer must be written in little endian order.
+	local ringing_timer = ""
+	for byte in string.gmatch(string.format("%08X", config.device.ringing_timer), "..") do
+		ringing_timer = byte .. ringing_timer
+	end
+	if device:send_singleline_command('AT+QNVFR="/nv/item_files/ims/qipcall_ringing_timer"', "+QNVFR:") ~= "+QNVFR: " .. ringing_timer then
+		if device:send_command('AT+QNVFW="/nv/item_files/ims/qipcall_ringing_timer",' .. ringing_timer) then
+			log:info("Configured ringing timer")
+			reset_required = true
+		end
+	end
 
 	if config.device.mbn_selection ~= "none" then
-		local auto_select = device:send_singleline_command('AT+QMBNCFG="AutoSel"', '+QMBNCFG:')
-		if auto_select then
-			auto_select = auto_select:match('^%+QMBNCFG:%s*"AutoSel",%s*([01])$')
-		end
 		if config.device.mbn_selection == "auto" then
-			if auto_select ~= "1" then
-				if device:send_command('AT+QMBNCFG="AutoSel",1') then
-					device.runtime.log:notice("Enabled MBN auto-selection")
-					reset_required = true
-				else
-					log:error("Failed to enable MBN auto-selection")
-				end
+			if set_config(device, "QMBNCFG", "AutoSel", "1") then
+				device.runtime.log:notice("Enabled MBN auto-selection")
+				reset_required = true
 			end
 		else
 			local mbn_name = config.device.mbn_selection:gsub('^manual:', '') -- Strip the (optional) prefix.
-			if auto_select ~= "0" then
-				if device:send_command('AT+QMBNCFG="AutoSel",0') and device:send_command(string.format('AT+QMBNCFG="Select","%s"', mbn_name)) then
-					log:notice("Disabled MBN auto-selection and selected MBN '%s'", mbn_name)
-					reset_required = true
-				else
-					log:error("Failed to disable MBN auto-selection and select MBN '%s'", mbn_name)
-				end
-			else
-				local selected_mbn = device:send_singleline_command('AT+QMBNCFG="Select"', '+QMBNCFG:')
-				if selected_mbn then
-					selected_mbn = selected_mbn:match('^%+QMBNCFG:%s*"Select",%s*"?([^"]*)"?$')
-				end
-				if selected_mbn ~= mbn_name then
-					if device:send_command(string.format('AT+QMBNCFG="Select","%s"', mbn_name)) then
-						log:notice("Selected MBN '%s'", mbn_name)
-						reset_required = true
-					else
-						log:error("Failed to select MBN '%s'", mbn_name)
-					end
-				end
+			if set_config(device, "QMBNCFG", "AutoSel", "0") then
+				log:notice("Disabled MBN auto-selection")
+				reset_required = true
+			end
+			if set_config(device, "QMBNCFG", "Select", string.format('"%s"', mbn_name)) then
+				log:notice("Selected MBN '%s'", mbn_name)
+				reset_required = true
 			end
 		end
 	end
@@ -489,9 +581,7 @@ function Mapper:configure_device(device, config)
 			ret = device:send_singleline_command('AT+QDAI?', "+QDAI:")
 			if ret and ret:match('^+QDAI:%s?(.-)$') ~= qdai_config then
 				ret = device:send_command(string.format('AT+QDAI=%s', qdai_config))
-				if not ret then
-					log:error("Failed to configure PCM channel")
-				else
+				if ret then
 					log:info("Configured PCM channel")
 					reset_required = true
 				end
@@ -499,47 +589,58 @@ function Mapper:configure_device(device, config)
 		end
 	end
 
-	local ims_pdn_enable
-	if config.device.volte_enabled then
-		ims_pdn_enable = 1
-		ret = device:send_command('AT+QCFG="volte_disable",0')
-	else
-		ims_pdn_enable = 2
-		ret = device:send_command('AT+QCFG="volte_disable",1')
-	end
-	if not ret then
-		log:error("Failed to configure VoLTE disable")
+	-- Disable the generation of the waiting tone as MMPBX already does this.
+	-- Caution: Invalid AT command response (+QCFG instead of +QAUDCFG)
+	ret = device:send_singleline_command('AT+QAUDCFG="toneswitch"', '+QCFG:')
+	if ret and ret ~= '+QCFG: "toneswitch",1' then
+		device:send_command('AT+QAUDCFG="toneswitch",1')
+		reset_required = true
 	end
 
-	ret = device:send_singleline_command('AT+QCFG="ims"',"+QCFG:")
-	if ret and tonumber(ret:match('^+QCFG:%s?"ims",(%d)')) ~= ims_pdn_enable then
-		ret = device:send_command(string.format('AT+QCFG="ims",%d', ims_pdn_enable))
-		if not ret then
-			log:error("Failed to configure IMS PDN")
-		else
-			log:info("Configured IMS PDN")
+	-- Deprecated parameter but enable it in order to make sure VoLTE keeps working
+	if set_config(device, 'QCFG', 'volte_disable', '0') then
+		log:info("Enabled VoLTE")
+		reset_required = true
+	end
+
+	if config.device.volte_enabled then
+		if set_config(device, 'QCFG', 'ims', '1')  then
+			log:info("Enabled IMS PDN")
+			reset_required = true
+		end
+	else
+		if set_config(device, 'QCFG', 'ims', '2')  then
+			log:info("Disabled IMS PDN")
 			reset_required = true
 		end
 	end
 
+	if config.device.ims_pdn_autobringup == '0' then
+		device:send_command('AT+QIMSACT=0')
+	else
+		device:send_command('AT+QIMSACT=1')
+	end
+
 	local sim_hotswap_enabled = false
 	ret = device:send_singleline_command('AT+QSIMDET?', "+QSIMDET:")
-	if ret and string.match(ret, '^+QSIMDET:%s?(%d),%d$') == '1' then
+	if ret and ret:match('^+QSIMDET:%s?(%d),%d$') == '1' then
 		sim_hotswap_enabled = true
 	end
 	if config.sim_hotswap and not sim_hotswap_enabled then
 		-- Enable SIM hotswap events on low level GPIO transition
 		device:send_command("AT+QSIMDET=1,0")
+		log:info("Enabled SIM hotswap")
 		reset_required = true
 	elseif not config.sim_hotswap and sim_hotswap_enabled then
 		-- Platform doesn't support SIM hotswap so disable it
 		device:send_command("AT+QSIMDET=0,0")
+		log:info("Disabled SIM hotswap")
 		reset_required = true
 	end
 
-	local expected = '01'
-	if not config.device.enable_thin_ui_cfg or config.device.enable_thin_ui_cfg == '1' then
-		expected = '00'
+	local expected = '00'
+	if config.device.enable_thin_ui_cfg == '0' then
+		expected = '01'
 	end
 
 	-- Make sure that CFUN is set to 0 when the module is powered on.
@@ -547,8 +648,6 @@ function Mapper:configure_device(device, config)
 		if device:send_command('AT+QNVFW="/nv/item_files/Thin_UI/enable_thin_ui_cfg",' .. expected) then
 			log:info("Configured auto-attach")
 			reset_required = true
-		else
-			log:error("Failed to configure auto-attach")
 		end
 	end
 
@@ -557,13 +656,23 @@ function Mapper:configure_device(device, config)
 		if device:send_command('AT+QNVFW="/nv/item_files/modem/data/3gpp/ps/remove_unused_pdn",00') then
 			log:info("Disabled sending automatic PDN disconnect requests for unused PDNs")
 			reset_required = true
-		else
-			log:error("Failed to disable sending automatic PDN disconnect requests for unused PDNs")
 		end
 	end
 
 	-- Disable controlling the radio state using the GPIO.
-	device:send_command('AT+QCFG="airplanecontrol",0')
+	set_config(device, 'QCFG', 'airplanecontrol', '0')
+
+	if config.device.enable_lapi == "1" then
+		if set_config(device, 'QNWCFG', 'lapi', '1', false)  then
+			log:info("Enabled LAPI support")
+			reset_required = true
+		end
+	else
+		if set_config(device, 'QNWCFG', 'lapi', '0', false)  then
+			log:info("Disabled LAPI support")
+			reset_required = true
+		end
+	end
 
 	local mode = 0
 	local lte_band_mask
@@ -581,11 +690,10 @@ function Mapper:configure_device(device, config)
 		end
 	end
 
-	if lte_band_mask then
-		lte_band_mask = string.format("%x", lte_band_mask)
-	else
-		lte_band_mask = "ffffffffff"
+	if not lte_band_mask then
+		lte_band_mask = helper.get_lte_band_mask(get_supported_lte_bands(device))
 	end
+	lte_band_mask = string.format("%x", lte_band_mask)
 
 	ret = device:send_singleline_command('AT+QCFG="band"', '+QCFG:')
 	if ret then
@@ -657,10 +765,15 @@ function Mapper:configure_device(device, config)
 	end
 
 	if reset_required then
+		log:warning("Resetting LTE module")
 		-- Reset the device to apply the change
-		device:send_command("AT+CFUN=1,1")
+		device:send_command("AT+QPOWD=1")
 		return nil, "Module reset required"
 	end
+
+	-- Store the data call codec in device so it can be accessed when a voice call
+	-- is converted to a data call.
+	device.data_call_codec = config.device.data_call_codec
 
 	return true
 end
@@ -816,15 +929,21 @@ function Mapper:init_device(device)
 		end
 
 		-- Enable NITZ events
-		device:send_command("AT+CTZR=2")
+		device:send_command('AT+CTZR=2')
 		-- Enable packet domain events
-		device:send_command("AT+CGEREP=2,1")
+		device:send_command('AT+CGEREP=2,1')
 		-- Enable RmNet device status events
-		device:send_command("AT+QNETDEVSTATUS=1")
+		device:send_command('AT+QNETDEVSTATUS=1')
 		-- Enable voice call state change eventing
-		device:send_command("AT^DSCI=1")
+		device:send_command('AT^DSCI=1')
 		-- Enable Distinctive Ring Information and RTP Stream Detection Information
-		device:send_command("AT+QTELSTRASUP=1,1")
+		device:send_command('AT+QTELSTRASUP=1,1')
+		-- Enable SIP status code reporting
+		device:send_command('AT+QIMSCFG="QSIPRC_enable",1')
+		-- Enable codec change reporting
+		device:send_command('AT+QIMSCFG="QSPHCI_enable",1')
+		-- Enable emergency support reporting
+		device:send_command('AT+CNEM=1')
 
 		-- Check whether this is the first boot after a firmware upgrade, check whether it has succeeded and send out the appropriate event.
 		local info = firmware_upgrade.get_state()
@@ -923,15 +1042,10 @@ local function cleanup_firmware_upgrade(device, file_handle, temp_dir, error_cod
 	send_firmware_upgrade_failed(device, error_code)
 end
 
-function Mapper:firmware_upgrade(device, path)
+local function initiate_firmware_upgrade(device, path)
 	local filename = "upgrade.zip"
 	local buffer_size = 2 * 1024 * 1024
 	local chunk_size = 64 * 1024
-
-	if not path then
-		device.buffer.firmware_upgrade_info.status = "invalid_parameters"
-		return nil, "Invalid parameters"
-	end
 
 	local current_revision = get_complete_revision(device)
 	if not current_revision then
@@ -952,7 +1066,7 @@ function Mapper:firmware_upgrade(device, path)
 		cleanup_firmware_upgrade(device, nil, nil, firmware_upgrade.error_codes.download_failed)
 		return nil, "Unable to open file"
 	end
-	local file_handle = string.match(open_result, '%+QFOPEN:%s*(%d+)')
+	local file_handle = open_result:match('%+QFOPEN:%s*(%d+)')
 	if not file_handle then
 		cleanup_firmware_upgrade(device, nil, nil, firmware_upgrade.error_codes.download_failed)
 		return nil, "Unable to open file"
@@ -1011,6 +1125,23 @@ function Mapper:firmware_upgrade(device, path)
 	return true
 end
 
+function Mapper:firmware_upgrade(device, path)
+	if not path then
+		device.buffer.firmware_upgrade_info.status = "invalid_parameters"
+		return nil, "Invalid parameters"
+	end
+
+	-- If the module is currently trying to attach, postpone the firmware upgrade
+	-- until the module is finished, otherwise start it immediately.
+	if device.attach_pending or device.cops_pending then
+		device.firmware_upgrade_path = path
+	else
+		return initiate_firmware_upgrade(device, path)
+	end
+
+	return true
+end
+
 function Mapper:get_firmware_upgrade_info(device)
 	return device.buffer.firmware_upgrade_info
 end
@@ -1019,7 +1150,7 @@ local function convert_time(datetime, tz, dst)
 	local daylight_saving_time = tonumber(dst)
 	local timezone = tonumber(tz) * 15
 	local localtime
-	local year, month, day, hour, min, sec = string.match(datetime, "(%d+)/(%d+)/(%d+),(%d+):(%d+):(%d+)")
+	local year, month, day, hour, min, sec = datetime:match("(%d+)/(%d+)/(%d+),(%d+):(%d+):(%d+)")
 	if year then
 		localtime = os.time({day=day,month=month,year=year,hour=hour,min=min,sec=sec})
 		return localtime, timezone, daylight_saving_time
@@ -1040,10 +1171,10 @@ local function send_call_disconnect_event(device, call)
 end
 
 local dsci_call_states = {
-	-- held
+	-- locally held
 	["1"] = {
 		call_state = "connected",
-		media_state = "held"
+		media_state = "local_held"
 	},
 	-- originated
 	["2"] = {
@@ -1062,8 +1193,8 @@ local dsci_call_states = {
 	},
 	-- waiting
 	["5"] = {
-		call_state = "alerting",
-		media_state = "no_media"
+		call_state = "delivered",
+		media_state = "normal"
 	},
 	-- end
 	["6"] = {
@@ -1074,8 +1205,58 @@ local dsci_call_states = {
 	["7"] = {
 		call_state = "delivered",
 		media_state = "normal"
+	},
+	-- remotely held
+	["8"] = {
+		call_state = "connected",
+		media_state = "remote_held"
+	},
+	-- both locally and remotely held
+	["9"] = {
+		call_state = "connected",
+		media_state = "local_and_remote_held"
 	}
 }
+
+local release_reason_interval = 500
+
+local function get_registration_state(device)
+	local ret = device:send_singleline_command('AT+QCFG="ims"', '+QCFG:')
+	if ret then
+		if ret:match('^+QCFG:%s?"ims",%d,(%d)') == '1' then
+			return 'registered'
+		end
+	end
+	return 'not_registered'
+end
+
+local codec_ids = {
+	["AMR"]    = 6,
+	["AMR_WB"] = 7,
+	["PCMU"]   = 11,
+	["PCMA"]   = 13,
+}
+
+local function switch_to_data_codec(device, call_id, codec_name)
+	local desired_codec = codec_ids[codec_name]
+	if not desired_codec then
+		return nil, "Unsupported codec"
+	end
+
+	for _, result in pairs(device:send_multiline_command('AT+QIMSCFG="speech_codec"', '+QIMSCFG: "speech_codec"') or {}) do
+		local current_codec, current_call_id = result:match('^%+QIMSCFG: "speech_codec",%d+,(%d+),%d+,(%d+)$')
+		if current_codec and tonumber(current_call_id) == call_id then
+			if tonumber(current_codec) == desired_codec then
+				-- The codec is already the desired one, no need to change it.
+				return true
+			end
+
+			break
+		end
+	end
+
+	return device:send_command(string.format('AT+QIMSCFG="speech_codec",%d,%d', desired_codec, call_id))
+end
 
 function Mapper:unsolicited(device, data, sms_data) --luacheck: no unused args
 	local prefix, message = data:match('^(%p[%u%s]+):%s*(.*)$')
@@ -1122,10 +1303,12 @@ function Mapper:unsolicited(device, data, sms_data) --luacheck: no unused args
 				end
 			elseif fota_command == "START" then
 				device.buffer.firmware_upgrade_info.status = "flashing"
+				device.buffer.firmware_upgrade_info.completion = 0
 			elseif fota_command == "UPDATING" then
 				local progress = tonumber(fota_arguments)
 				if progress then
 					device.buffer.firmware_upgrade_info.status = "flashing"
+					device.buffer.firmware_upgrade_info.completion = progress
 				end
 			elseif fota_command == "END" then
 				local error_code = tonumber(fota_arguments)
@@ -1133,6 +1316,7 @@ function Mapper:unsolicited(device, data, sms_data) --luacheck: no unused args
 					-- Do not send out done events as the postflash commands still have to run.
 					send_firmware_upgrade_failed(device, firmware_upgrade.error_codes.download_failed)
 				end
+				device.buffer.firmware_upgrade_info.completion = nil
 			end
 			firmware_upgrade.update_state(device, device.buffer.firmware_upgrade_info)
 			return true
@@ -1147,64 +1331,66 @@ function Mapper:unsolicited(device, data, sms_data) --luacheck: no unused args
 			device.calls[call_id].direction = voice.clcc_direction[direction]
 			device.calls[call_id].number_format = voice.clcc_number_type[number_type]
 
+			device.runtime.log:debug("Processing DSCI: call_id=%s, call_state=%s, remote_party=%s", tostring(call_id), tostring(current_dsci_call_state), tostring(remote_party))
+
+			-- sip:mmtel is the remote party when we are getting connected to the conference server.
+			-- if device.conference exists and sip:mmtel is the remote party it means that this is the first conference server related ^DSCI message
+			-- we need to take the temporary stored mmpbx and media state taken form the call we decided to keep,
+			-- in order to have consistent messaging towards mmpbx
+			-- Note: For EC25 "sip:mmtel" applies. For EG06 "mmtel" applies
+			-- Note: For EC25 in case of sip:mmtel only the "connected" state is seen in DSCI messaging
+			if device.conference and (remote_party == "sip:mmtel" or remote_party == "mmtel") then
+				device.calls[call_id].mmpbx_call_id = device.conference.mmpbx_call_id
+				device.calls[call_id].media_state = device.conference.media_state
+				device.conference = nil
+			end
+
 			if current_dsci_call_state == "disconnected" then
-				if device.conference and device.conference.mmpbx_call_id == device.calls[call_id].mmpbx_call_id then
-					device.calls[call_id] = nil
-
-					local conference_ongoing = false
-					local call_id_in_use = false
-					local ret = device:send_multiline_command("AT+CLCC", "+CLCC:")
-					if ret then
-						for _, clcc_call_info in pairs(ret) do
-							local id, call_state, mode, conference_state, phone_number = string.match(clcc_call_info, '^%+CLCC:%s*(%d+),%d+,(%d+),(%d+),(%d+),"(.-)",%d+$')
-							id = tonumber(id)
-							if id and voice.clcc_mode[mode] == "voice" and device.calls[id] then
-								conference_ongoing = conference_ongoing or conference_state == "1" or phone_number == "sip:mmtel"
-								call_id_in_use = call_id_in_use or device.calls[id].mmpbx_call_id == device.conference.mmpbx_call_id
-							end
+				if device.calls[call_id].call_state ~= "disconnected" then
+					device.calls[call_id].call_state = current_dsci_call_state
+					-- release process in case of conference call
+					if device.calls[call_id].conference_processing then
+						device.runtime.log:debug("release processing: module_call_id=%s, mmpbx_call_id= %s", tostring(call_id), tostring(device.calls[call_id].mmpbx_call_id))
+						if device.calls[call_id].conference_processing == "release_mmpbx_callid" then
+							send_call_disconnect_event(device, device.calls[call_id])
 						end
+						device.calls[call_id] = nil
+						return true
 					end
-					if not conference_ongoing then
-						if not call_id_in_use then
-							device:send_event("mobiled.voice", {
-								event = "call_state_changed",
-								call_id = device.conference.mmpbx_call_id,
-								dev_idx = device.dev_idx,
-								call_state = "disconnected",
-								reason = "normal",
-								remote_party = remote_party,
-								number_format = voice.clcc_number_type[number_type]
-							})
-						end
 
-						device.conference = nil
+					if device.calls[call_id].release_reason then
+						if device.calls[call_id].release_reason_timer then
+							device.calls[call_id].release_reason_timer:cancel()
+							device.calls[call_id].release_reason_timer = nil
+						end
+						send_call_disconnect_event(device, device.calls[call_id])
+						device.calls[call_id] = nil
+					else
+						-- If the release reason is not set we are still expecting it. In this case the
+						-- sending of the ubus event is delayed. A timer is started to send the event
+						-- anyway if the event does not arrive within a certain interval.
+						device.calls[call_id].disconnect_timer = device.runtime.uloop.timer(function()
+							device.calls[call_id].release_reason = "normal"
+							send_call_disconnect_event(device, device.calls[call_id])
+							device.calls[call_id] = nil
+						end, release_reason_interval)
 					end
 				else
-					if device.calls[call_id].call_state ~= "disconnected" then
-						device.calls[call_id].release_reason = "normal"
-						device.calls[call_id].call_state = current_dsci_call_state
-						send_call_disconnect_event(device, device.calls[call_id])
-					end
 					device.calls[call_id] = nil
 				end
 			elseif current_dsci_call_state == "dialing" or current_dsci_call_state == "alerting" then
 				device.calls[call_id].call_state = current_dsci_call_state
 				device.calls[call_id].media_state = dsci_call_states[call_state].media_state
 				if not device.calls[call_id].mmpbx_call_id then -- occurs in case of call state alerting
-					if device.conference and remote_party == "sip:mmtel" then
-						device.calls[call_id].mmpbx_call_id = device.conference.mmpbx_call_id
-					else
-						device.calls[call_id].mmpbx_call_id = device.mmpbx_call_id_counter
-						device.mmpbx_call_id_counter = device.mmpbx_call_id_counter + 1
-					end
+					device.calls[call_id].mmpbx_call_id = device.mmpbx_call_id_counter
+					device.mmpbx_call_id_counter = device.mmpbx_call_id_counter + 1
 				end
-				if not device.conference or device.calls[call_id].mmpbx_call_id ~= device.conference.mmpbx_call_id then
+				if remote_party ~= "sip:mmtel" and remote_party ~= "mmtel" then
 					local event = {
 						event = "call_state_changed",
 						call_id = device.calls[call_id].mmpbx_call_id,
 						dev_idx = device.dev_idx,
 						call_state = device.calls[call_id].call_state,
-						reason = device.calls[call_id].release_reason,
 						remote_party = remote_party,
 						number_format = device.calls[call_id].number_format
 					}
@@ -1214,16 +1400,15 @@ function Mapper:unsolicited(device, data, sms_data) --luacheck: no unused args
 					end
 					device:send_event("mobiled.voice", event)
 				end
-			else -- call state = connected or delivered
+			else -- call state = connected or delivered -- media state handling included
 				if device.calls[call_id].call_state ~= current_dsci_call_state then
-					if not device.conference or device.calls[call_id].mmpbx_call_id ~= device.conference.mmpbx_call_id then
+					if remote_party ~= "sip:mmtel" and remote_party ~= "mmtel" then
 						if current_dsci_call_state == "connected" and device.calls[call_id].call_state == "dialing" then
 							device:send_event("mobiled.voice", {
 								event = "call_state_changed",
 								call_id = device.calls[call_id].mmpbx_call_id,
 								dev_idx = device.dev_idx,
 								call_state = "delivered",
-								reason = device.calls[call_id].release_reason,
 								remote_party = remote_party,
 								number_format = device.calls[call_id].number_format
 							})
@@ -1233,7 +1418,6 @@ function Mapper:unsolicited(device, data, sms_data) --luacheck: no unused args
 							call_id = device.calls[call_id].mmpbx_call_id,
 							dev_idx = device.dev_idx,
 							call_state = current_dsci_call_state,
-							reason = device.calls[call_id].release_reason,
 							remote_party = remote_party,
 							number_format = device.calls[call_id].number_format
 						})
@@ -1241,6 +1425,84 @@ function Mapper:unsolicited(device, data, sms_data) --luacheck: no unused args
 					device.calls[call_id].call_state = current_dsci_call_state
 					device.calls[call_id].media_state = dsci_call_states[call_state].media_state
 				end
+				-- media state changes handled
+				local current_dsci_media_state = dsci_call_states[call_state].media_state
+				if not device.calls[call_id].media_state then
+					device.calls[call_id].media_state = current_dsci_media_state
+				end
+				if device.calls[call_id].media_state ~= current_dsci_media_state then
+					device.calls[call_id].media_state = current_dsci_media_state
+					--- send media_state_changed event
+					device:send_event("mobiled.voice", {
+						event = "media_state_changed",
+						call_id = device.calls[call_id].mmpbx_call_id,
+						dev_idx = device.dev_idx,
+						media_state = device.calls[call_id].media_state
+					})
+					if device.calls[call_id].conference_processing == "reuse_mmpbx_callid" and device.conference then
+						device.conference.media_state = current_dsci_media_state
+					end
+				end
+
+				-- If MMPBX intructed the call to become a data call while the call was not
+				-- established yet the call was marked to be convered to a data call. Now that
+				-- the call is established the re-INVITE can be sent.
+				if device.calls[call_id].data_call_codec then
+					switch_to_data_codec(device, call_id, device.calls[call_id].data_call_codec)
+					device.calls[call_id].data_call_codec = nil
+				end
+			end
+		end
+		return true
+	elseif prefix == "+QSIPRC" then
+		local call_id, status_code, method = message:match("^(%d+),(%d+)(.*)$")
+		if call_id then
+			call_id = tonumber(call_id)
+			status_code = tonumber(status_code)
+			if call_id ~= 255 then
+				local call = device.calls[call_id]
+				if call then
+					if call.release_reason_timer then
+						call.release_reason_timer:cancel()
+						call.release_reason_timer = nil
+					end
+
+					if status_code == 200 or status_code == 0 then
+						call.release_reason = "normal"
+					elseif status_code == 486 or status_code == 600 then
+						call.release_reason = "busy"
+					elseif 400 <= status_code and status_code <= 699 then
+						call.release_reason = "call_rejected"
+					end
+
+					if call.release_reason then
+						if call.call_state == "disconnected" then
+							if call.disconnect_timer then
+								call.disconnect_timer:cancel()
+								call.disconnect_timer = nil
+							end
+							send_call_disconnect_event(device, call)
+							device.calls[call_id] = nil
+						else
+							-- If the call state is not (yet) disconnected, this URC is received before the
+							-- DSCI URC or is not related to the call end. In order to avoid that in the
+							-- latter case a disconnected event is sent with the wrong release reason
+							-- because the URC with the actual release reason is received after the DSCI URC
+							-- a timer is started that will erase the release reason again after a short
+							-- amount of time.
+							call.release_reason_timer = device.runtime.uloop.timer(function()
+								call.release_reason = nil
+								call.release_reason_timer = nil
+							end, release_reason_interval)
+						end
+					end
+				end
+			elseif method == ',"REGISTER"' then
+				device:send_event("mobiled.voice", {
+					dev_idx = device.dev_idx,
+					event = "registration_state_changed",
+					registration_state = get_registration_state(device)
+				})
 			end
 		end
 		return true
@@ -1256,9 +1518,9 @@ function Mapper:unsolicited(device, data, sms_data) --luacheck: no unused args
 		end
 		return true
 	elseif prefix == "+MWI" then
-		local msg_type, msg_count = message:match("^([0-4])%s*,%s*[01]%s*,%s*([0-9]+)$")
+		local msg_type, msg_count = message:match("^(%d+)%s*,%s*(%d+)")
 		-- Check whether the match was successful and the message type is VOICE.
-		if msg_type == "0" then
+		if msg_type == "0" or msg_type == "255" then
 			device.buffer.voice_info.messages_waiting = tonumber(msg_count)
 			device:send_event("mobiled.voice", {
 				dev_idx = device.dev_idx,
@@ -1268,20 +1530,54 @@ function Mapper:unsolicited(device, data, sms_data) --luacheck: no unused args
 		end
 		return true
 	elseif prefix == "+RTPDI" then
-		for _, call in pairs(device.calls) do
-			if call.call_state == "dialing" or call.call_state == "delivered" then
-				device:send_event("mobiled.voice", {
-					dev_idx = device.dev_idx,
-					call_id = call.mmpbx_call_id,
-					event = "early_media",
-					early_media = message == "1"
-				})
-				break
+		-- Depending on the Quectel FW, the +RTPDI returns either only whether an RTP
+		-- stream was detected or both whether an RTP stream was detected and the call
+		-- ID for which the RTP stream was detected.
+		local rtp_detected = message:match("^(%d+)") == "1"
+		local call_id = tonumber(message:match("^%d+,(%d+)"))
+		local mmpbx_call_id
+		if call_id then
+			local call = device.calls[call_id]
+			if call and (call.call_state == "dialing" or call.call_state == "delivered") then
+				mmpbx_call_id = call.mmpbx_call_id
 			end
+		else
+			-- If the call ID is not specified look for a call that is in the dialing or
+			-- delivered state and assume it is the one for which an RTP stream was detected.
+			for _, call in pairs(device.calls) do
+				if call.call_state == "dialing" or call.call_state == "delivered" then
+					mmpbx_call_id = call.mmpbx_call_id
+					break
+				end
+			end
+		end
+		if mmpbx_call_id then
+			device:send_event("mobiled.voice", {
+				dev_idx = device.dev_idx,
+				call_id = mmpbx_call_id,
+				event = "early_media",
+				early_media = rtp_detected
+			})
 		end
 		return true
 	elseif prefix == "+DRI" then
 		device.distinctive_ring = tonumber(message)
+		return true
+	elseif prefix == "+QSPHCI" then
+		local codec, call_id = message:match("%d+,(%d+),%d+,(%d+)")
+
+		-- Only send out the data_call event if the codec is changed to a G711 codec.
+		if codec == "11" or codec == "13" then
+			local call = device.calls[tonumber(call_id)]
+			if call then
+				device:send_event("mobiled.voice", {
+					dev_idx = device.dev_idx,
+					call_id = call.mmpbx_call_id,
+					event = "data_call",
+				})
+			end
+		end
+
 		return true
 	end
 end
@@ -1289,13 +1585,20 @@ end
 function Mapper:get_time_info(device, info)
 	local ret = device:send_singleline_command("AT+QLTS=2", "+QLTS:")
 	if ret then
-		local datetime, tz, dst = string.match(ret, '^+QLTS:%s?"([%d/,:]+)([%+%-%d]+),(%d)"')
+		local datetime, tz, dst = ret:match('^+QLTS:%s?"([%d/,:]+)([%+%-%d]+),(%d)"')
 		info.localtime, info.timezone, info.daylight_saving_time = convert_time(datetime, tz, dst)
 		return true
 	end
 end
 
 function Mapper:set_attach_params(device, profile)
+	-- Prevent the module from attaching if it is currently uploading a firmware
+	-- image as attaching might take a long time and would interfere with the upload.
+	if device.firmware_upload or device.cops_pending then
+		device.runtime.log:info("Not ready to set attach params")
+		return nil, "Not ready"
+	end
+
 	local pdptype, errMsg = session_helper.get_pdp_type(device, profile.pdptype)
 	if not pdptype then
 		return nil, errMsg
@@ -1317,6 +1620,13 @@ function Mapper:set_attach_params(device, profile)
 end
 
 function Mapper:network_attach(device)
+	-- Prevent the module from attaching if it is currently uploading a firmware
+	-- image as attaching might take a long time and would interfere with the upload.
+	if device.firmware_upload then
+		device.runtime.log:info("Not ready to attach: firmware upgrade ongoing")
+		return nil, "Firmware upgrade ongoing"
+	end
+
 	if device.attach_pending then
 		return true
 	end
@@ -1337,9 +1647,19 @@ function Mapper:handle_event(device, message)
 			end
 			device.attach_pending = false
 		end
+
+		if device.firmware_upgrade_path then
+			initiate_firmware_upgrade(device, device.firmware_upgrade_path)
+			device.firmware_upgrade_path = nil
+		end
 	elseif message.event == "command_cleared" then
 		if message.command == "AT+CGATT=1" then
 			device.attach_pending = false
+		end
+
+		if device.firmware_upgrade_path then
+			initiate_firmware_upgrade(device, device.firmware_upgrade_path)
+			device.firmware_upgrade_path = nil
 		end
 	elseif message.event == "async_chunk_received" then
 		if device.firmware_upload then
@@ -1391,22 +1711,7 @@ end
 
 function Mapper:destroy_device(device, force) --luacheck: no unused args
 	 if device.calls then
-		if device.conference then
-			local disconnect_event_sent = false
-			for call_id, call in pairs(device.calls) do
-				if call.mmpbx_call_id == device.conference.mmpbx_call_id then
-					if not disconnect_event_sent then
-						call.release_reason = "device_disconnected"
-						call.call_state = "disconnected"
-						send_call_disconnect_event(device, call)
-						disconnect_event_sent = true
-					end
-					device.calls[call_id] = nil
-				end
-			end
-			device.conference = nil
-		end
-		for call_id, call in pairs(device.calls) do
+		for _, call in pairs(device.calls) do
 			call.release_reason = "device_disconnected"
 			call.call_state = "disconnected"
 			send_call_disconnect_event(device, call)
@@ -1428,35 +1733,107 @@ local function link_changed(device, msg)
 	end
 end
 
+local function is_emergency_number(device, number)
+	-- AT+CEN? returns lines that start with '+CEN1:' and lines that start with '+CEN2:'.
+	-- Although we are only interested in lines starting with '+CEN2:', both have
+	-- to be captured as otherwise they are treated as unsolicited messages.
+	local ret = device:send_multiline_command('AT+CEN?', '+CE')
+	if ret then
+		for _, line in ipairs(ret) do
+			if line:match('^%+CEN2:%s*%d+%s*,%s*(.+)$') == number then
+				return true
+			end
+		end
+	end
+
+	ret = device:send_multiline_command('AT+QECCNUM?', '+QECCNUM:')
+	if ret then
+		for _, line in ipairs(ret) do
+			if line:match('^%+QECCNUM:%s*[01]%s*,.*"' .. number .. '".*$') then
+				return true
+			end
+		end
+	end
+
+	return false
+end
+
+function Mapper:dial(device, number)
+	local ret = device:send_command(string.format("ATD%s;", number))
+	if ret then
+		ret = device:send_multiline_command("AT+CLCC", "+CLCC:")
+		if ret then
+			for _, call in pairs(ret) do
+				local id, _, call_state, mode, _, _, _ = call:match('%+CLCC:%s*(%d+),(%d+),(%d+),(%d+),(%d+),"(.-)",(%d+)')
+				id = tonumber(id)
+				if voice.clcc_mode[mode] == "voice" then
+					if voice.clcc_call_states[call_state].call_state == "dialing" or voice.clcc_call_states[call_state].call_state == "delivered" then
+						if not device.calls[id] then
+							device.calls[id] = {emergency = is_emergency_number(device, number)}
+						end
+						if not device.calls[id].mmpbx_call_id then
+							device.calls[id].mmpbx_call_id = device.mmpbx_call_id_counter
+							device.mmpbx_call_id_counter = device.mmpbx_call_id_counter + 1
+						end
+
+						local call_id_info = {call_id = device.calls[id].mmpbx_call_id}
+						return call_id_info
+					end
+				end
+			end
+		end
+	end
+	return nil, "Dialing failed"
+end
+
 function Mapper:end_call(device, mmpbx_call_id)
 	mmpbx_call_id = tonumber(mmpbx_call_id)
 	if not mmpbx_call_id then
 		return nil, "Invalid call ID"
 	end
 
-	if device.conference and device.conference.mmpbx_call_id == mmpbx_call_id then
-		local ret = device:send_multiline_command("AT+CLCC", "+CLCC:")
-		if not ret then
-			return nil, "Could not retrieve call info"
-		end
-		for _, clcc_call_info in pairs(ret) do
-			local id, mode, conference_state, phone_number = string.match(clcc_call_info, '^%+CLCC:%s*(%d+),%d+,%d+,(%d+),(%d+),"(.-)",%d+$')
-			id = tonumber(id)
-			if id and voice.clcc_mode[mode] == "voice" and (conference_state == "1" or phone_number == "sip:mmtel") then
-				device:send_command(string.format('AT+CHLD=1%d', id), 5000)
-			end
-		end
-		return true
-	end
-
 	for call_id, call in pairs(device.calls) do
 		if call.mmpbx_call_id == mmpbx_call_id then
-			device:send_command(string.format('AT+CHLD=1%d', call_id), 5000)
+			if call.emergency then
+				-- AT+CHLD does not work for emergency calls as per 3GPP 24.610 supplementary
+				-- services are not allowed for emergency calls.
+				device:send_command('AT+CHUP', 5000)
+			else
+				device:send_command(string.format('AT+CHLD=1%d', call_id), 5000)
+			end
 			return true
+		end
+	end
+
+	-- The module behaved incorrect with respect to conference handling. Corrective actions taken below as a workaround
+	if device.conference and mmpbx_call_id == device.conference.mmpbx_call_id then
+		local ret = device:send_multiline_command("AT+CLCC", "+CLCC:")
+		if ret then
+			for _, call in pairs(ret) do
+				local module_call_id, _, call_state, _, _, remote_party, _ = call:match('%+CLCC:%s*(%d+),(%d+),(%d+),(%d+),(%d+),"(.-)",(%d+)')
+				if module_call_id then
+					module_call_id = tonumber(module_call_id)
+					if remote_party == "sip:mmtel" or remote_party == "mmtel" then
+						device.calls[module_call_id] = device.calls[module_call_id] or {}
+						device.calls[module_call_id].remote_party = remote_party
+						device.calls[module_call_id].call_state = voice.clcc_call_states[call_state].call_state
+						device.calls[module_call_id].media_state = voice.clcc_call_states[call_state].media_state
+						device.calls[module_call_id].release_reason = "normal"
+						device.calls[module_call_id].mmpbx_call_id = mmpbx_call_id
+						device.conference = nil
+
+						device:send_command(string.format('AT+CHLD=1%d', module_call_id), 5000)
+						device.runtime.log:debug("End_call: conference call repair actions executed!!!!!")
+						return true
+					end
+				end
+			end
 		end
 	end
 	return nil, "Unknown call ID"
 end
+
+local call_hold_resume_action_timer_interval = 2000
 
 function Mapper:accept_call(device, mmpbx_call_id)
 	mmpbx_call_id = tonumber(mmpbx_call_id)
@@ -1464,16 +1841,46 @@ function Mapper:accept_call(device, mmpbx_call_id)
 		return nil, "Invalid call ID"
 	end
 
+	if device.call_hold_or_resume_timer then
+		device.runtime.log:debug("Accept call: IGNORE mmpbx_call_id= %s !!!!! Release timer", tostring(mmpbx_call_id))
+		-- ignore call hold or call resume action
+		device.call_hold_or_resume_timer:cancel()
+		device.call_hold_or_resume_timer = nil
+		return true
+	end
+
+	device.call_hold_or_resume_timer = device.runtime.uloop.timer(function()
+		device.call_hold_or_resume_timer = nil
+		device.runtime.log:debug("Accept call: device.call_hold_or_resume_timer is put to NIL !!!!!")
+	end, call_hold_resume_action_timer_interval)
+	device.runtime.log:debug("Accept call: device.call_hold_or_resume_timer is created !!!!!")
+
 	for _, call in pairs(device.calls) do
 		if call.mmpbx_call_id == mmpbx_call_id then
 			if call.call_state ~= "alerting" then
 				return nil, "Call in invalid state"
 			end
 
-			return device:send_command(string.format('AT+CHLD=2'), 5000)
+			device.runtime.log:debug("Accept call: mmpbx_call_id= %s !!!!!", tostring(mmpbx_call_id))
+			return device:send_command("AT+CHLD=2", 5000)
 		end
 	end
 	return nil, "Unknown call ID"
+end
+
+function Mapper:send_dtmf(device, tones, interval, duration)
+	if not device:send_command(string.format('AT+VTD=%d,%d', duration or 3, interval or 0)) then
+		return nil, "Failed to configure DTMF"
+	end
+	return device:send_command(string.format('AT+QVTS=%s', tones), 30 * 1000)
+end
+
+local function find_module_call_id(calls, mmpbx_call_id)
+	for id, call in pairs(calls) do
+		if call.mmpbx_call_id == mmpbx_call_id then
+			return id, call
+		end
+	end
 end
 
 function Mapper:multi_call(device, mmpbx_call_id, action, mmpbx_second_call_id)
@@ -1483,68 +1890,30 @@ function Mapper:multi_call(device, mmpbx_call_id, action, mmpbx_second_call_id)
 	end
 
 	if action == "hold_call" or action == "resume_call" then
-		if device.conference and device.conference.mmpbx_call_id == mmpbx_call_id then
-			if action == "hold_call" and device.conference.media_state == "normal" then
-				device:send_command(string.format('AT+CHLD=2'), 5000)
-				device.conference.media_state = "held"
-			elseif action == "resume_call" and  device.conference.media_state == "held" then
-				device:send_command(string.format('AT+CHLD=3'), 5000)
-				device.conference.media_state = "normal"
-			end
-			device:send_event("mobiled.voice", {
-				event = "media_state_changed",
-				call_id = mmpbx_call_id,
-				dev_idx = device.dev_idx,
-				media_state = device.conference.media_state
-			})
+		device.runtime.log:debug("Multi call: action= %s, mmpbx_call_id= %s !!!!!", tostring(action), tostring(mmpbx_call_id))
+		if device.call_hold_or_resume_timer then
+			device.runtime.log:debug("Multi call: IGNORE action= %s, mmpbx_call_id= %s !!!!! Release timer", tostring(action), tostring(mmpbx_call_id))
+			-- ignore call hold or call resume action
+			device.call_hold_or_resume_timer:cancel()
+			device.call_hold_or_resume_timer = nil
 			return true
 		end
 
+		device.call_hold_or_resume_timer = device.runtime.uloop.timer(function()
+			device.call_hold_or_resume_timer = nil
+			device.runtime.log:debug("Multi call: device.call_hold_or_resume_timer is put to NIL !!!!!")
+		end, call_hold_resume_action_timer_interval)
+		device.runtime.log:debug("Multi call: device.call_hold_or_resume_timer is created !!!!!")
+
+
 		for _, call in pairs(device.calls) do
 			if call.mmpbx_call_id == mmpbx_call_id then
-				if (action ~= "hold_call" or call.media_state ~= "normal") and (action ~= "resume_call" or call.media_state ~= "held") then
+				if (action ~= "hold_call" or (call.media_state ~= "normal" and call.media_state ~= "remote_held"))
+				   and (action ~= "resume_call" or (call.media_state ~= "local_held" and call.media_state ~= "local_and_remote_held")) then
 					return nil, "Call in invalid state"
 				end
 
-				device:send_command(string.format('AT+CHLD=2'), 5000)
-
-				-- Because the "AT+CHLD=2" can change the call and media states of multiple calls,
-				-- we need to loop over the return values of "AT+CLCC" and set the correct call and media states,
-				-- and send the correct events to MMPBX.
-				local ret = device:send_multiline_command("AT+CLCC", "+CLCC:")
-				if not ret then
-					return nil, "Could not retrieve call info"
-				end
-				for _, clcc_call_info in pairs(ret) do
-					local id, call_state, mode, conference_state, phone_number = string.match(clcc_call_info, '%+CLCC:%s*(%d+),%d+,(%d+),(%d+),(%d+),"(.-)",%d+')
-					id = tonumber(id)
-					if id and voice.clcc_mode[mode] == "voice" then
-						if conference_state ~= "1" and phone_number ~= "sip:mmtel" then
-							if device.calls[id].call_state ~= voice.clcc_call_states[call_state].call_state then
-								device.calls[id].call_state = voice.clcc_call_states[call_state].call_state
-								device:send_event("mobiled.voice", {
-									event = "call_state_changed",
-									call_id = device.calls[id].mmpbx_call_id,
-									dev_idx = device.dev_idx,
-									call_state = device.calls[id].call_state,
-									reason = device.calls[id].release_reason,
-									remote_party = device.calls[id].remote_party,
-									number_format = device.calls[id].number_format
-								})
-							elseif device.calls[id].media_state ~= voice.clcc_call_states[call_state].media_state then
-								device.calls[id].media_state = voice.clcc_call_states[call_state].media_state
-								device:send_event("mobiled.voice", {
-									event = "media_state_changed",
-									call_id = device.calls[id].mmpbx_call_id,
-									dev_idx = device.dev_idx,
-									media_state = device.calls[id].media_state
-								})
-							end
-						end
-						device.calls[id].call_state = voice.clcc_call_states[call_state].call_state
-						device.calls[id].media_state = voice.clcc_call_states[call_state].media_state
-					end
-				end
+				device:send_command("AT+CHLD=2", 5000)
 				return true
 			end
 		end
@@ -1555,52 +1924,102 @@ function Mapper:multi_call(device, mmpbx_call_id, action, mmpbx_second_call_id)
 			return "Invalid second call ID"
 		end
 
-		device:send_command(string.format('AT+CHLD=3'), 5000)
-
-		device.conference = device.conference or {}
-		device.conference.mmpbx_call_id = mmpbx_call_id
-		device.conference.media_state = "normal"
-
-		for call_id, call in pairs(device.calls) do
-			if call.mmpbx_call_id == mmpbx_call_id then
-				-- Mark the call as in conference to prevent an event to be sent when a DSCI URC
-				-- is received. Make sure not to send a disconnect event as the call ID is
-				-- reused for the conference call.
-				call.release_reason = "normal"
-				call.call_state = "disconnected"
-			elseif call.mmpbx_call_id == mmpbx_second_call_id then
-				call.release_reason = "normal"
-				call.call_state = "disconnected"
-				send_call_disconnect_event(device, call)
-			end
+		local module_call_id_1 = find_module_call_id(device.calls, mmpbx_call_id)
+		local module_call_id_2 = find_module_call_id(device.calls, mmpbx_second_call_id)
+		if not module_call_id_1 or not module_call_id_2 then
+			return nil, "Conference setup error, one or two none existing callIDs"
 		end
 
-		device:send_event("mobiled.voice", {
-			event = "media_state_changed",
-			call_id = device.conference.mmpbx_call_id,
-			dev_idx = device.dev_idx,
-			media_state = device.conference.media_state
-		})
+		-- choose which module_call_id/mmpbx_call_id to keep
+		-- based on following algorithm
+		-- if remote_party = mmtel it must be kept (regardless the media state of that call_id)
+		-- else take the call_id with media_state == "normal"
 
-		-- Update the states of the calls that are in conference.
-		local ret = device:send_multiline_command("AT+CLCC", "+CLCC:")
-		if not ret then
-			return nil, "Could not retrieve call info"
+		local module_call_id_to_keep
+		local module_call_id_to_release
+		local create_device_conference
+
+		if device.calls[module_call_id_1].remote_party == "sip:mmtel" or device.calls[module_call_id_1].remote_party == "mmtel" then
+			module_call_id_to_keep = module_call_id_1
+			module_call_id_to_release = module_call_id_2
+		elseif device.calls[module_call_id_2].remote_party == "sip:mmtel" or device.calls[module_call_id_2].remote_party == "mmtel" then
+			module_call_id_to_keep = module_call_id_2
+			module_call_id_to_release = module_call_id_1
+		elseif device.calls[module_call_id_1].media_state == "normal" or device.calls[module_call_id_1].media_state == "remote_held" then
+			module_call_id_to_keep = module_call_id_1
+			module_call_id_to_release = module_call_id_2
+			create_device_conference = true
+		elseif device.calls[module_call_id_2].media_state == "normal" or device.calls[module_call_id_2].media_state == "remote_held" then
+			module_call_id_to_keep = module_call_id_2
+			module_call_id_to_release = module_call_id_1
+			create_device_conference = true
 		end
-		for _, clcc_call_info in pairs(ret) do
-			local id, call_state, mode, conference_state, phone_number = string.match(clcc_call_info, '^%+CLCC:%s*(%d+),%d+,(%d+),(%d+),(%d+),"(.-)",%d+$')
-			id = tonumber(id)
-			if id and voice.clcc_mode[mode] == "voice" and (conference_state == "1" or phone_number == "sip:mmtel") then
-				device.calls[id] = device.calls[id] or {}
-				device.calls[id].mmpbx_call_id = mmpbx_call_id
-				device.calls[id].call_state = voice.clcc_call_states[call_state].call_state
-				device.calls[id].media_state = voice.clcc_call_states[call_state].media_state
-			end
+		if not module_call_id_to_keep then
+			return nil, "Conference setup error, could not determine which mmpbx_call_id to keep"
+		end
+
+		device.runtime.log:debug("Multi call: module_call_id_to_keep= %s, module_call_id_to_release= %s, remote party to keep = %s", tostring(module_call_id_to_keep), tostring(module_call_id_to_release), tostring(device.calls[module_call_id_to_keep].remote_party))
+
+		if device.calls[module_call_id_to_keep].media_state == "local_held" or device.calls[module_call_id_to_keep].media_state == "local_and_remote_held" then
+			device.runtime.log:debug("Multi call: execute AT+CHLD=2 to change media state of module callid we want to keep = %s", tostring(module_call_id_to_keep))
+			device:send_command("AT+CHLD=2", 5000)
+		end
+
+		local _, err, cme_err = device:send_command("AT+CHLD=3", 5000)
+		device.runtime.log:debug("Multi call: AT+CHLD=3 returns: err = %s, cme_err = %s", tostring(err), tostring(cme_err))
+		if err == "cme error" then
+			device.runtime.log:debug("Multi call: media state of module_call_id_to_release = %s", tostring(device.calls[module_call_id_to_release].media_state))
+			return nil, "Conference setup error, AT+CHLD=3 returned cme error"
+		end
+
+		if device.calls[module_call_id_to_keep].remote_party ~= "sip:mmtel" and device.calls[module_call_id_to_keep].remote_party ~= "mmtel" then
+			device.calls[module_call_id_to_keep].release_reason = "normal"
+			device.calls[module_call_id_to_keep].conference_processing = "reuse_mmpbx_callid"
+		end
+		device.calls[module_call_id_to_release].release_reason = "normal"
+		device.calls[module_call_id_to_release].conference_processing = "release_mmpbx_callid"
+
+		if create_device_conference then
+			device.conference = {
+				mmpbx_call_id = device.calls[module_call_id_to_keep].mmpbx_call_id,
+				media_state = device.calls[module_call_id_to_keep].media_state
+			}
+
+			device.runtime.log:debug("Multi call: device.conference created. mmpbx_call_id = %s, media_state = %s", tostring(device.conference.mmpbx_call_id), tostring(device.conference.media_state))
 		end
 
 		return true
 	end
 	return nil, "Unsupported action"
+end
+
+function Mapper:convert_to_data_call(device, mmpbx_call_id, codec)
+	local call_id, call = find_module_call_id(device.calls, mmpbx_call_id)
+	if not call_id then
+		return nil, "Unknown call ID"
+	end
+
+	-- Use the codec in UCI if none is specified by the caller.
+	if not codec then
+		codec = device.data_call_codec
+	end
+
+	-- A re-INVITE can only be sent after the connection has been established, i.e.,
+	-- after the 200 OK for the invite has been received. In case the call has not
+	-- been fully established yet, mark it as still to be converted to a data call
+	-- and send the re-INVITE when the DSCI message is received.
+	if not call.call_state or call.call_state == "dialing" or call.call_state == "alerting" or call.call_state == "delivered" then
+		call.data_call_codec = codec
+		return true
+	end
+
+	-- If the call is in the connected state the re-INVITE can be sent immediately.
+	if call.call_state == "connected" then
+		return switch_to_data_codec(device, call_id, codec)
+	end
+
+	-- In all other call states converting to a data call is not possible.
+	return nil, "Invalid call state"
 end
 
 function Mapper:get_network_interface(device, session_id)
@@ -1654,15 +2073,8 @@ function Mapper:get_voice_info(device, info)
 	if not info.volte then
 		info.volte = {}
 	end
-	info.volte.registration_status = "not_registered"
-	local ret = device:send_singleline_command('AT+QCFG="ims"', '+QCFG:')
-	if ret then
-	        local act = ret:match('^+QCFG:%s?"ims",%d,(%d)')
-		if act == '1' then
-			info.volte.registration_status = "registered"
-		end
-		return true
-	end
+	info.volte.registration_status = get_registration_state(device)
+	return true
 end
 
 function Mapper:set_emergency_numbers(device, numbers)
@@ -1674,8 +2086,10 @@ function Mapper:set_emergency_numbers(device, numbers)
 		end
 	end
 	for _, number in pairs(numbers) do
-		device:send_command(string.format('AT+QECCNUM=1,0,"%s"', number))
-		device:send_command(string.format('AT+QECCNUM=1,1,"%s"', number))
+		if number ~= "911" and number ~= "112" then
+			device:send_command(string.format('AT+QECCNUM=1,0,"%s"', number))
+			device:send_command(string.format('AT+QECCNUM=1,1,"%s"', number))
+		end
 	end
 end
 
@@ -1795,9 +2209,12 @@ function M.create(runtime, device) --luacheck: no unused args
 			set_attach_params = "override",
 			network_attach = "override",
 			handle_event = "override",
+			dial = "override",
 			end_call = "override",
 			accept_call = "override",
-			multi_call = "override"
+			send_dtmf = "override",
+			multi_call = "override",
+			convert_to_data_call = "override"
 		}
 	}
 
@@ -1825,10 +2242,8 @@ function M.create(runtime, device) --luacheck: no unused args
 		table.insert(device.interfaces, { port = modem_ports[1], type = "modem" })
 	end
 
-	-- Temporary workaround for EG06 crashing
-	if device.pid == "0306" then
-		table.insert(device.command_blacklist, 'AT%+QCFG="band"')
-		table.insert(device.command_blacklist, 'AT%+QNWLOCK')
+	if device.pid == "0125" then
+		table.insert(device.command_blacklist, 'AT%+QCAINFO')
 	end
 
 	device.ubus = ubus.connect()

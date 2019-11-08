@@ -3,9 +3,6 @@
 --! @brief The mobiled module containing glue logic for the entire Mobiled
 ---------------------------------
 
-local require, tostring = require, tostring
-local table, pairs, ipairs = table, pairs, ipairs
-
 local mobiled_statemachine = require('mobiled.statemachine')
 local mobiled_plugin = require('mobiled.plugin')
 local mobiled_device = require('mobiled.device')
@@ -134,17 +131,11 @@ function M.add_device(params)
 		Populate the data session list extracted from the UCI network config
 		at creation of the device. This session info is needed to correctly configure
 		the attach context.
-		Additional data sessions can be created or existing sesions can be updated by Netifd sending the session_activate event.
+		Additional data sessions can be created or existing sessions can be updated by Netifd sending the session_activate event.
 	]]
 	for _, session_config in pairs(runtime.config.get_session_config(device)) do
-		-- Verify if the profile exists
-		local profile
-		profile, errMsg = M.get_profile(device, session_config.profile_id)
-		if profile then
-			device:add_data_session(session_config)
-		else
-			if errMsg then runtime.log:warning(errMsg) end
-		end
+		_, errMsg = M.add_data_session(device, session_config)
+		if errMsg then runtime.log:warning(errMsg) end
 	end
 
 	runtime.events.send_event("mobiled", { event = "device_added", dev_idx = sm.dev_idx, dev_desc = sm.device.desc })
@@ -273,7 +264,7 @@ end
 
 function M.get_profile(device, profile_id)
 	if not profile_id then
-		return nil, "Invalid profile specified"
+		return nil, "No profile specified"
 	end
 	-- Check if the profile we want to use is a reused device profile
 	local device_profile_id = tonumber(string.match(profile_id, "^device:(.*)$"))
@@ -295,20 +286,30 @@ function M.get_profile(device, profile_id)
 	return runtime.config.get_profile(profile_id)
 end
 
-function M.activate_data_session(device, session_config)
-	local log = runtime.log
+function M.add_data_session(device, session_config)
 	-- Verify if the profile exists
 	local profile, errMsg = M.get_profile(device, session_config.profile_id)
 	if profile then
 		local session
-		session, errMsg = device:activate_data_session(session_config)
+		session, errMsg = device:add_data_session(session_config)
 		if session then
 			session.allowed = M.apn_is_allowed(device, profile.apn)
-			log:info("Activated data session " .. tostring(session.session_id) .. " using profile " .. tostring(session.profile_id))
-			runtime.events.send_event("mobiled", { event = "session_setup", session_id = session.session_id, dev_idx = device.sm.dev_idx })
+			return session
 		end
 	end
-	if errMsg then log:warning(errMsg) end
+	return nil, errMsg
+end
+
+function M.activate_data_session(device, session_config)
+	local log = runtime.log
+	local session, errMsg = M.add_data_session(device, session_config)
+	if session then
+		session.activated = true
+		log:info("Activated data session " .. tostring(session.session_id) .. " using profile " .. tostring(session.profile_id))
+		runtime.events.send_event("mobiled", { event = "session_setup", session_id = session.session_id, dev_idx = device.sm.dev_idx })
+	elseif errMsg then
+		log:warning(errMsg)
+	end
 end
 
 function M.deactivate_data_session(device, session_id)
